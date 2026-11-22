@@ -20,7 +20,7 @@ function(marathon_configure_ios_target TARGET_NAME)
     set_target_properties(${TARGET_NAME} PROPERTIES
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/ios/Info.plist"
-        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.hiperema.marathon06.ios"
+        XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.hiperema.kronos06.ios"
         XCODE_ATTRIBUTE_IPHONEOS_DEPLOYMENT_TARGET "17.0"
         XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS "${CMAKE_SOURCE_DIR}/ios/Entitlements.plist"
     )

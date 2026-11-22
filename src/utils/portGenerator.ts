@@ -86,7 +86,7 @@ export const DEFAULT_BUILD_CONFIG: PortBuildConfig = {
   upstreamRepoUrl: 'https://github.com/sonicnext-dev/MarathonRecomp.git',
   upstreamRef: 'main',
   appName: 'Marathon06iOS',
-  bundleId: 'com.hiperema.marathon06.ios',
+  bundleId: 'com.hiperema.kronos06.ios',
   appVersion: '1.0.0',
   deploymentTarget: '17.0',
   rendererBackend: 'metal3-native',
@@ -219,7 +219,7 @@ export function validateBuildConfig(config: PortBuildConfig): ConfigValidationIs
   if (!/^[a-zA-Z0-9-]+(\.[a-zA-Z0-9-]+){2,}$/.test(config.bundleId.trim())) {
     issues.push({
       field: 'bundleId',
-      message: 'Bundle ID non valido (esempio corretto: com.hiperema.marathon06.ios).',
+      message: 'Bundle ID non valido (esempio corretto: com.hiperema.kronos06.ios).',
     });
   }
 
@@ -306,6 +306,54 @@ export function inspectXisoCandidate(input: {
     magicMatched: true,
     estimatedRamFootprintMb: 3.4,
     requiresPcExtraction: false,
+  };
+}
+
+export interface GoogleDriveConversionResult {
+  valid: boolean;
+  fileId: string | null;
+  directUrl: string | null;
+  error?: string;
+}
+
+/**
+ * Converts a Google Drive share/view/uc URL into a direct download URL suitable for
+ * curl inside GitHub Actions Secrets (bypasses the Drive HTML preview & scan interstitial).
+ */
+export function convertGoogleDriveUrl(rawUrl: string): GoogleDriveConversionResult {
+  const trimmed = rawUrl.trim();
+  if (!trimmed) {
+    return {
+      valid: false,
+      fileId: null,
+      directUrl: null,
+      error: 'Incolla un link di condivisione Google Drive (es. https://drive.google.com/file/d/FILE_ID/view?usp=sharing).',
+    };
+  }
+
+  const patterns = [
+    /drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]{10,})/,
+    /drive\.google\.com\/(?:open|uc)\?[^#]*\bid=([a-zA-Z0-9_-]{10,})/,
+    /drive\.usercontent\.google\.com\/download\?[^#]*\bid=([a-zA-Z0-9_-]{10,})/,
+  ];
+
+  for (const regex of patterns) {
+    const match = trimmed.match(regex);
+    if (match?.[1]) {
+      const fileId = match[1];
+      return {
+        valid: true,
+        fileId,
+        directUrl: `https://drive.usercontent.google.com/download?id=${fileId}&export=download&confirm=t`,
+      };
+    }
+  }
+
+  return {
+    valid: false,
+    fileId: null,
+    directUrl: null,
+    error: 'ID file Google Drive non trovato. Usa un link del tipo https://drive.google.com/file/d/ID_FILE/view?usp=sharing.',
   };
 }
 

@@ -62,6 +62,29 @@ out/
 }
 
 export function generateBuildWorkflowYaml(p: WorkflowTemplateParams): string {
+  const driveHelper = `          download_ephemeral() {
+            local RAW_URL="$1"
+            local OUT_FILE="$2"
+            local DL_URL="\${RAW_URL}"
+            # Converte automaticamente link Google Drive (/file/d/ID/view o uc?id=ID) in link diretto con confirm=t
+            if echo "\${RAW_URL}" | grep -qE "drive\\.google\\.com|drive\\.usercontent\\.google\\.com"; then
+              local GID=""
+              GID="\$(echo "\${RAW_URL}" | sed -nE 's#.*drive\\.google\\.com/file/d/([a-zA-Z0-9_-]+).*#\\1#p')"
+              if [ -z "\${GID}" ]; then
+                GID="\$(echo "\${RAW_URL}" | sed -nE 's#.*[?&]id=([a-zA-Z0-9_-]+).*#\\1#p')"
+              fi
+              if [ -n "\${GID}" ]; then
+                DL_URL="https://drive.usercontent.google.com/download?id=\${GID}&export=download&confirm=t"
+                echo "==> Rilevato link Google Drive: normalizzato a download diretto (confirm=t)."
+              fi
+            fi
+            curl -fSL -A "Mozilla/5.0" "\${DL_URL}" -o "\${OUT_FILE}"
+            if file "\${OUT_FILE}" | grep -qi "HTML"; then
+              echo "::error::Il link ha restituito una pagina HTML invece del file! Su Google Drive imposta Condividi -> 'Chiunque abbia il link' (Visualizzatore)."
+              exit 1
+            fi
+          }`;
+
   const secretSection =
     p.secretMode === 'single-archive'
       ? `        env:
@@ -71,6 +94,7 @@ export function generateBuildWorkflowYaml(p: WorkflowTemplateParams): string {
           SECRET_SHADER_LT_URL: \${{ secrets.SHADER_LT_ARC_URL }}
           SECRET_LEGACY_XBE_URL: \${{ secrets.DEFAULT_XBE_URL }}
         run: |
+${driveHelper}
           PRIVATE_DIR="\${GITHUB_WORKSPACE}/MarathonRecomp-Upstream/MarathonRecompLib/private"
           mkdir -p "\${PRIVATE_DIR}"
           TMP_DL="\${RUNNER_TEMP}/ephemeral-game-inputs"
@@ -78,7 +102,7 @@ export function generateBuildWorkflowYaml(p: WorkflowTemplateParams): string {
 
           if [ -n "\${SECRET_ARCHIVE_URL}" ]; then
             echo "==> Download effimero archivio privato da GitHub Secret GAME_FILES_ARCHIVE_URL..."
-            curl -fSL "\${SECRET_ARCHIVE_URL}" -o "\${TMP_DL}/inputs.archive"
+            download_ephemeral "\${SECRET_ARCHIVE_URL}" "\${TMP_DL}/inputs.archive"
             if file "\${TMP_DL}/inputs.archive" | grep -qi "zip"; then
               unzip -o "\${TMP_DL}/inputs.archive" -d "\${TMP_DL}/extracted"
             elif file "\${TMP_DL}/inputs.archive" | grep -qiE "tar|gzip|xz|bzip2"; then
@@ -99,9 +123,9 @@ export function generateBuildWorkflowYaml(p: WorkflowTemplateParams): string {
             rm -rf "\${TMP_DL}"
           elif [ -n "\${SECRET_XEX_URL}" ] && [ -n "\${SECRET_SHADER_URL}" ] && [ -n "\${SECRET_SHADER_LT_URL}" ]; then
             echo "==> Download effimero da singoli GitHub Secrets (DEFAULT_XEX_URL, SHADER_ARC_URL, SHADER_LT_ARC_URL)..."
-            curl -fSL "\${SECRET_XEX_URL}" -o "\${PRIVATE_DIR}/default.xex"
-            curl -fSL "\${SECRET_SHADER_URL}" -o "\${PRIVATE_DIR}/shader.arc"
-            curl -fSL "\${SECRET_SHADER_LT_URL}" -o "\${PRIVATE_DIR}/shader_lt.arc"
+            download_ephemeral "\${SECRET_XEX_URL}" "\${PRIVATE_DIR}/default.xex"
+            download_ephemeral "\${SECRET_SHADER_URL}" "\${PRIVATE_DIR}/shader.arc"
+            download_ephemeral "\${SECRET_SHADER_LT_URL}" "\${PRIVATE_DIR}/shader_lt.arc"
           else
             if [ -n "\${SECRET_LEGACY_XBE_URL}" ]; then
               echo "::warning::Rilevato DEFAULT_XBE_URL (formato OG Xbox usato in edgyios). MarathonRecomp (Xbox 360) richiede default.xex + shader.arc + shader_lt.arc!"
@@ -117,19 +141,20 @@ export function generateBuildWorkflowYaml(p: WorkflowTemplateParams): string {
           SECRET_ARCHIVE_URL: \${{ secrets.GAME_FILES_ARCHIVE_URL }}
           SECRET_LEGACY_XBE_URL: \${{ secrets.DEFAULT_XBE_URL }}
         run: |
+${driveHelper}
           PRIVATE_DIR="\${GITHUB_WORKSPACE}/MarathonRecomp-Upstream/MarathonRecompLib/private"
           mkdir -p "\${PRIVATE_DIR}"
 
           if [ -n "\${SECRET_XEX_URL}" ] && [ -n "\${SECRET_SHADER_URL}" ] && [ -n "\${SECRET_SHADER_LT_URL}" ]; then
             echo "==> Download effimero da GitHub Secrets (DEFAULT_XEX_URL, SHADER_ARC_URL, SHADER_LT_ARC_URL)..."
-            curl -fSL "\${SECRET_XEX_URL}" -o "\${PRIVATE_DIR}/default.xex"
-            curl -fSL "\${SECRET_SHADER_URL}" -o "\${PRIVATE_DIR}/shader.arc"
-            curl -fSL "\${SECRET_SHADER_LT_URL}" -o "\${PRIVATE_DIR}/shader_lt.arc"
+            download_ephemeral "\${SECRET_XEX_URL}" "\${PRIVATE_DIR}/default.xex"
+            download_ephemeral "\${SECRET_SHADER_URL}" "\${PRIVATE_DIR}/shader.arc"
+            download_ephemeral "\${SECRET_SHADER_LT_URL}" "\${PRIVATE_DIR}/shader_lt.arc"
           elif [ -n "\${SECRET_ARCHIVE_URL}" ]; then
             echo "==> Fallback su GAME_FILES_ARCHIVE_URL..."
             TMP_DL="\${RUNNER_TEMP}/ephemeral-game-inputs"
             mkdir -p "\${TMP_DL}/extracted"
-            curl -fSL "\${SECRET_ARCHIVE_URL}" -o "\${TMP_DL}/inputs.zip"
+            download_ephemeral "\${SECRET_ARCHIVE_URL}" "\${TMP_DL}/inputs.zip"
             unzip -o "\${TMP_DL}/inputs.zip" -d "\${TMP_DL}/extracted"
             for REQ in default.xex shader.arc shader_lt.arc; do
               FOUND="\$(find "\${TMP_DL}/extracted" -iname "\${REQ}" -type f | head -n 1)"
@@ -770,8 +795,8 @@ Progettato da zero con architettura **overlay pulita** ispirata a [hiperema95-ct
 3. Vai su **GitHub -> Settings -> Secrets and variables -> Actions -> New repository secret**:
    ${
      p.secretMode === 'single-archive'
-       ? `- Crea il secret **\`GAME_FILES_ARCHIVE_URL\`** con un link diretto privato a un \`.zip\` contenente \`default.xex\`, \`shader.arc\` e \`shader_lt.arc\`.\n   - *(In alternativa supporta anche i 3 secret separati: \`DEFAULT_XEX_URL\`, \`SHADER_ARC_URL\`, \`SHADER_LT_ARC_URL\`)*`
-       : `- Crea i 3 secret con link diretti privati:\n     - **\`DEFAULT_XEX_URL\`**\n     - **\`SHADER_ARC_URL\`**\n     - **\`SHADER_LT_ARC_URL\`**\n   - *(In alternativa supporta anche il secret unico \`GAME_FILES_ARCHIVE_URL\`)*`
+       ? `- Crea il secret **\`GAME_FILES_ARCHIVE_URL\`** con un link diretto privato a un \`.zip\` contenente \`default.xex\`, \`shader.arc\` e \`shader_lt.arc\`.\n   - **Se usi Google Drive**: imposta il file su *"Chiunque abbia il link (Visualizzatore)"* e usa il formato:\n     \`https://drive.usercontent.google.com/download?id=ID_DEL_FILE&export=download&confirm=t\`\n     *(Il workflow normalizza comunque in automatico anche il link standard \`https://drive.google.com/file/d/ID_DEL_FILE/view?usp=sharing\`)*.\n   - *(In alternativa supporta anche i 3 secret separati: \`DEFAULT_XEX_URL\`, \`SHADER_ARC_URL\`, \`SHADER_LT_ARC_URL\`)*`
+       : `- Crea i 3 secret con link diretti privati:\n     - **\`DEFAULT_XEX_URL\`**\n     - **\`SHADER_ARC_URL\`**\n     - **\`SHADER_LT_ARC_URL\`**\n   - **Se usi Google Drive**: imposta i file su *"Chiunque abbia il link"* e usa \`https://drive.usercontent.google.com/download?id=ID_DEL_FILE&export=download&confirm=t\` (il workflow converte comunque anche i link standard \`/file/d/ID/view\`).\n   - *(In alternativa supporta anche il secret unico \`GAME_FILES_ARCHIVE_URL\`)*`
    }
 4. Apri il tab **Actions -> Build ${p.appName} iOS IPA -> Run workflow**.
 5. Scarica l'artefatto **\`${p.appName}-v${p.appVersion}-iOS-arm64.ipa\`** e installalo su iPhone/iPad tramite **Feather** o **LiveContainer**.

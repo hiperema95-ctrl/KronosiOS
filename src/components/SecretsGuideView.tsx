@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Check, Copy, Lock, ShieldAlert, Smartphone } from 'lucide-react';
-import type { PortBuildConfig } from '../utils/portGenerator';
+import { Check, Copy, Link2, Lock, ShieldAlert, Smartphone } from 'lucide-react';
+import { convertGoogleDriveUrl, type PortBuildConfig } from '../utils/portGenerator';
 
 interface SecretsGuideViewProps {
   config: PortBuildConfig;
@@ -15,12 +15,17 @@ interface SecretRow {
 
 export function SecretsGuideView({ config }: SecretsGuideViewProps) {
   const [copiedSecret, setCopiedSecret] = useState<string | null>(null);
+  const [driveInput, setDriveInput] = useState(
+    'https://drive.google.com/file/d/1AbCdEfGhIjKlMnOpQrStUvWxYz123456/view?usp=sharing'
+  );
   const [checkedSteps, setCheckedSteps] = useState<Record<string, boolean>>({
     extract: false,
     secrets: false,
     action: false,
     sideload: false,
   });
+
+  const driveConversion = convertGoogleDriveUrl(driveInput);
 
   const secretsList: SecretRow[] =
     config.secretMode === 'single-archive'
@@ -54,10 +59,10 @@ export function SecretsGuideView({ config }: SecretsGuideViewProps) {
           },
         ];
 
-  const copyText = async (value: string) => {
+  const copyText = async (value: string, key = value) => {
     try {
       await navigator.clipboard.writeText(value);
-      setCopiedSecret(value);
+      setCopiedSecret(key);
       setTimeout(() => setCopiedSecret(null), 1600);
     } catch {
       // Ignore clipboard failure
@@ -75,8 +80,9 @@ export function SecretsGuideView({ config }: SecretsGuideViewProps) {
           Sicurezza Repo Pubblico, GitHub Secrets &amp; Sideload iOS
         </h1>
         <p className="text-sm text-slate-600 mt-1">
-          Guida operativa per compilare <span className="font-mono">{config.appName}</span> su repository GitHub pubblico
-          senza mai esporre eseguibili o shader protetti da copyright.
+          Guida operativa per compilare <span className="font-mono">{config.appName}</span> (
+          <span className="font-mono">{config.bundleId}</span>) su repository GitHub pubblico senza mai esporre
+          eseguibili o shader protetti da copyright.
         </p>
       </div>
 
@@ -97,6 +103,76 @@ export function SecretsGuideView({ config }: SecretsGuideViewProps) {
             <span className="font-mono font-medium">GAME_FILES_ARCHIVE_URL</span> oppure come 3 secret separati.
           </p>
         </div>
+      </section>
+
+      {/* Interactive Google Drive Link Converter */}
+      <section aria-labelledby="gdrive-heading" className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
+        <div className="flex items-center gap-2">
+          <Link2 className="w-4 h-4 text-blue-700" aria-hidden="true" />
+          <h2 id="gdrive-heading" className="text-base font-bold text-slate-900">
+            Convertitore Link Google Drive per GitHub Secret
+          </h2>
+        </div>
+        <p className="text-sm text-slate-600">
+          Carica il tuo <span className="font-mono">.zip</span> (contenente <span className="font-mono">default.xex</span>,{' '}
+          <span className="font-mono">shader.arc</span>, <span className="font-mono">shader_lt.arc</span>) su Google Drive,
+          imposta <strong>Condividi -&gt; Chiunque abbia il link (Visualizzatore)</strong> e incolla il link qui sotto per
+          ottenere il formato diretto compatibile con <span className="font-mono">curl</span> (anche se il nostro workflow
+          normalizza già automaticamente i link Drive).
+        </p>
+
+        <div>
+          <label htmlFor="gdrive-url-input" className="block text-xs font-medium text-slate-700 mb-1.5">
+            Link di condivisione Google Drive
+          </label>
+          <input
+            id="gdrive-url-input"
+            type="url"
+            value={driveInput}
+            onChange={(e) => setDriveInput(e.target.value)}
+            placeholder="https://drive.google.com/file/d/ID_FILE/view?usp=sharing"
+            className="w-full px-3.5 py-2 text-sm font-mono bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600/20 focus:border-blue-600"
+          />
+        </div>
+
+        {driveConversion.valid && driveConversion.directUrl ? (
+          <div
+            data-testid="gdrive-converted-box"
+            className="bg-slate-50 border border-slate-200 rounded-lg p-4 flex flex-col md:flex-row md:items-center justify-between gap-3"
+          >
+            <div className="min-w-0 space-y-1">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <span className="text-emerald-700 font-semibold">Formato diretto pronto per il Secret</span>
+                <span aria-hidden="true">·</span>
+                <span className="font-mono">ID: {driveConversion.fileId}</span>
+              </div>
+              <code className="block text-xs font-mono text-slate-900 break-all">
+                {driveConversion.directUrl}
+              </code>
+            </div>
+            <button
+              type="button"
+              onClick={() => copyText(driveConversion.directUrl!, 'gdrive-direct')}
+              className="px-3 py-1.5 text-xs font-medium text-white bg-slate-900 hover:bg-slate-800 rounded-lg transition-colors inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer self-start md:self-center"
+            >
+              {copiedSecret === 'gdrive-direct' ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
+                  URL Copiato
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" aria-hidden="true" />
+                  Copia URL Diretto
+                </>
+              )}
+            </button>
+          </div>
+        ) : (
+          <p role="alert" className="text-xs text-red-700">
+            {driveConversion.error}
+          </p>
+        )}
       </section>
 
       {/* Secrets Table */}

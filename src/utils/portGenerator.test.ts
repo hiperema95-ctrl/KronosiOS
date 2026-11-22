@@ -5,6 +5,7 @@ import {
   DEFAULT_MOD_PROFILES,
   MARATHON_DLC_CATALOG,
   XISO_MAGIC,
+  convertGoogleDriveUrl,
   generateModProfileJson,
   generatePortRepository,
   inspectXisoCandidate,
@@ -12,7 +13,8 @@ import {
 } from './portGenerator';
 import { buildZipBytes, computeCrc32 } from './zipBuilder';
 
-test('DEFAULT_BUILD_CONFIG passes validation with zero issues', () => {
+test('DEFAULT_BUILD_CONFIG uses com.hiperema.kronos06.ios and passes validation with zero issues', () => {
+  assert.equal(DEFAULT_BUILD_CONFIG.bundleId, 'com.hiperema.kronos06.ios');
   const issues = validateBuildConfig(DEFAULT_BUILD_CONFIG);
   assert.equal(issues.length, 0);
 });
@@ -57,6 +59,8 @@ test('generatePortRepository creates all required clean-room overlay files for M
   for (const exp of expected) {
     assert.ok(paths.has(exp), `Missing expected generated file: ${exp}`);
   }
+  const plist = files.find((f) => f.path === 'ios/Info.plist')!.content;
+  assert.match(plist, /com\.hiperema\.kronos06\.ios/);
 });
 
 test('config updates propagate dynamically into Info.plist, workflow YAML, and CMake', () => {
@@ -79,7 +83,29 @@ test('config updates propagate dynamically into Info.plist, workflow YAML, and C
   assert.match(workflow, /SHADER_ARC_URL/);
   assert.match(workflow, /SHADER_LT_ARC_URL/);
   assert.match(workflow, /MoltenVK-ios\.tar/);
+  assert.match(workflow, /drive\.usercontent\.google\.com/);
   assert.match(cmake, /MARATHON_IOS_MOLTENVK=1/);
+});
+
+test('convertGoogleDriveUrl converts share, uc, and usercontent URLs into direct download links', () => {
+  const share = convertGoogleDriveUrl(
+    'https://drive.google.com/file/d/1XyZ_9876543210AbCdEf/view?usp=sharing'
+  );
+  assert.equal(share.valid, true);
+  assert.equal(share.fileId, '1XyZ_9876543210AbCdEf');
+  assert.equal(
+    share.directUrl,
+    'https://drive.usercontent.google.com/download?id=1XyZ_9876543210AbCdEf&export=download&confirm=t'
+  );
+
+  const uc = convertGoogleDriveUrl(
+    'https://drive.google.com/uc?export=download&id=1XyZ_9876543210AbCdEf'
+  );
+  assert.equal(uc.valid, true);
+  assert.equal(uc.fileId, '1XyZ_9876543210AbCdEf');
+
+  const bad = convertGoogleDriveUrl('https://example.com/not-drive');
+  assert.equal(bad.valid, false);
 });
 
 test('generated .gitignore and workflow strictly block copyrighted binaries on public repo', () => {
