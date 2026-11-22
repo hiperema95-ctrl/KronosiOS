@@ -1,0 +1,36 @@
+# Node / Web Studio
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Copyright & Binary Protection (Public Repo Safety Guard)
+# NEVER commit copyrighted Xbox 360 / SEGA / Sonic Team files!
+*.xex
+*.xbe
+*.iso
+*.xiso
+*.arc
+*.xcp
+*.stfs
+*.ipa
+*.app/
+*.dSYM/
+default.xex
+default.xbe
+shader.arc
+shader_lt.arc
+private/
+**/private/*
+!**/private/.gitkeep
+
+# Local build & upstream working directories
+MarathonRecomp-Upstream/
+build-host/
+build-ios/
+ios-deps/
+out/

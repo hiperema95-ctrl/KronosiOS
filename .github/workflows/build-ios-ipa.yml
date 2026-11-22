@@ -1,0 +1,237 @@
+name: Build Marathon06iOS iOS IPA (MarathonRecomp v1.0.0)
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_configuration:
+        description: "CMake build configuration"
+        required: false
+        default: "Release"
+        type: choice
+        options:
+          - Release
+          - RelWithDebInfo
+      upstream_ref:
+        description: "Branch o tag di sonicnext-dev/MarathonRecomp"
+        required: false
+        default: "main"
+        type: string
+
+env:
+  IOS_DEPLOYMENT_TARGET: "17.0"
+  FREETYPE_VERSION: "2.13.3"
+  FFMPEG_VERSION: "7.1"
+  APP_DISPLAY_NAME: "Marathon06iOS"
+  APP_BUNDLE_ID: "com.hiperema.marathon06.ios"
+  APP_VERSION: "1.0.0"
+
+jobs:
+  build-ios-ipa:
+    name: Cross-Compile iOS arm64 (.ipa)
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    steps:
+      - name: 1. Checkout Clean-Room iOS Port Overlay
+        uses: actions/checkout@v4
+        with:
+          path: ios-port
+
+      - name: 2. Audit Sicurezza Repo Pubblico (Zero Copyrighted Binaries)
+        run: |
+          echo "==> Verifica assenza di binari Xbox 360 / SEGA nel repository pubblico..."
+          FORBIDDEN="$(find ios-port -maxdepth 5 \( -iname '*.xex' -o -iname '*.xbe' -o -iname '*.iso' -o -iname '*.xiso' -o -iname 'shader.arc' -o -iname 'shader_lt.arc' \) -not -path '*/.git/*')"
+          if [ -n "${FORBIDDEN}" ]; then
+            echo "::error::Trovati file binari protetti da copyright nel repository pubblico:"
+            echo "${FORBIDDEN}"
+            exit 1
+          fi
+          echo "OK: Repository 100% pulito (zero file binari protetti)."
+
+      - name: 3. Clone Upstream sonicnext-dev/MarathonRecomp (v1.0.0 + Submodules)
+        run: |
+          REF="${{ inputs.upstream_ref || 'main' }}"
+          git clone --depth 1 --branch "${REF}" --recurse-submodules --shallow-submodules \
+            "https://github.com/sonicnext-dev/MarathonRecomp.git" MarathonRecomp-Upstream
+          cd MarathonRecomp-Upstream
+          git log -1 --oneline
+
+      - name: 4. Fetch Effimero Private Build Inputs (da GitHub Secrets, mai committati)
+        env:
+          SECRET_ARCHIVE_URL: ${{ secrets.GAME_FILES_ARCHIVE_URL }}
+          SECRET_XEX_URL: ${{ secrets.DEFAULT_XEX_URL }}
+          SECRET_SHADER_URL: ${{ secrets.SHADER_ARC_URL }}
+          SECRET_SHADER_LT_URL: ${{ secrets.SHADER_LT_ARC_URL }}
+          SECRET_LEGACY_XBE_URL: ${{ secrets.DEFAULT_XBE_URL }}
+        run: |
+          PRIVATE_DIR="${GITHUB_WORKSPACE}/MarathonRecomp-Upstream/MarathonRecompLib/private"
+          mkdir -p "${PRIVATE_DIR}"
+          TMP_DL="${RUNNER_TEMP}/ephemeral-game-inputs"
+          mkdir -p "${TMP_DL}"
+
+          if [ -n "${SECRET_ARCHIVE_URL}" ]; then
+            echo "==> Download effimero archivio privato da GitHub Secret GAME_FILES_ARCHIVE_URL..."
+            curl -fSL "${SECRET_ARCHIVE_URL}" -o "${TMP_DL}/inputs.archive"
+            if file "${TMP_DL}/inputs.archive" | grep -qi "zip"; then
+              unzip -o "${TMP_DL}/inputs.archive" -d "${TMP_DL}/extracted"
+            elif file "${TMP_DL}/inputs.archive" | grep -qiE "tar|gzip|xz|bzip2"; then
+              mkdir -p "${TMP_DL}/extracted"
+              tar -xf "${TMP_DL}/inputs.archive" -C "${TMP_DL}/extracted"
+            else
+              echo "::error::Archivio non riconosciuto. Carica un .zip o .tar.gz contenente default.xex, shader.arc e shader_lt.arc."
+              exit 1
+            fi
+            for REQ in default.xex shader.arc shader_lt.arc; do
+              FOUND="$(find "${TMP_DL}/extracted" -iname "${REQ}" -type f | head -n 1)"
+              if [ -z "${FOUND}" ]; then
+                echo "::error::File richiesto ${REQ} mancante nell'archivio privato!"
+                exit 1
+              fi
+              cp "${FOUND}" "${PRIVATE_DIR}/${REQ}"
+            done
+            rm -rf "${TMP_DL}"
+          elif [ -n "${SECRET_XEX_URL}" ] && [ -n "${SECRET_SHADER_URL}" ] && [ -n "${SECRET_SHADER_LT_URL}" ]; then
+            echo "==> Download effimero da singoli GitHub Secrets (DEFAULT_XEX_URL, SHADER_ARC_URL, SHADER_LT_ARC_URL)..."
+            curl -fSL "${SECRET_XEX_URL}" -o "${PRIVATE_DIR}/default.xex"
+            curl -fSL "${SECRET_SHADER_URL}" -o "${PRIVATE_DIR}/shader.arc"
+            curl -fSL "${SECRET_SHADER_LT_URL}" -o "${PRIVATE_DIR}/shader_lt.arc"
+          else
+            if [ -n "${SECRET_LEGACY_XBE_URL}" ]; then
+              echo "::warning::Rilevato DEFAULT_XBE_URL (formato OG Xbox usato in edgyios). MarathonRecomp (Xbox 360) richiede default.xex + shader.arc + shader_lt.arc!"
+            fi
+            echo "::error::Configura il GitHub Secret GAME_FILES_ARCHIVE_URL (zip con default.xex, shader.arc, shader_lt.arc) oppure i 3 secret individuali!"
+            exit 1
+          fi
+          ls -lh "${PRIVATE_DIR}/default.xex" "${PRIVATE_DIR}/shader.arc" "${PRIVATE_DIR}/shader_lt.arc"
+
+      - name: 5. Configura Xcode 16.2, Dipendenze macOS & Toolchain iOS
+        run: |
+          if [ -d "/Applications/Xcode_16.2.app/Contents/Developer" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+          fi
+          xcodebuild -version
+          brew install cmake ninja ldid pkg-config zstd nasm
+          # Native Metal 3 backend tramite Plume (nessun layer MoltenVK necessario)
+
+      - name: 6. Applica Patch Clean-Room iOS su MarathonRecomp v1.0.0
+        run: |
+          chmod +x ios-port/scripts/apply_ios_port.sh
+          ./ios-port/scripts/apply_ios_port.sh \
+            "${GITHUB_WORKSPACE}/MarathonRecomp-Upstream" \
+            "${GITHUB_WORKSPACE}/ios-port" \
+            "${GITHUB_WORKSPACE}/ios-deps"
+
+      - name: 7. Compila Host Tools nativi macOS arm64 (XenonRecomp, XenosRecomp iOS Metal, u8extract, file_to_c)
+        working-directory: MarathonRecomp-Upstream
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}/ios-deps/vcpkg-ios-stub
+        run: |
+          cmake -S . -B "${GITHUB_WORKSPACE}/build-host" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DMARATHON_IOS_HOST_TOOLS_ONLY=ON \
+            -DXENOS_RECOMP_METAL_IOS=ON
+          cmake --build "${GITHUB_WORKSPACE}/build-host" \
+            --target XenonRecomp XenosRecomp u8extract file_to_c --parallel
+          ls -lh "${GITHUB_WORKSPACE}/build-host/tools/"*/* || true
+
+      - name: 8. Cross-Compila FreeType e FFmpeg (XMA Decoder) statici per iOS arm64
+        run: |
+          IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          mkdir -p "${GITHUB_WORKSPACE}/ios-deps/freetype-src" "${GITHUB_WORKSPACE}/ios-deps/freetype-install"
+          curl -fSL "https://download.savannah.gnu.org/releases/freetype/freetype-${FREETYPE_VERSION}.tar.gz" -o /tmp/freetype.tar.gz
+          tar -xzf /tmp/freetype.tar.gz -C "${GITHUB_WORKSPACE}/ios-deps/freetype-src" --strip-components=1
+
+          cmake -S "${GITHUB_WORKSPACE}/ios-deps/freetype-src" -B "${GITHUB_WORKSPACE}/ios-deps/freetype-build" -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT="${IOS_SDK}" \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET}" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_PNG=ON -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_BROTLI=ON \
+            -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/ios-deps/freetype-install"
+          cmake --build "${GITHUB_WORKSPACE}/ios-deps/freetype-build" --parallel
+          cmake --install "${GITHUB_WORKSPACE}/ios-deps/freetype-build"
+
+          # Compila FFmpeg statico iOS arm64 (solo avcodec/avutil/swresample + XMA1/XMA2 decoder)
+          mkdir -p "${GITHUB_WORKSPACE}/ios-deps/ffmpeg-src" "${GITHUB_WORKSPACE}/ios-deps/ffmpeg-install"
+          curl -fSL "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz" -o /tmp/ffmpeg.tar.xz
+          tar -xf /tmp/ffmpeg.tar.xz -C "${GITHUB_WORKSPACE}/ios-deps/ffmpeg-src" --strip-components=1
+          cd "${GITHUB_WORKSPACE}/ios-deps/ffmpeg-src"
+          ./configure \
+            --prefix="${GITHUB_WORKSPACE}/ios-deps/ffmpeg-install" \
+            --enable-cross-compile --target-os=darwin --arch=arm64 \
+            --cc="xcrun -sdk iphoneos clang" \
+            --extra-cflags="-arch arm64 -miphoneos-version-min=${IOS_DEPLOYMENT_TARGET} -fPIC" \
+            --extra-ldflags="-arch arm64 -miphoneos-version-min=${IOS_DEPLOYMENT_TARGET}" \
+            --disable-programs --disable-doc --disable-network --disable-everything \
+            --disable-avdevice --disable-avformat --disable-avfilter --disable-swscale \
+            --enable-avcodec --enable-avutil --enable-swresample \
+            --enable-decoder=xma1,xma2,wmapro,wmav2,adpcm_ms,pcm_s16be,pcm_s16le \
+            --enable-static --disable-shared
+          make -j"$(sysctl -n hw.ncpu)"
+          make install
+
+      - name: 9. Cross-Compila MarathonRecomp v1.0.0 per iOS arm64 (Metal 3 Nativo)
+        working-directory: MarathonRecomp-Upstream
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}/ios-deps/vcpkg-ios-stub
+        run: |
+          CONFIG="${{ inputs.build_configuration || 'Release' }}"
+          IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          HOST_TOOLS="${GITHUB_WORKSPACE}/build-host/tools"
+
+          cmake -S . -B "${GITHUB_WORKSPACE}/build-ios" -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT="${IOS_SDK}" \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET}" \
+            -DCMAKE_BUILD_TYPE="${CONFIG}" \
+            -DMARATHON_IOS_PORT=ON \
+            -DMARATHON_RECOMP_METAL=ON \
+            -DMARATHON_HOST_XENON_RECOMP="${HOST_TOOLS}/XenonRecomp/XenonRecomp" \
+            -DMARATHON_HOST_XENOS_RECOMP="${HOST_TOOLS}/XenosRecomp/XenosRecomp" \
+            -DMARATHON_HOST_U8EXTRACT="${HOST_TOOLS}/u8extract/u8extract" \
+            -DMARATHON_HOST_FILE_TO_C="${HOST_TOOLS}/file_to_c/file_to_c" \
+            -DMARATHON_IOS_FFMPEG_ROOT="${GITHUB_WORKSPACE}/ios-deps/ffmpeg-install" \
+            -DMARATHON_IOS_FREETYPE_ROOT="${GITHUB_WORKSPACE}/ios-deps/freetype-install" \
+            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/ios-deps/freetype-install"
+
+          cmake --build "${GITHUB_WORKSPACE}/build-ios" --target MarathonRecomp --parallel
+
+      - name: 10. Impacchetta .ipa (Feather + LiveContainer) & Firma Ad-Hoc (ldid)
+        run: |
+          OUT_DIR="${GITHUB_WORKSPACE}/dist-ipa"
+          APP_DIR="${OUT_DIR}/Payload/MarathonRecomp.app"
+          mkdir -p "${APP_DIR}"
+
+          BIN_PATH="$(find "${GITHUB_WORKSPACE}/build-ios" -type f -name "MarathonRecomp" -perm +111 | head -n 1)"
+          if [ -z "${BIN_PATH}" ]; then
+            echo "::error::Binario arm64 MarathonRecomp non trovato!"
+            exit 1
+          fi
+
+          cp "${BIN_PATH}" "${APP_DIR}/MarathonRecomp"
+          chmod +x "${APP_DIR}/MarathonRecomp"
+          cp "${GITHUB_WORKSPACE}/ios-port/ios/Info.plist" "${APP_DIR}/Info.plist"
+          if [ -f "${GITHUB_WORKSPACE}/ios-port/ios/AppIcon.jpg" ]; then
+            sips -s format png "${GITHUB_WORKSPACE}/ios-port/ios/AppIcon.jpg" --out "${APP_DIR}/AppIcon60x60@3x.png" -z 180 180
+          fi
+
+          # Rimuovi eventuali file privati dalla VM prima del packaging
+          rm -rf "${GITHUB_WORKSPACE}/MarathonRecomp-Upstream/MarathonRecompLib/private"
+
+          # Firma ad-hoc con entitlements (increased-memory-limit + extended-virtual-addressing)
+          ldid -S"${GITHUB_WORKSPACE}/ios-port/ios/Entitlements.plist" "${APP_DIR}/MarathonRecomp"
+
+          cd "${OUT_DIR}"
+          IPA_NAME="Marathon06iOS-v1.0.0-iOS-arm64.ipa"
+          zip -qry "${IPA_NAME}" Payload
+          ls -lh "${IPA_NAME}"
+
+      - name: 11. Carica Artefatto .ipa
+        uses: actions/upload-artifact@v4
+        with:
+          name: Marathon06iOS-v1.0.0-iOS-arm64
+          path: dist-ipa/*.ipa
+          retention-days: 30

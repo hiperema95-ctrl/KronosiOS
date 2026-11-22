@@ -1,0 +1,6 @@
+{
+  "name": "MarathonRecomp iOS Studio",
+  "description": "Clean-room iOS & iPadOS (arm64 / Metal 3) porting workbench and repository generator for sonicnext-dev/MarathonRecomp v1.0.0 with direct XISO import, separate DLC launcher flow, and No-Mac GitHub Actions IPA builder.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
