@@ -120,6 +120,12 @@ test('Step 8/9 workflow and CMake resolve FreeType, FFmpeg 5 archives, NFD, CURL
   // CURLoption uses int to avoid -Wvarargs UB in curl_easy_setopt
   const curlHeader = files.find((f) => f.path === 'ios/include/curl/curl.h')!.content;
   assert.match(curlHeader, /typedef int CURLoption;/);
+
+  // Step 8 patches FFmpeg with sonicnext-dev/ffmpeg-core xmaframes decoder (AV_CODEC_ID_XMAFRAMES)
+  assert.match(workflow, /AV_CODEC_ID_XMAFRAMES/);
+  assert.match(workflow, /ff_xmaframes_decoder/);
+  assert.match(workflow, /--enable-decoder=xmaframes,/);
+  assert.match(workflow, /--enable-parser=vorbis,h264,aac,flac,opus,mpegaudio/);
 });
 
 test('config updates propagate dynamically into Info.plist, workflow YAML, and CMake', () => {

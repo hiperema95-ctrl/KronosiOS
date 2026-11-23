@@ -183,11 +183,153 @@ jobs:
           cmake --build "${GITHUB_WORKSPACE}/ios-deps/freetype-build" --parallel
           cmake --install "${GITHUB_WORKSPACE}/ios-deps/freetype-build"
 
-          # Compila FFmpeg statico iOS arm64 (avformat, avcodec, swscale, avutil, swresample + XMA1/XMA2 decoder)
+          # Compila FFmpeg statico iOS arm64 (avformat, avcodec, swscale, avutil, swresample + patch XMAFRAMES di sonicnext-dev/ffmpeg-core)
           mkdir -p "${GITHUB_WORKSPACE}/ios-deps/ffmpeg-src" "${GITHUB_WORKSPACE}/ios-deps/ffmpeg-install"
           curl -fSL "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz" -o /tmp/ffmpeg.tar.xz
           tar -xf /tmp/ffmpeg.tar.xz -C "${GITHUB_WORKSPACE}/ios-deps/ffmpeg-src" --strip-components=1
           cd "${GITHUB_WORKSPACE}/ios-deps/ffmpeg-src"
+
+          # Applica la patch 0008-xmaframes (AV_CODEC_ID_XMAFRAMES / ff_xmaframes_decoder) usata da MarathonRecomp/apu/xma_decoder.cpp
+          python3 - << 'PY_XMAFRAMES'
+          import pathlib
+
+          def patch_once(rel_path, anchor, replacement):
+              p = pathlib.Path(rel_path)
+              src = p.read_text(encoding="utf-8")
+              if "xmaframes" in src or "AV_CODEC_ID_XMAFRAMES" in src:
+                  return
+              assert anchor in src, f"Anchor not found in {rel_path}: {anchor!r}"
+              p.write_text(src.replace(anchor, replacement, 1), encoding="utf-8")
+              print(f"Patched {rel_path} for xmaframes decoder.")
+
+          patch_once(
+              "configure",
+              'xma2_decoder_select="wmapro_decoder"',
+              'xma2_decoder_select="wmapro_decoder"\nxmaframes_decoder_select="wmapro_decoder"'
+          )
+          patch_once(
+              "libavcodec/Makefile",
+              "OBJS-$(CONFIG_XMA2_DECODER)            += wmaprodec.o wma.o wma_common.o",
+              "OBJS-$(CONFIG_XMA2_DECODER)            += wmaprodec.o wma.o wma_common.o\nOBJS-$(CONFIG_XMAFRAMES_DECODER)       += wmaprodec.o wma.o wma_common.o"
+          )
+          patch_once(
+              "libavcodec/allcodecs.c",
+              "extern const FFCodec ff_xma2_decoder;",
+              "extern const FFCodec ff_xma2_decoder;\nextern const FFCodec ff_xmaframes_decoder;"
+          )
+          patch_once(
+              "libavcodec/codec_desc.c",
+              "    /* subtitle codecs */",
+              """    {
+                  .id        = AV_CODEC_ID_XMAFRAMES,
+                  .type      = AVMEDIA_TYPE_AUDIO,
+                  .name      = "xmaframes",
+                  .long_name = NULL_IF_CONFIG_SMALL("Xbox Media Audio raw frames"),
+                  .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSY,
+              },
+
+              /* subtitle codecs */"""
+          )
+          patch_once(
+              "libavcodec/codec_id.h",
+              "    /* subtitle codecs */",
+              "    AV_CODEC_ID_XMAFRAMES,\n\n    /* subtitle codecs */"
+          )
+
+          wma_path = pathlib.Path("libavcodec/wmaprodec.c")
+          wma_src = wma_path.read_text(encoding="utf-8")
+          if "AV_CODEC_ID_XMAFRAMES" not in wma_src:
+              init_anchor = "    } else if (avctx->codec_id == AV_CODEC_ID_WMAPRO && avctx->extradata_size >= 18) {"
+              assert init_anchor in wma_src, "decode_init anchor not found in wmaprodec.c"
+              wma_src = wma_src.replace(
+                  init_anchor,
+                  """    } else if (avctx->codec_id == AV_CODEC_ID_XMAFRAMES) {
+                  s->decode_flags    = 0x10d6;
+                  s->bits_per_sample = 16;
+                  channel_mask       = 0;
+                  s->nb_channels     = avctx->ch_layout.nb_channels;
+          """ + init_anchor,
+                  1
+              )
+              xmaframes_impl = r"""
+
+          static av_cold int xmaframes_decode_init(AVCodecContext* avctx)
+          {
+              WMAProDecodeCtx *s = avctx->priv_data;
+              avctx->block_align = 2048;
+              return decode_init(s, avctx, 0);
+          }
+
+          static av_cold int xmaframes_decode_end(AVCodecContext* avctx)
+          {
+              WMAProDecodeCtx *s = avctx->priv_data;
+              decode_end(s);
+              return 0;
+          }
+
+          static int xmaframes_decode_packet(AVCodecContext *avctx, AVFrame *frame,
+                                             int *got_frame_ptr, AVPacket *avpkt)
+          {
+              WMAProDecodeCtx *s = avctx->priv_data;
+              GetBitContext* gb = &s->gb;
+              int ret, xma_frame_len = 0;
+              uint8_t padding_start, padding_end = 0;
+
+              if (avpkt->size < 3) {
+                  av_log(avctx, AV_LOG_ERROR, "XMA Frame is too small, %d bytes\n", avpkt->size);
+                  return AVERROR_INVALIDDATA;
+              }
+
+              s->buf_bit_size = avpkt->size << 3;
+              init_get_bits(gb, avpkt->data, s->buf_bit_size);
+
+              padding_start = get_bits(gb, 3);
+              padding_end = get_bits(gb, 3);
+              skip_bits(gb, 2);
+
+              skip_bits(gb, padding_start);
+
+              xma_frame_len = show_bits(gb, s->log2_frame_size);
+              if (s->buf_bit_size != 8 + padding_start + xma_frame_len + padding_end) {
+                  av_log(avctx, AV_LOG_ERROR,
+                         "XMA Frame sizing incorrect: %d != 8 + (%d + %d + %d)\n",
+                         s->buf_bit_size, padding_start, xma_frame_len, padding_end);
+                  return AVERROR_INVALIDDATA;
+              }
+
+              save_bits(s, gb, xma_frame_len, 0);
+
+              frame->nb_samples = s->samples_per_frame;
+              if ((ret = ff_get_buffer(avctx, frame, 0)) < 0) {
+                  s->packet_loss = 1;
+                  return 0;
+              }
+
+              decode_frame(s, frame, got_frame_ptr);
+
+              return avpkt->size;
+          }
+
+          const FFCodec ff_xmaframes_decoder = {
+              .p.name         = "xmaframes",
+              CODEC_LONG_NAME("Xbox Media Audio raw frames"),
+              .p.type         = AVMEDIA_TYPE_AUDIO,
+              .p.id           = AV_CODEC_ID_XMAFRAMES,
+              .priv_data_size = sizeof(WMAProDecodeCtx),
+              .init           = xmaframes_decode_init,
+              .close          = xmaframes_decode_end,
+              FF_CODEC_DECODE_CB(xmaframes_decode_packet),
+              .flush          = wmapro_flush,
+              .p.capabilities = AV_CODEC_CAP_DR1,
+              .p.sample_fmts  = (const enum AVSampleFormat[]) { AV_SAMPLE_FMT_FLTP,
+                                                                AV_SAMPLE_FMT_NONE },
+              .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
+          };
+          """
+              wma_path.write_text(wma_src + xmaframes_impl, encoding="utf-8")
+              print("Patched libavcodec/wmaprodec.c with ff_xmaframes_decoder.")
+          PY_XMAFRAMES
+
           ./configure \
             --prefix="${GITHUB_WORKSPACE}/ios-deps/ffmpeg-install" \
             --enable-cross-compile --target-os=darwin --arch=arm64 \
@@ -197,17 +339,21 @@ jobs:
             --disable-programs --disable-doc --disable-network --disable-everything \
             --disable-avdevice --disable-avfilter \
             --enable-avformat --enable-avcodec --enable-swscale --enable-avutil --enable-swresample \
-            --enable-decoder=xma1,xma2,wmapro,wmav2,adpcm_ms,pcm_s16be,pcm_s16le,h264,mpeg4,wmv3,vc1 \
-            --enable-demuxer=mov,asf,wav,xmv,mpegps \
+            --enable-decoder=xmaframes,xma1,xma2,wmv3,wmav2,wmapro,theora,vorbis,h264,aac,flac,opus,mp3float,pcm_s16le,pcm_s24le,pcm_f32le,pcm_s16be,adpcm_ms,mpeg4,vc1 \
+            --enable-demuxer=asf,ogg,mov,wav,flac,mp3,xmv,mpegps \
+            --enable-parser=vorbis,h264,aac,flac,opus,mpegaudio \
             --enable-protocol=file \
             --enable-static --disable-shared
           make -j"$(sysctl -n hw.ncpu)"
           make install
 
-          # Verifica archivi statici FreeType e FFmpeg pronti per Step 9
+          # Verifica archivi statici FreeType, FFmpeg e decoder XMAFRAMES pronti per Step 9
           ls -lh "${GITHUB_WORKSPACE}/ios-deps/freetype-install/lib/libfreetype.a"
           ls -lh "${GITHUB_WORKSPACE}/ios-deps/freetype-install/include/freetype2/ft2build.h"
           ls -lh "${GITHUB_WORKSPACE}/ios-deps/ffmpeg-install/lib/"lib*.a
+          grep -q "AV_CODEC_ID_XMAFRAMES" "${GITHUB_WORKSPACE}/ios-deps/ffmpeg-install/include/libavcodec/codec_id.h"
+          nm "${GITHUB_WORKSPACE}/ios-deps/ffmpeg-install/lib/libavcodec.a" | grep -q "ff_xmaframes_decoder"
+          echo "OK: AV_CODEC_ID_XMAFRAMES e ff_xmaframes_decoder verificati in libavcodec.a!"
 
       - name: 9. Cross-Compila MarathonRecomp v1.0.0 per iOS arm64 (Metal 3 Nativo)
         working-directory: MarathonRecomp-Upstream
