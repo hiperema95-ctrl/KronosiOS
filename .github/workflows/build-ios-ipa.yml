@@ -428,57 +428,14 @@ jobs:
           cp "${BIN_PATH}" "${APP_DIR}/MarathonRecomp"
           chmod +x "${APP_DIR}/MarathonRecomp"
           cp "${GITHUB_WORKSPACE}/ios-port/ios/Info.plist" "${APP_DIR}/Info.plist"
-          plutil -replace CFBundleShortVersionString -string "${APP_VERSION}" "${APP_DIR}/Info.plist"
-          plutil -replace CFBundleVersion -string "${GITHUB_RUN_NUMBER:-1}" "${APP_DIR}/Info.plist"
-
-          # Genera icone iOS PNG + Assets.car (richiesto da Feather / SpringBoard per risoluzione nativa)
-          ICON_SRC=""
           if [ -f "${GITHUB_WORKSPACE}/ios-port/ios/AppIcon.jpg" ]; then
-            ICON_SRC="${GITHUB_WORKSPACE}/ios-port/ios/AppIcon.jpg"
-          elif [ -f "${GITHUB_WORKSPACE}/ios-port/ios/AppIcon.png" ]; then
-            ICON_SRC="${GITHUB_WORKSPACE}/ios-port/ios/AppIcon.png"
-          elif [ -f "${GITHUB_WORKSPACE}/MarathonRecomp-Upstream/MarathonRecompResources/images/game_icon_mac.png" ]; then
-            ICON_SRC="${GITHUB_WORKSPACE}/MarathonRecomp-Upstream/MarathonRecompResources/images/game_icon_mac.png"
-          fi
-          if [ -n "${ICON_SRC}" ]; then
-            ICON_TMP="/tmp/MarathonAppIconAssets/Assets.xcassets/AppIcon.appiconset"
-            rm -rf /tmp/MarathonAppIconAssets
-            mkdir -p "${ICON_TMP}"
-            sips -s format png -z 120 120 "${ICON_SRC}" --out "${APP_DIR}/AppIcon60x60@2x.png" >/dev/null
-            sips -s format png -z 180 180 "${ICON_SRC}" --out "${APP_DIR}/AppIcon60x60@3x.png" >/dev/null
-            sips -s format png -z 152 152 "${ICON_SRC}" --out "${APP_DIR}/AppIcon76x76@2x~ipad.png" >/dev/null
-            sips -s format png -z 167 167 "${ICON_SRC}" --out "${APP_DIR}/AppIcon83.5x83.5@2x~ipad.png" >/dev/null
-            sips -s format png -z 1024 1024 "${ICON_SRC}" --out "${APP_DIR}/AppIcon1024x1024.png" >/dev/null
-            cp "${APP_DIR}/AppIcon60x60@2x.png" "${ICON_TMP}/AppIcon60x60@2x.png"
-            cp "${APP_DIR}/AppIcon60x60@3x.png" "${ICON_TMP}/AppIcon60x60@3x.png"
-            cp "${APP_DIR}/AppIcon76x76@2x~ipad.png" "${ICON_TMP}/AppIcon76x76@2x~ipad.png"
-            cp "${APP_DIR}/AppIcon83.5x83.5@2x~ipad.png" "${ICON_TMP}/AppIcon83.5x83.5@2x~ipad.png"
-            cp "${APP_DIR}/AppIcon1024x1024.png" "${ICON_TMP}/AppIcon1024x1024.png"
-            cat << 'EOF_ICON_JSON' > "${ICON_TMP}/Contents.json"
-          {
-            "images": [
-              { "filename": "AppIcon60x60@2x.png", "idiom": "iphone", "scale": "2x", "size": "60x60" },
-              { "filename": "AppIcon60x60@3x.png", "idiom": "iphone", "scale": "3x", "size": "60x60" },
-              { "filename": "AppIcon76x76@2x~ipad.png", "idiom": "ipad", "scale": "2x", "size": "76x76" },
-              { "filename": "AppIcon83.5x83.5@2x~ipad.png", "idiom": "ipad", "scale": "2x", "size": "83.5x83.5" },
-              { "filename": "AppIcon1024x1024.png", "idiom": "ios-marketing", "scale": "1x", "size": "1024x1024" }
-            ],
-            "info": { "author": "xcode", "version": 1 }
-          }
-          EOF_ICON_JSON
-            xcrun actool --compile "${APP_DIR}" \
-              --platform iphoneos \
-              --minimum-deployment-target "${IOS_DEPLOYMENT_TARGET}" \
-              --app-icon AppIcon \
-              --output-partial-info-plist /tmp/icon-info.plist \
-              /tmp/MarathonAppIconAssets/Assets.xcassets || true
+            sips -s format png "${GITHUB_WORKSPACE}/ios-port/ios/AppIcon.jpg" --out "${APP_DIR}/AppIcon60x60@3x.png" -z 180 180
           fi
 
-          # Rimuovi eventuali file privati dalla VM e firme residue prima del packaging
+          # Rimuovi eventuali file privati dalla VM prima del packaging
           rm -rf "${GITHUB_WORKSPACE}/MarathonRecomp-Upstream/MarathonRecompLib/private"
-          rm -rf "${APP_DIR}/_CodeSignature"
 
-          # Firma ad-hoc con entitlements (Feather + LiveContainer)
+          # Firma ad-hoc con entitlements (increased-memory-limit + extended-virtual-addressing)
           ldid -S"${GITHUB_WORKSPACE}/ios-port/ios/Entitlements.plist" "${APP_DIR}/MarathonRecomp"
 
           cd "${OUT_DIR}"
