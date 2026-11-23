@@ -47,9 +47,34 @@ export function generateInfoPlist(p: MarathonIosTemplateParams): string {
     <key>CFBundleShortVersionString</key>
     <string>${p.appVersion}</string>
     <key>CFBundleVersion</key>
-    <string>${p.appVersion}</string>
+    <string>1</string>
     <key>CFBundleIconName</key>
     <string>AppIcon</string>
+    <key>CFBundleIcons</key>
+    <dict>
+        <key>CFBundlePrimaryIcon</key>
+        <dict>
+            <key>CFBundleIconName</key>
+            <string>AppIcon</string>
+            <key>CFBundleIconFiles</key>
+            <array>
+                <string>AppIcon60x60</string>
+            </array>
+        </dict>
+    </dict>
+    <key>CFBundleIcons~ipad</key>
+    <dict>
+        <key>CFBundlePrimaryIcon</key>
+        <dict>
+            <key>CFBundleIconName</key>
+            <string>AppIcon</string>
+            <key>CFBundleIconFiles</key>
+            <array>
+                <string>AppIcon60x60</string>
+                <string>AppIcon76x76</string>
+            </array>
+        </dict>
+    </dict>
     <key>LSRequiresIPhoneOS</key>
     <true/>
     <key>MinimumOSVersion</key>
@@ -60,10 +85,9 @@ export function generateInfoPlist(p: MarathonIosTemplateParams): string {
         <integer>2</integer>
     </array>
     <key>UILaunchScreen</key>
-    <dict>
-        <key>UIColorName</key>
-        <string>LaunchBackground</string>
-    </dict>
+    <dict/>
+    <key>UIApplicationSupportsIndirectInputEvents</key>
+    <true/>
     <key>UIRequiredDeviceCapabilities</key>
     <array>
         <string>arm64</string>
@@ -91,6 +115,8 @@ export function generateInfoPlist(p: MarathonIosTemplateParams): string {
     <${p.enableFileSharingApp ? 'true' : 'false'}/>
     <key>LSSupportsOpeningDocumentsInPlace</key>
     <${p.enableFileSharingApp ? 'true' : 'false'}/>
+    <key>UISupportsDocumentBrowser</key>
+    <false/>
     <key>GCSupportsControllerUserInteraction</key>
     <true/>
     <key>GCSupportedGameControllers</key>
@@ -132,8 +158,12 @@ export function generateEntitlementsPlist(p: MarathonIosTemplateParams): string 
     ? `    <key>com.apple.developer.kernel.increased-memory-limit</key>
     <true/>
     <key>com.apple.developer.kernel.extended-virtual-addressing</key>
+    <true/>
+    <key>get-task-allow</key>
     <true/>`
     : `    <key>com.apple.developer.kernel.extended-virtual-addressing</key>
+    <true/>
+    <key>get-task-allow</key>
     <true/>`;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -305,19 +335,32 @@ static char* DuplicateCString(const std::string& str) {
     // 1. Already inside Documents/ -> use directly with zero extra disk usage
     if ([url.path hasPrefix:docs.path]) {
         resolved = url.path;
+    } else if (self.pickFolder) {
+        // 2. Folder picker uses asCopy:NO -> retain security-scoped access directly without copying gigabytes on main thread
+        if (accessed) {
+            static NSMutableArray<NSURL *> *g_retainedScopedURLs = nil;
+            if (!g_retainedScopedURLs) g_retainedScopedURLs = [NSMutableArray array];
+            [g_retainedScopedURLs addObject:url];
+        }
+        resolved = url.path;
     } else {
         NSURL *destURL = [importDir URLByAppendingPathComponent:url.lastPathComponent];
         [fm removeItemAtURL:destURL error:nil];
         NSError *fsErr = nil;
 
-        // 2. With asCopy:YES iOS already creates an APFS CoW clone in tmp/Inbox;
+        // 3. With asCopy:YES iOS already creates an APFS CoW clone in tmp/Inbox;
         //    moveItemAtURL is O(1) instant even for 6.5 GB Xbox 360 .xiso images!
-        if (self.usedCopyMode && !self.pickFolder && [fm moveItemAtURL:url toURL:destURL error:&fsErr]) {
+        if (self.usedCopyMode && [fm moveItemAtURL:url toURL:destURL error:&fsErr]) {
             resolved = destURL.path;
         } else if ([fm copyItemAtURL:url toURL:destURL error:&fsErr]) {
             resolved = destURL.path;
         } else {
-            // 3. Fallback: keep security-scoped direct path (note: caller finishes before app exit)
+            // 4. Fallback: retain security-scoped URL directly
+            if (accessed) {
+                static NSMutableArray<NSURL *> *g_retainedScopedURLs = nil;
+                if (!g_retainedScopedURLs) g_retainedScopedURLs = [NSMutableArray array];
+                [g_retainedScopedURLs addObject:url];
+            }
             resolved = url.path;
         }
     }

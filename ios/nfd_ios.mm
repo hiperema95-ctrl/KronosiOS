@@ -72,19 +72,32 @@ static char* DuplicateCString(const std::string& str) {
     // 1. Already inside Documents/ -> use directly with zero extra disk usage
     if ([url.path hasPrefix:docs.path]) {
         resolved = url.path;
+    } else if (self.pickFolder) {
+        // 2. Folder picker uses asCopy:NO -> retain security-scoped access directly without copying gigabytes on main thread
+        if (accessed) {
+            static NSMutableArray<NSURL *> *g_retainedScopedURLs = nil;
+            if (!g_retainedScopedURLs) g_retainedScopedURLs = [NSMutableArray array];
+            [g_retainedScopedURLs addObject:url];
+        }
+        resolved = url.path;
     } else {
         NSURL *destURL = [importDir URLByAppendingPathComponent:url.lastPathComponent];
         [fm removeItemAtURL:destURL error:nil];
         NSError *fsErr = nil;
 
-        // 2. With asCopy:YES iOS already creates an APFS CoW clone in tmp/Inbox;
+        // 3. With asCopy:YES iOS already creates an APFS CoW clone in tmp/Inbox;
         //    moveItemAtURL is O(1) instant even for 6.5 GB Xbox 360 .xiso images!
-        if (self.usedCopyMode && !self.pickFolder && [fm moveItemAtURL:url toURL:destURL error:&fsErr]) {
+        if (self.usedCopyMode && [fm moveItemAtURL:url toURL:destURL error:&fsErr]) {
             resolved = destURL.path;
         } else if ([fm copyItemAtURL:url toURL:destURL error:&fsErr]) {
             resolved = destURL.path;
         } else {
-            // 3. Fallback: keep security-scoped direct path (note: caller finishes before app exit)
+            // 4. Fallback: retain security-scoped URL directly
+            if (accessed) {
+                static NSMutableArray<NSURL *> *g_retainedScopedURLs = nil;
+                if (!g_retainedScopedURLs) g_retainedScopedURLs = [NSMutableArray array];
+                [g_retainedScopedURLs addObject:url];
+            }
             resolved = url.path;
         }
     }
