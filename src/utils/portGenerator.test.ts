@@ -103,6 +103,23 @@ test('Step 8/9 workflow and CMake resolve FreeType, FFmpeg 5 archives, NFD, CURL
   assert.match(patcher, /MARATHON_PLUME_IOS_METAL_PATCH/);
   assert.match(patcher, /SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER/);
   assert.match(patcher, /MARATHON_IOS_NATIVE_METAL/);
+
+  // Auto-trigger workflow on git push to main/master + cancel superseded runs
+  assert.match(workflow, /on:\n\s+push:\n\s+branches:\n\s+- main\n\s+- master/);
+  assert.match(workflow, /concurrency:\n\s+group: \$\{\{ github\.workflow \}\}-\$\{\{ github\.ref \}\}\n\s+cancel-in-progress: true/);
+
+  // Full C++20 std::atomic_ref polyfill for trivially-copyable types (be<uint32_t>), operator=, wait, notify_one/all
+  assert.match(patcher, /__atomic_load\(ptr_, &out,/);
+  assert.match(patcher, /__atomic_store\(ptr_, &val,/);
+  assert.match(patcher, /__atomic_compare_exchange\(ptr_, &exp, &des,/);
+  assert.match(patcher, /T operator=\(T desired\) const noexcept/);
+  assert.match(patcher, /void wait\(T old,/);
+  assert.match(patcher, /void notify_one\(\) const noexcept/);
+  assert.match(patcher, /void notify_all\(\) const noexcept/);
+
+  // CURLoption uses int to avoid -Wvarargs UB in curl_easy_setopt
+  const curlHeader = files.find((f) => f.path === 'ios/include/curl/curl.h')!.content;
+  assert.match(curlHeader, /typedef int CURLoption;/);
 });
 
 test('config updates propagate dynamically into Info.plist, workflow YAML, and CMake', () => {

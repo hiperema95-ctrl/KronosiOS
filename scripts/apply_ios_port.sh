@@ -288,32 +288,146 @@ if sa.exists():
 #if defined(__APPLE__) && defined(__cplusplus) && !defined(__cpp_lib_atomic_ref) && !defined(MARATHON_IOS_ATOMIC_REF_POLYFILL)
 #define MARATHON_IOS_ATOMIC_REF_POLYFILL 1
 #include <atomic>
+#include <condition_variable>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <mutex>
 #include <type_traits>
 namespace std {
+namespace marathon_atomic_detail {
+struct WaitBucket {
+    std::mutex mtx;
+    std::condition_variable cv;
+};
+inline WaitBucket& get_wait_bucket(const void* addr) noexcept {
+    static auto* buckets = new WaitBucket[64]();
+    const auto idx = (reinterpret_cast<std::uintptr_t>(addr) >> 2) & 63u;
+    return buckets[idx];
+}
+constexpr memory_order fail_order_from_success(memory_order o) noexcept {
+    if (o == memory_order_acq_rel) return memory_order_acquire;
+    if (o == memory_order_release) return memory_order_relaxed;
+    return o;
+}
+} // namespace marathon_atomic_detail
+
 template <typename T>
 class atomic_ref {
+    static_assert(std::is_trivially_copyable_v<T>, "std::atomic_ref requires a trivially copyable type");
     T* ptr_;
 public:
+    using value_type = T;
+    static constexpr std::size_t required_alignment = alignof(T);
+    static constexpr bool is_always_lock_free = __atomic_always_lock_free(sizeof(T), nullptr);
+
     explicit atomic_ref(T& obj) noexcept : ptr_(&obj) {}
-    T load(memory_order m = memory_order_seq_cst) const noexcept { return __atomic_load_n(ptr_, static_cast<int>(m)); }
-    void store(T val, memory_order m = memory_order_seq_cst) const noexcept { __atomic_store_n(ptr_, val, static_cast<int>(m)); }
-    T exchange(T val, memory_order m = memory_order_seq_cst) const noexcept { return __atomic_exchange_n(ptr_, val, static_cast<int>(m)); }
-    bool compare_exchange_strong(T& exp, T des, memory_order s = memory_order_seq_cst, memory_order f = memory_order_seq_cst) const noexcept {
-        return __atomic_compare_exchange_n(ptr_, &exp, des, false, static_cast<int>(s), static_cast<int>(f));
+    atomic_ref(const atomic_ref&) noexcept = default;
+    atomic_ref& operator=(const atomic_ref&) = delete;
+
+    bool is_lock_free() const noexcept {
+        return __atomic_is_lock_free(sizeof(T), ptr_);
     }
-    bool compare_exchange_weak(T& exp, T des, memory_order s = memory_order_seq_cst, memory_order f = memory_order_seq_cst) const noexcept {
-        return __atomic_compare_exchange_n(ptr_, &exp, des, true, static_cast<int>(s), static_cast<int>(f));
+
+    T load(memory_order m = memory_order_seq_cst) const noexcept {
+        T out{};
+        __atomic_load(ptr_, &out, static_cast<int>(m));
+        return out;
     }
-    T fetch_add(T v, memory_order m = memory_order_seq_cst) const noexcept { return __atomic_fetch_add(ptr_, v, static_cast<int>(m)); }
-    T fetch_sub(T v, memory_order m = memory_order_seq_cst) const noexcept { return __atomic_fetch_sub(ptr_, v, static_cast<int>(m)); }
-    T fetch_or(T v, memory_order m = memory_order_seq_cst) const noexcept { return __atomic_fetch_or(ptr_, v, static_cast<int>(m)); }
-    T fetch_and(T v, memory_order m = memory_order_seq_cst) const noexcept { return __atomic_fetch_and(ptr_, v, static_cast<int>(m)); }
+
+    void store(T val, memory_order m = memory_order_seq_cst) const noexcept {
+        __atomic_store(ptr_, &val, static_cast<int>(m));
+    }
+
+    T operator=(T desired) const noexcept {
+        store(desired);
+        return desired;
+    }
+
+    operator T() const noexcept {
+        return load();
+    }
+
+    T exchange(T val, memory_order m = memory_order_seq_cst) const noexcept {
+        T prev{};
+        __atomic_exchange(ptr_, &val, &prev, static_cast<int>(m));
+        return prev;
+    }
+
+    bool compare_exchange_strong(T& exp, T des, memory_order s, memory_order f) const noexcept {
+        return __atomic_compare_exchange(ptr_, &exp, &des, false, static_cast<int>(s), static_cast<int>(f));
+    }
+
+    bool compare_exchange_strong(T& exp, T des, memory_order o = memory_order_seq_cst) const noexcept {
+        return compare_exchange_strong(exp, des, o, marathon_atomic_detail::fail_order_from_success(o));
+    }
+
+    bool compare_exchange_weak(T& exp, T des, memory_order s, memory_order f) const noexcept {
+        return __atomic_compare_exchange(ptr_, &exp, &des, true, static_cast<int>(s), static_cast<int>(f));
+    }
+
+    bool compare_exchange_weak(T& exp, T des, memory_order o = memory_order_seq_cst) const noexcept {
+        return compare_exchange_weak(exp, des, o, marathon_atomic_detail::fail_order_from_success(o));
+    }
+
+    void wait(T old, memory_order m = memory_order_seq_cst) const noexcept {
+        T cur = load(m);
+        if (std::memcmp(&cur, &old, sizeof(T)) != 0) return;
+        auto& bucket = marathon_atomic_detail::get_wait_bucket(ptr_);
+        std::unique_lock<std::mutex> lk(bucket.mtx);
+        for (;;) {
+            cur = load(m);
+            if (std::memcmp(&cur, &old, sizeof(T)) != 0) break;
+            bucket.cv.wait(lk);
+        }
+    }
+
+    void notify_one() const noexcept {
+        auto& bucket = marathon_atomic_detail::get_wait_bucket(ptr_);
+        {
+            std::lock_guard<std::mutex> lk(bucket.mtx);
+        }
+        bucket.cv.notify_one();
+    }
+
+    void notify_all() const noexcept {
+        auto& bucket = marathon_atomic_detail::get_wait_bucket(ptr_);
+        {
+            std::lock_guard<std::mutex> lk(bucket.mtx);
+        }
+        bucket.cv.notify_all();
+    }
+
+    T fetch_add(T v, memory_order m = memory_order_seq_cst) const noexcept requires (std::is_integral_v<T> && !std::is_same_v<T, bool>) {
+        return __atomic_fetch_add(ptr_, v, static_cast<int>(m));
+    }
+    T fetch_sub(T v, memory_order m = memory_order_seq_cst) const noexcept requires (std::is_integral_v<T> && !std::is_same_v<T, bool>) {
+        return __atomic_fetch_sub(ptr_, v, static_cast<int>(m));
+    }
+    T fetch_or(T v, memory_order m = memory_order_seq_cst) const noexcept requires (std::is_integral_v<T> && !std::is_same_v<T, bool>) {
+        return __atomic_fetch_or(ptr_, v, static_cast<int>(m));
+    }
+    T fetch_and(T v, memory_order m = memory_order_seq_cst) const noexcept requires (std::is_integral_v<T> && !std::is_same_v<T, bool>) {
+        return __atomic_fetch_and(ptr_, v, static_cast<int>(m));
+    }
+    T fetch_xor(T v, memory_order m = memory_order_seq_cst) const noexcept requires (std::is_integral_v<T> && !std::is_same_v<T, bool>) {
+        return __atomic_fetch_xor(ptr_, v, static_cast<int>(m));
+    }
+    T operator+=(T v) const noexcept requires (std::is_integral_v<T> && !std::is_same_v<T, bool>) { return fetch_add(v) + v; }
+    T operator-=(T v) const noexcept requires (std::is_integral_v<T> && !std::is_same_v<T, bool>) { return fetch_sub(v) - v; }
+    T operator|=(T v) const noexcept requires (std::is_integral_v<T> && !std::is_same_v<T, bool>) { return fetch_or(v) | v; }
+    T operator&=(T v) const noexcept requires (std::is_integral_v<T> && !std::is_same_v<T, bool>) { return fetch_and(v) & v; }
+    T operator^=(T v) const noexcept requires (std::is_integral_v<T> && !std::is_same_v<T, bool>) { return fetch_xor(v) ^ v; }
+    T operator++() const noexcept requires (std::is_integral_v<T> && !std::is_same_v<T, bool>) { return fetch_add(1) + 1; }
+    T operator++(int) const noexcept requires (std::is_integral_v<T> && !std::is_same_v<T, bool>) { return fetch_add(1); }
+    T operator--() const noexcept requires (std::is_integral_v<T> && !std::is_same_v<T, bool>) { return fetch_sub(1) - 1; }
+    T operator--(int) const noexcept requires (std::is_integral_v<T> && !std::is_same_v<T, bool>) { return fetch_sub(1); }
 };
 } // namespace std
 #endif
 '''
         sa.write_text(sa_src + polyfill, encoding="utf-8")
-        print("Patched stdafx.h with Apple libc++ std::atomic_ref polyfill.")
+        print("Patched stdafx.h with full C++20 Apple libc++ std::atomic_ref polyfill.")
 PY_PATHS
 
 echo "==> [7/8] Patch thirdparty/plume (UIKit al posto di AppKit/IOKit, Metal iOS API, ProMotion) + video.cpp + game_window.cpp..."

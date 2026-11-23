@@ -1,6 +1,10 @@
 name: Build Marathon06iOS iOS IPA (MarathonRecomp v1.0.0)
 
 on:
+  push:
+    branches:
+      - main
+      - master
   workflow_dispatch:
     inputs:
       build_configuration:
@@ -16,6 +20,10 @@ on:
         required: false
         default: "main"
         type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   IOS_DEPLOYMENT_TARGET: "17.0"

@@ -21,13 +21,14 @@ typedef enum {
     CURLE_HTTP_RETURNED_ERROR = 22
 } CURLcode;
 
-typedef enum {
+typedef int CURLoption;
+enum {
     CURLOPT_URL = 10002,
     CURLOPT_WRITEDATA = 10001,
     CURLOPT_USERAGENT = 10018,
     CURLOPT_WRITEFUNCTION = 20011,
     CURLOPT_FOLLOWLOCATION = 52
-} CURLoption;
+};
 
 #define CURL_GLOBAL_DEFAULT 3L
 
