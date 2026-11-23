@@ -2,6 +2,8 @@
 # Included at root CMakeLists.txt BEFORE thirdparty/ and tools/ so iOS cross-compilation
 # finds static FreeType, FFmpeg, NFD, CURL, and macOS host tools cleanly.
 
+option(MARATHON_IOS_PORT "Enable iOS arm64 clean-room port" ON)
+
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     message(STATUS "Configuring MarathonRecomp v1.0.0 for iOS arm64 (Deployment Target: 17.0)")
 

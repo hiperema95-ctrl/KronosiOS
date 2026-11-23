@@ -359,6 +359,10 @@ ${secretSection}
             -DFREETYPE_INCLUDE_DIR_freetype2="\${FREETYPE_ROOT}/include/freetype2" \\
             -DMARATHON_IOS_PORT=ON \\
             -DMARATHON_RECOMP_METAL=ON \\
+            -DSDL_HIDAPI_LIBUSB=OFF \\
+            -DSDL_HIDAPI_LIBUSB_SHARED=OFF \\${p.rendererBackend === 'metal3-native' ? `
+            -DSDL_VULKAN=OFF \\
+            -DSDL_RENDER_VULKAN=OFF \\` : ''}
             -DMARATHON_HOST_XENON_RECOMP="\${HOST_XENON}" \\
             -DMARATHON_HOST_XENOS_RECOMP="\${HOST_XENOS}" \\
             -DMARATHON_HOST_U8EXTRACT="\${HOST_U8}" \\
@@ -727,33 +731,273 @@ public:
         print("Patched stdafx.h with Apple libc++ std::atomic_ref polyfill.")
 PY_PATHS
 
-echo "==> [7/8] Patch thirdparty/plume per UIWindow / CAMetalLayer / ProMotion su iOS..."
-python3 - "\${UPSTREAM_DIR}/thirdparty/plume/plume_apple.mm" "\${UPSTREAM_DIR}/thirdparty/plume/CMakeLists.txt" << 'PY_PLUME'
+echo "==> [7/8] Patch thirdparty/plume (UIKit al posto di AppKit/IOKit, Metal iOS API, ProMotion) + video.cpp + game_window.cpp..."
+python3 - \\
+  "\${UPSTREAM_DIR}/thirdparty/plume/plume_apple.mm" \\
+  "\${UPSTREAM_DIR}/thirdparty/plume/plume_metal.cpp" \\
+  "\${UPSTREAM_DIR}/thirdparty/plume/CMakeLists.txt" \\
+  "\${UPSTREAM_DIR}/MarathonRecomp/ui/game_window.cpp" \\
+  "\${UPSTREAM_DIR}/MarathonRecomp/gpu/video.cpp" << 'PY_PLUME'
 import sys, pathlib
+
 mm = pathlib.Path(sys.argv[1])
+metal_cpp = pathlib.Path(sys.argv[2])
+cm = pathlib.Path(sys.argv[3])
+gw_cpp = pathlib.Path(sys.argv[4])
+vid_cpp = pathlib.Path(sys.argv[5])
+
+# 1. plume_apple.mm: replace AppKit/IOKit with full UIKit UIWindow / UIScreen (120Hz ProMotion) on iOS
 if mm.exists():
     src = mm.read_text(encoding="utf-8")
-    if "TARGET_OS_IOS" not in src:
-        ios_guard = '''#include <TargetConditionals.h>
+    if "MARATHON_PLUME_IOS_UIKIT" not in src:
+        ios_impl = r'''#include <TargetConditionals.h>
 #if TARGET_OS_IOS && !TARGET_OS_MACCATALYST
+#define MARATHON_PLUME_IOS_UIKIT 1
+#include "plume_apple.h"
+#import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
-#import <QuartzCore/CAMetalLayer.h>
-#endif
-'''
-        mm.write_text(ios_guard + src, encoding="utf-8")
-        print("Patched thirdparty/plume/plume_apple.mm with UIKit/CAMetalLayer iOS headers.")
+#import <QuartzCore/QuartzCore.h>
+#include <cmath>
 
-cm = pathlib.Path(sys.argv[2])
+namespace plume {
+
+RenderDeviceVendor getRenderDeviceVendor(uint64_t) {
+    return RenderDeviceVendor::APPLE;
+}
+
+static CGFloat getIOSScaleFactor(UIWindow *uiWindow) {
+#ifdef PLUME_APPLE_RETINA_ENABLED
+    UIScreen *screen = uiWindow ? uiWindow.screen : nil;
+    if (!screen) screen = [UIScreen mainScreen];
+    return screen ? screen.nativeScale : 1.0;
+#else
+    (void)uiWindow;
+    return 1.0;
+#endif
+}
+
+static void readIOSWindowMetrics(void *windowHandle, CocoaWindowAttributes &outAttrs, int &outRefreshRate) {
+    UIWindow *uiWindow = (__bridge UIWindow *)windowHandle;
+    UIScreen *screen = uiWindow ? uiWindow.screen : nil;
+    if (!screen) screen = [UIScreen mainScreen];
+    CGRect bounds = uiWindow ? uiWindow.bounds : (screen ? screen.bounds : CGRectMake(0, 0, 1280, 720));
+    CGFloat scale = getIOSScaleFactor(uiWindow);
+    outAttrs.x = (int)std::lround(bounds.origin.x);
+    outAttrs.y = (int)std::lround(bounds.origin.y);
+    outAttrs.width = (int)std::lround(bounds.size.width * scale);
+    outAttrs.height = (int)std::lround(bounds.size.height * scale);
+    outRefreshRate = screen ? (int)[screen maximumFramesPerSecond] : 60;
+    if (outRefreshRate <= 0) outRefreshRate = 60;
+}
+
+CocoaWindow::CocoaWindow(void *window)
+    : windowHandle(window), cachedRefreshRate(60) {
+    cachedAttributes = {0, 0, 1280, 720};
+    if ([NSThread isMainThread]) {
+        int hz = 60;
+        readIOSWindowMetrics(windowHandle, cachedAttributes, hz);
+        cachedRefreshRate.store(hz);
+    } else {
+        updateWindowAttributesInternal(true);
+        updateRefreshRateInternal(true);
+    }
+}
+
+CocoaWindow::~CocoaWindow() {}
+
+void CocoaWindow::updateWindowAttributesInternal(bool forceSync) {
+    auto updateBlock = ^{
+        CocoaWindowAttributes attrs{};
+        int hz = 60;
+        readIOSWindowMetrics(windowHandle, attrs, hz);
+        std::lock_guard<std::mutex> lock(attributesMutex);
+        cachedAttributes = attrs;
+        cachedRefreshRate.store(hz);
+    };
+    if (forceSync) {
+        dispatch_sync(dispatch_get_main_queue(), updateBlock);
+    } else {
+        dispatch_async(dispatch_get_main_queue(), updateBlock);
+    }
+}
+
+void CocoaWindow::updateRefreshRateInternal(bool forceSync) {
+    auto updateBlock = ^{
+        UIWindow *uiWindow = (__bridge UIWindow *)windowHandle;
+        UIScreen *screen = uiWindow ? uiWindow.screen : [UIScreen mainScreen];
+        int hz = screen ? (int)[screen maximumFramesPerSecond] : 60;
+        cachedRefreshRate.store(hz > 0 ? hz : 60);
+    };
+    if (forceSync) {
+        dispatch_sync(dispatch_get_main_queue(), updateBlock);
+    } else {
+        dispatch_async(dispatch_get_main_queue(), updateBlock);
+    }
+}
+
+void CocoaWindow::getWindowAttributes(CocoaWindowAttributes *attributes) const {
+    if (!attributes) return;
+    if ([NSThread isMainThread]) {
+        CocoaWindowAttributes attrs{};
+        int hz = 60;
+        readIOSWindowMetrics(windowHandle, attrs, hz);
+        std::lock_guard<std::mutex> lock(attributesMutex);
+        const_cast<CocoaWindow *>(this)->cachedAttributes = attrs;
+        const_cast<CocoaWindow *>(this)->cachedRefreshRate.store(hz);
+        *attributes = attrs;
+    } else {
+        {
+            std::lock_guard<std::mutex> lock(attributesMutex);
+            *attributes = cachedAttributes;
+        }
+        const_cast<CocoaWindow *>(this)->updateWindowAttributesInternal(false);
+    }
+}
+
+int CocoaWindow::getRefreshRate() const {
+    if ([NSThread isMainThread]) {
+        UIWindow *uiWindow = (__bridge UIWindow *)windowHandle;
+        UIScreen *screen = uiWindow ? uiWindow.screen : [UIScreen mainScreen];
+        int hz = screen ? (int)[screen maximumFramesPerSecond] : 60;
+        if (hz <= 0) hz = 60;
+        const_cast<CocoaWindow *>(this)->cachedRefreshRate.store(hz);
+        return hz;
+    }
+    int rate = cachedRefreshRate.load();
+    const_cast<CocoaWindow *>(this)->updateRefreshRateInternal(false);
+    return rate > 0 ? rate : 60;
+}
+
+void CocoaWindow::toggleFullscreen() {
+    // iOS apps always run fullscreen inside UIWindowScene.
+}
+
+} // namespace plume
+#else
+'''
+        mm.write_text(ios_impl + src + "\\n#endif\\n", encoding="utf-8")
+        print("Patched thirdparty/plume/plume_apple.mm with native UIKit UIWindow/ProMotion implementation for iOS.")
+
+# 2. plume_metal.cpp: guard macOS-only Metal APIs (displaySyncEnabled, MTL::CopyAllDevices)
+if metal_cpp.exists():
+    msrc = metal_cpp.read_text(encoding="utf-8")
+    if "MARATHON_PLUME_IOS_METAL_PATCH" not in msrc:
+        msrc = "// MARATHON_PLUME_IOS_METAL_PATCH\\n" + msrc
+        msrc = msrc.replace(
+            "        layer->setDisplaySyncEnabled(vsyncEnabled);",
+            "#if PLUME_MACOS\\n        layer->setDisplaySyncEnabled(vsyncEnabled);\\n#else\\n        (void)vsyncEnabled;\\n#endif"
+        )
+        msrc = msrc.replace(
+            "        return layer->displaySyncEnabled();",
+            "#if PLUME_MACOS\\n        return layer->displaySyncEnabled();\\n#else\\n        return true;\\n#endif"
+        )
+        old_dev_sel = '''        // Device Selection
+        NS::Array* devices = MTL::CopyAllDevices();
+        MTL::Device *preferredDevice = nullptr;
+        for (NS::UInteger i = 0; i < devices->count(); i++) {
+            MTL::Device *device = (MTL::Device *)devices->object(i);
+            const NS::String *preferredDeviceNameNS = NS::String::string(preferredDeviceName.c_str(), NS::UTF8StringEncoding);
+            if (device->name()->isEqualToString(preferredDeviceNameNS)) {
+                preferredDevice = device;
+                break;
+            }
+        }
+
+        mtl = preferredDevice ? preferredDevice : MTL::CreateSystemDefaultDevice();
+        mtl->retain();
+        devices->release();'''
+        new_dev_sel = '''        // Device Selection
+#if PLUME_MACOS
+        NS::Array* devices = MTL::CopyAllDevices();
+        MTL::Device *preferredDevice = nullptr;
+        for (NS::UInteger i = 0; i < devices->count(); i++) {
+            MTL::Device *device = (MTL::Device *)devices->object(i);
+            const NS::String *preferredDeviceNameNS = NS::String::string(preferredDeviceName.c_str(), NS::UTF8StringEncoding);
+            if (device->name()->isEqualToString(preferredDeviceNameNS)) {
+                preferredDevice = device;
+                break;
+            }
+        }
+
+        mtl = preferredDevice ? preferredDevice : MTL::CreateSystemDefaultDevice();
+        mtl->retain();
+        devices->release();
+#else
+        (void)preferredDeviceName;
+        mtl = MTL::CreateSystemDefaultDevice();
+        if (mtl) {
+            mtl->retain();
+        }
+#endif'''
+        if old_dev_sel in msrc:
+            msrc = msrc.replace(old_dev_sel, new_dev_sel, 1)
+
+        old_iface_devs = '''        // Fill device names.
+        const NS::Array* devices = MTL::CopyAllDevices();
+        for (NS::UInteger i = 0; i < devices->count(); i++) {
+            NS::String* deviceName = ((MTL::Device *)devices->object(i))->name();
+            deviceNames.push_back(std::string(deviceName->utf8String()));
+        }'''
+        new_iface_devs = '''        // Fill device names.
+#if PLUME_MACOS
+        const NS::Array* devices = MTL::CopyAllDevices();
+        for (NS::UInteger i = 0; i < devices->count(); i++) {
+            NS::String* deviceName = ((MTL::Device *)devices->object(i))->name();
+            deviceNames.push_back(std::string(deviceName->utf8String()));
+        }
+#else
+        MTL::Device* defaultDev = MTL::CreateSystemDefaultDevice();
+        if (defaultDev) {
+            deviceNames.push_back(std::string(defaultDev->name()->utf8String()));
+            defaultDev->release();
+        }
+#endif'''
+        if old_iface_devs in msrc:
+            msrc = msrc.replace(old_iface_devs, new_iface_devs, 1)
+
+        metal_cpp.write_text(msrc, encoding="utf-8")
+        print("Patched thirdparty/plume/plume_metal.cpp for iOS Metal (CreateSystemDefaultDevice + displaySyncEnabled guard).")
+
+# 3. thirdparty/plume/CMakeLists.txt: skip plume_vulkan.cpp on iOS when building pure Metal 3
 if cm.exists():
     csrc = cm.read_text(encoding="utf-8")
     if 'NOT CMAKE_SYSTEM_NAME STREQUAL "iOS"' not in csrc and "plume_vulkan.cpp" in csrc:
         csrc = csrc.replace(
-            "plume_vulkan.cpp\\n    plume_vulkan.h",
-            ""
+            "set(PLUME_SOURCES\\n    plume_vulkan.cpp\\n    plume_vulkan.h\\n)",
+            'set(PLUME_SOURCES)\\nif(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")\\n    list(APPEND PLUME_SOURCES plume_vulkan.cpp plume_vulkan.h)\\nendif()'
         )
-        csrc += '\\nif(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")\\n    target_sources(plume PRIVATE plume_vulkan.cpp plume_vulkan.h)\\nendif()\\n'
         cm.write_text(csrc, encoding="utf-8")
         print("Patched thirdparty/plume/CMakeLists.txt to use pure Metal 3 on iOS.")
+
+# 4. MarathonRecomp/ui/game_window.cpp: use SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER on iOS
+if gw_cpp.exists():
+    gsrc = gw_cpp.read_text(encoding="utf-8")
+    if "SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER" not in gsrc:
+        gsrc = gsrc.replace(
+            "#elif defined(__APPLE__)\\n    s_renderWindow.window = SDL_GetPointerProperty(SDL_GetWindowProperties(s_pWindow), SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr);\\n    s_renderWindow.view = SDL_Metal_GetLayer(SDL_Metal_CreateView(s_pWindow));",
+            "#elif defined(MARATHON_IOS_PORT)\\n    s_renderWindow.window = SDL_GetPointerProperty(SDL_GetWindowProperties(s_pWindow), SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER, nullptr);\\n    s_renderWindow.view = SDL_Metal_GetLayer(SDL_Metal_CreateView(s_pWindow));\\n#elif defined(__APPLE__)\\n    s_renderWindow.window = SDL_GetPointerProperty(SDL_GetWindowProperties(s_pWindow), SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr);\\n    s_renderWindow.view = SDL_Metal_GetLayer(SDL_Metal_CreateView(s_pWindow));"
+        )
+        gw_cpp.write_text(gsrc, encoding="utf-8")
+        print("Patched MarathonRecomp/ui/game_window.cpp for UIKit UIWindow handle on iOS.")
+
+# 5. MarathonRecomp/gpu/video.cpp: use Metal 3 exclusively on iOS native Metal (no CreateVulkanInterface link dep)
+if vid_cpp.exists():
+    vsrc = vid_cpp.read_text(encoding="utf-8")
+    if "MARATHON_IOS_NATIVE_METAL" not in vsrc:
+        vsrc = vsrc.replace(
+            "#elif defined(MARATHON_RECOMP_METAL)\\n                g_backend = (interfaceFunction == CreateVulkanInterface) ? Backend::VULKAN : Backend::METAL;",
+            "#elif defined(MARATHON_IOS_NATIVE_METAL)\\n                g_backend = Backend::METAL;\\n#elif defined(MARATHON_RECOMP_METAL)\\n                g_backend = (interfaceFunction == CreateVulkanInterface) ? Backend::VULKAN : Backend::METAL;"
+        )
+        vsrc = vsrc.replace(
+            "#elif defined(MARATHON_RECOMP_METAL)\\n    g_backend = Config::GraphicsAPI == EGraphicsAPI::Vulkan ? Backend::VULKAN : Backend::METAL;",
+            "#elif defined(MARATHON_IOS_NATIVE_METAL)\\n    g_backend = Backend::METAL;\\n#elif defined(MARATHON_RECOMP_METAL)\\n    g_backend = Config::GraphicsAPI == EGraphicsAPI::Vulkan ? Backend::VULKAN : Backend::METAL;"
+        )
+        vsrc = vsrc.replace(
+            "#elif defined(MARATHON_RECOMP_METAL)\\n    interfaceFunctions.push_back((g_backend == Backend::VULKAN) ? CreateVulkanInterface : CreateMetalInterface);\\n    interfaceFunctions.push_back((g_backend == Backend::VULKAN) ? CreateMetalInterface : CreateVulkanInterface);",
+            "#elif defined(MARATHON_IOS_NATIVE_METAL)\\n    interfaceFunctions.push_back(CreateMetalInterface);\\n#elif defined(MARATHON_RECOMP_METAL)\\n    interfaceFunctions.push_back((g_backend == Backend::VULKAN) ? CreateVulkanInterface : CreateMetalInterface);\\n    interfaceFunctions.push_back((g_backend == Backend::VULKAN) ? CreateMetalInterface : CreateVulkanInterface);"
+        )
+        vid_cpp.write_text(vsrc, encoding="utf-8")
+        print("Patched MarathonRecomp/gpu/video.cpp for pure Metal 3 backend on iOS.")
 PY_PLUME
 
 echo "==> [8/8] Integrazione CMake iOS (FreeType/FFmpeg/NFD/CURL, Host Tools Override, Metal iOS SDK, SDL_main)..."

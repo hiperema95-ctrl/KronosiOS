@@ -245,6 +245,10 @@ jobs:
             -DFREETYPE_INCLUDE_DIR_freetype2="${FREETYPE_ROOT}/include/freetype2" \
             -DMARATHON_IOS_PORT=ON \
             -DMARATHON_RECOMP_METAL=ON \
+            -DSDL_HIDAPI_LIBUSB=OFF \
+            -DSDL_HIDAPI_LIBUSB_SHARED=OFF \
+            -DSDL_VULKAN=OFF \
+            -DSDL_RENDER_VULKAN=OFF \
             -DMARATHON_HOST_XENON_RECOMP="${HOST_XENON}" \
             -DMARATHON_HOST_XENOS_RECOMP="${HOST_XENOS}" \
             -DMARATHON_HOST_U8EXTRACT="${HOST_U8}" \

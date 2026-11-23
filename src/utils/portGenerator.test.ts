@@ -96,6 +96,13 @@ test('Step 8/9 workflow and CMake resolve FreeType, FFmpeg 5 archives, NFD, CURL
   assert.match(patcher, /MarathonIOS_OpenURL/);
   assert.match(patcher, /SDL3\/SDL_main\.h/);
   assert.match(platformMm, /void CheckConsole\(\)/);
+
+  // Plume iOS UIKit (no AppKit/IOKit), Metal CreateSystemDefaultDevice, UIWindow handle, pure Metal 3, no macOS libusb
+  assert.match(workflow, /SDL_HIDAPI_LIBUSB=OFF/);
+  assert.match(patcher, /MARATHON_PLUME_IOS_UIKIT/);
+  assert.match(patcher, /MARATHON_PLUME_IOS_METAL_PATCH/);
+  assert.match(patcher, /SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER/);
+  assert.match(patcher, /MARATHON_IOS_NATIVE_METAL/);
 });
 
 test('config updates propagate dynamically into Info.plist, workflow YAML, and CMake', () => {
