@@ -128,6 +128,8 @@ bool StartProcess(const std::filesystem::path&, const std::vector<std::string>&,
     return false;
 }
 
+void CheckConsole() {}
+
 void ShowConsole() {}
 
 } // namespace os::process

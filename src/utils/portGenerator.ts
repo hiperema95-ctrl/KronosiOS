@@ -1,5 +1,6 @@
 import {
   generateCMakeFiles,
+  generateCurlStubFiles,
   generateEntitlementsPlist,
   generateInfoPlist,
   generateIosPlatformMm,
@@ -390,6 +391,7 @@ export function generateModProfileJson(mods: ModProfileEntry[]): {
 export function generatePortRepository(config: PortBuildConfig): GeneratedRepositoryFile[] {
   const { marathonIosCmake, iosPortTargetCmake } = generateCMakeFiles(config);
   const { header: modMgrH, mm: modMgrMm } = generateModManagerFiles();
+  const { header: curlH, mm: curlMm } = generateCurlStubFiles();
 
   return [
     {
@@ -408,7 +410,7 @@ export function generatePortRepository(config: PortBuildConfig): GeneratedReposi
       language: 'bash',
       executable: true,
       description:
-        'Applica le patch iOS su MarathonRecomp v1.0.0: XISO streaming pread(), launcher XISO diretto + DLC separati, Metal iOS SDK, Plume UIKit e std::atomic_ref.',
+        'Applica le patch iOS su MarathonRecomp v1.0.0: FreeType/FFmpeg/NFD/CURL, XISO streaming pread(), launcher XISO diretto + DLC separati, Metal iOS SDK e SDL_main.',
       content: generateApplyIosPortScript(config),
     },
     {
@@ -428,6 +430,24 @@ export function generatePortRepository(config: PortBuildConfig): GeneratedReposi
       description:
         'API C compatibili con MarathonRecomp/ui/installer_wizard.cpp (inclusi NFD_OpenDialogMultipleN e PathSet per DLC).',
       content: generateNfdHeader(),
+    },
+    {
+      path: 'ios/curl_ios_stub.mm',
+      title: 'Layer libcurl -> NSURLSession iOS',
+      category: 'ios-native',
+      language: 'objc',
+      description:
+        'Sostituisce libcurl desktop con NSURLSession nativo iOS per UpdateChecker e sostituisce std::system() con UIApplication openURL.',
+      content: curlMm,
+    },
+    {
+      path: 'ios/include/curl/curl.h',
+      title: 'Header libcurl Compat iOS',
+      category: 'ios-native',
+      language: 'cpp',
+      description:
+        'Header compatibile curl/curl.h richiesto da MarathonRecomp/install/update_checker.cpp su iOS.',
+      content: curlH,
     },
     {
       path: 'ios/os/ios_platform.mm',

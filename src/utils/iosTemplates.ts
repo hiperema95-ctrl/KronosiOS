@@ -740,6 +740,8 @@ bool StartProcess(const std::filesystem::path&, const std::vector<std::string>&,
     return false;
 }
 
+void CheckConsole() {}
+
 void ShowConsole() {}
 
 } // namespace os::process
@@ -1278,6 +1280,207 @@ extern "C" void MarathonIOS_PresentModManager(void) {
   return { header, mm };
 }
 
+export function generateCurlStubFiles(): { header: string; mm: string } {
+  const header = `// Clean-room libcurl compatibility header for MarathonRecomp v1.0.0 on iOS
+// Backed by native NSURLSession in ios/curl_ios_stub.mm (used by install/update_checker.cpp)
+#pragma once
+
+#include <stddef.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+typedef void CURL;
+
+typedef enum {
+    CURLE_OK = 0,
+    CURLE_UNSUPPORTED_PROTOCOL = 1,
+    CURLE_FAILED_INIT = 2,
+    CURLE_URL_MALFORMAT = 3,
+    CURLE_COULDNT_CONNECT = 7,
+    CURLE_OUT_OF_MEMORY = 27,
+    CURLE_OPERATION_TIMEDOUT = 28,
+    CURLE_HTTP_RETURNED_ERROR = 22
+} CURLcode;
+
+typedef enum {
+    CURLOPT_URL = 10002,
+    CURLOPT_WRITEDATA = 10001,
+    CURLOPT_USERAGENT = 10018,
+    CURLOPT_WRITEFUNCTION = 20011,
+    CURLOPT_FOLLOWLOCATION = 52
+} CURLoption;
+
+#define CURL_GLOBAL_DEFAULT 3L
+
+typedef size_t (*curl_write_callback)(void* contents, size_t size, size_t nmemb, void* userdata);
+
+CURLcode curl_global_init(long flags);
+void curl_global_cleanup(void);
+CURL* curl_easy_init(void);
+CURLcode curl_easy_setopt(CURL* handle, CURLoption option, ...);
+CURLcode curl_easy_perform(CURL* handle);
+void curl_easy_cleanup(CURL* handle);
+const char* curl_easy_strerror(CURLcode code);
+
+// Replaces unavailable std::system("open ...") in UpdateChecker::visitWebsite() on iOS
+void MarathonIOS_OpenURL(const char* url);
+
+#ifdef __cplusplus
+}
+#endif
+`;
+
+  const mm = `// Clean-room NSURLSession-backed libcurl compatibility layer for iOS 17+
+// Eliminates desktop libcurl dependency while keeping UpdateChecker functional on iOS.
+
+#import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
+#include <curl/curl.h>
+
+#include <cstdarg>
+#include <string>
+
+struct MarathonCurlHandle {
+    std::string url;
+    std::string userAgent;
+    curl_write_callback writeFn = nullptr;
+    void* writeData = nullptr;
+    long followLocation = 1;
+};
+
+extern "C" {
+
+CURLcode curl_global_init(long) {
+    return CURLE_OK;
+}
+
+void curl_global_cleanup(void) {}
+
+CURL* curl_easy_init(void) {
+    return new MarathonCurlHandle();
+}
+
+CURLcode curl_easy_setopt(CURL* handle, CURLoption option, ...) {
+    if (!handle) return CURLE_FAILED_INIT;
+    auto* ctx = static_cast<MarathonCurlHandle*>(handle);
+    va_list args;
+    va_start(args, option);
+    switch (option) {
+        case CURLOPT_URL: {
+            const char* s = va_arg(args, const char*);
+            ctx->url = s ? s : "";
+            break;
+        }
+        case CURLOPT_USERAGENT: {
+            const char* s = va_arg(args, const char*);
+            ctx->userAgent = s ? s : "";
+            break;
+        }
+        case CURLOPT_WRITEFUNCTION: {
+            ctx->writeFn = va_arg(args, curl_write_callback);
+            break;
+        }
+        case CURLOPT_WRITEDATA: {
+            ctx->writeData = va_arg(args, void*);
+            break;
+        }
+        case CURLOPT_FOLLOWLOCATION: {
+            ctx->followLocation = va_arg(args, long);
+            break;
+        }
+        default:
+            break;
+    }
+    va_end(args);
+    return CURLE_OK;
+}
+
+CURLcode curl_easy_perform(CURL* handle) {
+    if (!handle) return CURLE_FAILED_INIT;
+    auto* ctx = static_cast<MarathonCurlHandle*>(handle);
+    if (ctx->url.empty()) return CURLE_URL_MALFORMAT;
+
+    @autoreleasepool {
+        NSString* urlStr = [NSString stringWithUTF8String:ctx->url.c_str()];
+        NSURL* nsUrl = [NSURL URLWithString:urlStr];
+        if (!nsUrl) return CURLE_URL_MALFORMAT;
+
+        NSMutableURLRequest* req = [NSMutableURLRequest requestWithURL:nsUrl];
+        req.timeoutInterval = 12.0;
+        if (!ctx->userAgent.empty()) {
+            NSString* ua = [NSString stringWithUTF8String:ctx->userAgent.c_str()];
+            [req setValue:ua forHTTPHeaderField:@"User-Agent"];
+        }
+
+        __block NSData* responseData = nil;
+        __block NSError* responseErr = nil;
+        __block NSInteger statusCode = 0;
+        dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+
+        NSURLSessionDataTask* task = [[NSURLSession sharedSession]
+            dataTaskWithRequest:req
+              completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
+                  responseData = data;
+                  responseErr = error;
+                  if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
+                      statusCode = ((NSHTTPURLResponse*)response).statusCode;
+                  }
+                  dispatch_semaphore_signal(sem);
+              }];
+        [task resume];
+
+        if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC))) != 0) {
+            [task cancel];
+            return CURLE_OPERATION_TIMEDOUT;
+        }
+
+        if (responseErr || !responseData) {
+            return CURLE_COULDNT_CONNECT;
+        }
+        if (statusCode >= 400) {
+            return CURLE_HTTP_RETURNED_ERROR;
+        }
+
+        if (ctx->writeFn && responseData.length > 0) {
+            ctx->writeFn(const_cast<void*>(responseData.bytes), 1, responseData.length, ctx->writeData);
+        }
+        return CURLE_OK;
+    }
+}
+
+void curl_easy_cleanup(CURL* handle) {
+    delete static_cast<MarathonCurlHandle*>(handle);
+}
+
+const char* curl_easy_strerror(CURLcode code) {
+    switch (code) {
+        case CURLE_OK: return "No error";
+        case CURLE_URL_MALFORMAT: return "Malformed URL";
+        case CURLE_COULDNT_CONNECT: return "Couldn't connect to server";
+        case CURLE_OPERATION_TIMEDOUT: return "Operation timed out";
+        case CURLE_HTTP_RETURNED_ERROR: return "HTTP server returned error";
+        default: return "iOS NSURLSession request error";
+    }
+}
+
+void MarathonIOS_OpenURL(const char* url) {
+    if (!url || !url[0]) return;
+    NSString* urlStr = [NSString stringWithUTF8String:url];
+    NSURL* nsUrl = [NSURL URLWithString:urlStr];
+    if (!nsUrl) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[UIApplication sharedApplication] openURL:nsUrl options:@{} completionHandler:nil];
+    });
+}
+
+} // extern "C"
+`;
+
+  return { header, mm };
+}
+
 export function generateCMakeFiles(p: MarathonIosTemplateParams): {
   marathonIosCmake: string;
   iosPortTargetCmake: string;
@@ -1289,10 +1492,33 @@ export function generateCMakeFiles(p: MarathonIosTemplateParams): {
       : 'MARATHON_IOS_MOLTENVK=1';
 
   const marathonIosCmake = `# Clean-room iOS arm64 CMake configuration for sonicnext-dev/MarathonRecomp v1.0.0
-# Included automatically by MarathonRecomp/CMakeLists.txt when MARATHON_IOS_PORT is ON
+# Included at root CMakeLists.txt BEFORE thirdparty/ and tools/ so iOS cross-compilation
+# finds static FreeType, FFmpeg, NFD, CURL, and macOS host tools cleanly.
 
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     message(STATUS "Configuring MarathonRecomp v1.0.0 for iOS arm64 (Deployment Target: ${p.deploymentTarget})")
+
+    # Allow find_package(Freetype) and static iOS deps outside Xcode iPhoneOS.sdk sysroot
+    set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)
+    set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY BOTH)
+    set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE BOTH)
+    set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+
+    if(DEFINED MARATHON_IOS_FREETYPE_ROOT AND EXISTS "\${MARATHON_IOS_FREETYPE_ROOT}/lib/libfreetype.a")
+        list(APPEND CMAKE_FIND_ROOT_PATH "\${MARATHON_IOS_FREETYPE_ROOT}")
+        list(APPEND CMAKE_PREFIX_PATH "\${MARATHON_IOS_FREETYPE_ROOT}")
+        set(FREETYPE_LIBRARY "\${MARATHON_IOS_FREETYPE_ROOT}/lib/libfreetype.a" CACHE FILEPATH "Static iOS FreeType library" FORCE)
+        set(FREETYPE_INCLUDE_DIRS "\${MARATHON_IOS_FREETYPE_ROOT}/include/freetype2" CACHE PATH "Static iOS FreeType headers" FORCE)
+        set(FREETYPE_INCLUDE_DIR_ft2build "\${MARATHON_IOS_FREETYPE_ROOT}/include/freetype2" CACHE PATH "FreeType ft2build.h dir" FORCE)
+        set(FREETYPE_INCLUDE_DIR_freetype2 "\${MARATHON_IOS_FREETYPE_ROOT}/include/freetype2" CACHE PATH "FreeType freetype2 headers dir" FORCE)
+        set(MARATHON_IOS_FREETYPE_LIB "\${MARATHON_IOS_FREETYPE_ROOT}/lib/libfreetype.a")
+        message(STATUS "Using static iOS FreeType: \${MARATHON_IOS_FREETYPE_LIB}")
+    endif()
+
+    if(DEFINED MARATHON_IOS_FFMPEG_ROOT AND EXISTS "\${MARATHON_IOS_FFMPEG_ROOT}/include/libavcodec/avcodec.h")
+        list(APPEND CMAKE_FIND_ROOT_PATH "\${MARATHON_IOS_FFMPEG_ROOT}")
+        message(STATUS "Using static iOS FFmpeg (XMA decoder): \${MARATHON_IOS_FFMPEG_ROOT}")
+    endif()
 
     add_compile_definitions(
         MARATHON_IOS_PORT=1
@@ -1318,22 +1544,102 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         "-framework UniformTypeIdentifiers"
         "-framework CoreMedia"
         "-framework CoreVideo"
+        "-framework VideoToolbox"
+        "-framework Security"
     )
-
-    if(DEFINED MARATHON_IOS_FFMPEG_ROOT AND EXISTS "\${MARATHON_IOS_FFMPEG_ROOT}/lib/libavcodec.a")
-        set(MARATHON_IOS_FFMPEG_LIBS
-            "\${MARATHON_IOS_FFMPEG_ROOT}/lib/libavcodec.a"
-            "\${MARATHON_IOS_FFMPEG_ROOT}/lib/libavutil.a"
-            "\${MARATHON_IOS_FFMPEG_ROOT}/lib/libswresample.a"
-        )
-        message(STATUS "Using static iOS FFmpeg (XMA decoder): \${MARATHON_IOS_FFMPEG_ROOT}")
-    endif()
-
-    if(DEFINED MARATHON_IOS_FREETYPE_ROOT AND EXISTS "\${MARATHON_IOS_FREETYPE_ROOT}/lib/libfreetype.a")
-        set(MARATHON_IOS_FREETYPE_LIB "\${MARATHON_IOS_FREETYPE_ROOT}/lib/libfreetype.a")
-        message(STATUS "Using static iOS FreeType: \${MARATHON_IOS_FREETYPE_LIB}")
-    endif()
 endif()
+
+# Called from thirdparty/CMakeLists.txt when cross-compiling for iOS
+function(marathon_setup_ios_thirdparty)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        return()
+    endif()
+
+    # 1. Native iOS Files Picker (nfd::nfd) replacing desktop nativefiledialog-extended
+    if(NOT TARGET nfd)
+        add_library(nfd INTERFACE)
+        add_library(nfd::nfd ALIAS nfd)
+        target_include_directories(nfd INTERFACE
+            "\${CMAKE_SOURCE_DIR}/MarathonRecomp/ios_compat/include"
+        )
+    endif()
+
+    # 2. Static iOS arm64 FFmpeg (ffmpeg) replacing desktop prebuilt ffmpeg-core
+    if(NOT TARGET ffmpeg)
+        if(NOT DEFINED MARATHON_IOS_FFMPEG_ROOT OR NOT EXISTS "\${MARATHON_IOS_FFMPEG_ROOT}/include/libavcodec/avcodec.h")
+            message(FATAL_ERROR "Missing iOS FFmpeg root. Set MARATHON_IOS_FFMPEG_ROOT to the static arm64 FFmpeg install prefix.")
+        endif()
+        add_library(ffmpeg INTERFACE)
+        target_include_directories(ffmpeg INTERFACE "\${MARATHON_IOS_FFMPEG_ROOT}/include")
+        foreach(component avformat avcodec swscale avutil swresample)
+            set(archive "\${MARATHON_IOS_FFMPEG_ROOT}/lib/lib\${component}.a")
+            if(NOT EXISTS "\${archive}")
+                message(FATAL_ERROR "Missing static iOS FFmpeg archive: \${archive}")
+            endif()
+            target_link_libraries(ffmpeg INTERFACE "\${archive}")
+        endforeach()
+        target_link_libraries(ffmpeg INTERFACE
+            z bz2 iconv
+            "-framework AudioToolbox"
+            "-framework CoreMedia"
+            "-framework VideoToolbox"
+            "-framework CoreVideo"
+            "-framework Security"
+        )
+    endif()
+
+    # 3. Clean-room NSURLSession libcurl compatibility target (CURL::libcurl)
+    if(NOT TARGET CURL::libcurl)
+        add_library(marathon_ios_curl INTERFACE)
+        add_library(CURL::libcurl ALIAS marathon_ios_curl)
+        target_include_directories(marathon_ios_curl INTERFACE
+            "\${CMAKE_SOURCE_DIR}/MarathonRecomp/ios_compat/include"
+        )
+    endif()
+endfunction()
+
+# Called from root CMakeLists.txt instead of add_subdirectory(tools) when cross-compiling for iOS
+macro(marathon_setup_ios_host_tools)
+    if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+        set(_HOST_TOOL_MAP
+            "file_to_c:MARATHON_HOST_FILE_TO_C"
+            "u8extract:MARATHON_HOST_U8EXTRACT"
+            "XenonRecomp:MARATHON_HOST_XENON_RECOMP"
+            "XenosRecomp:MARATHON_HOST_XENOS_RECOMP"
+        )
+        foreach(_entry IN LISTS _HOST_TOOL_MAP)
+            string(REPLACE ":" ";" _pair "\${_entry}")
+            list(GET _pair 0 _tool_name)
+            list(GET _pair 1 _tool_var)
+            if(NOT DEFINED \${_tool_var} OR NOT EXISTS "\${\${_tool_var}}")
+                message(FATAL_ERROR "Missing macOS host tool \${_tool_name} (\${_tool_var}='\${\${_tool_var}}'). Build host tools first.")
+            endif()
+            if(NOT TARGET \${_tool_name})
+                add_executable(\${_tool_name} IMPORTED GLOBAL)
+                set_target_properties(\${_tool_name} PROPERTIES IMPORTED_LOCATION "\${\${_tool_var}}")
+            endif()
+        endforeach()
+
+        # Cross-compile only the runtime libraries from tools/ needed by MarathonRecomp
+        set(THIRDPARTY_ROOT "\${CMAKE_SOURCE_DIR}/tools/XenonRecomp/thirdparty")
+        add_subdirectory("\${THIRDPARTY_ROOT}" "xenon-thirdparty")
+        add_subdirectory("\${CMAKE_SOURCE_DIR}/tools/XenonRecomp/XenonUtils" "xenon-utils")
+        add_subdirectory("\${CMAKE_SOURCE_DIR}/tools/XenosRecomp/thirdparty/zstd/build/cmake" "zstd")
+
+        # Keep host macOS dxc-macos available for compile_shader SPIR-V generation
+        set(DXC_HOST_ROOT "\${CMAKE_SOURCE_DIR}/tools/XenosRecomp/thirdparty/dxc-bin")
+        if(CMAKE_HOST_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+            set(DXC_HOST_ARCH arm64)
+        else()
+            set(DXC_HOST_ARCH x64)
+        endif()
+        set(DIRECTX_DXC_TOOL
+            "DYLD_LIBRARY_PATH=\${DXC_HOST_ROOT}/lib/\${DXC_HOST_ARCH}"
+            "\${DXC_HOST_ROOT}/bin/\${DXC_HOST_ARCH}/dxc-macos"
+            CACHE INTERNAL "Host macOS DXC compiler for iOS cross-compile" FORCE
+        )
+    endif()
+endmacro()
 `;
 
   const iosPortTargetCmake = `# Target-level iOS linking & app bundle metadata helper
@@ -1348,7 +1654,6 @@ function(marathon_configure_ios_target TARGET_NAME)
 
     target_link_libraries(\${TARGET_NAME} PRIVATE
         \${MARATHON_IOS_FRAMEWORKS}
-        \${MARATHON_IOS_FFMPEG_LIBS}
         \${MARATHON_IOS_FREETYPE_LIB}
         "-lz"
         "-lbz2"
@@ -1356,6 +1661,7 @@ function(marathon_configure_ios_target TARGET_NAME)
     )
 
     set_target_properties(\${TARGET_NAME} PROPERTIES
+        OUTPUT_NAME "MarathonRecomp"
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_INFO_PLIST "\${CMAKE_SOURCE_DIR}/ios/Info.plist"
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${p.bundleId}"

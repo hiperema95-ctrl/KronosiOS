@@ -10,7 +10,6 @@ function(marathon_configure_ios_target TARGET_NAME)
 
     target_link_libraries(${TARGET_NAME} PRIVATE
         ${MARATHON_IOS_FRAMEWORKS}
-        ${MARATHON_IOS_FFMPEG_LIBS}
         ${MARATHON_IOS_FREETYPE_LIB}
         "-lz"
         "-lbz2"
@@ -18,6 +17,7 @@ function(marathon_configure_ios_target TARGET_NAME)
     )
 
     set_target_properties(${TARGET_NAME} PROPERTIES
+        OUTPUT_NAME "MarathonRecomp"
         MACOSX_BUNDLE TRUE
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/ios/Info.plist"
         XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "com.hiperema.kronos06.ios"

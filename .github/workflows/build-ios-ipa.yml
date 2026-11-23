@@ -175,7 +175,7 @@ jobs:
           cmake --build "${GITHUB_WORKSPACE}/ios-deps/freetype-build" --parallel
           cmake --install "${GITHUB_WORKSPACE}/ios-deps/freetype-build"
 
-          # Compila FFmpeg statico iOS arm64 (solo avcodec/avutil/swresample + XMA1/XMA2 decoder)
+          # Compila FFmpeg statico iOS arm64 (avformat, avcodec, swscale, avutil, swresample + XMA1/XMA2 decoder)
           mkdir -p "${GITHUB_WORKSPACE}/ios-deps/ffmpeg-src" "${GITHUB_WORKSPACE}/ios-deps/ffmpeg-install"
           curl -fSL "https://ffmpeg.org/releases/ffmpeg-${FFMPEG_VERSION}.tar.xz" -o /tmp/ffmpeg.tar.xz
           tar -xf /tmp/ffmpeg.tar.xz -C "${GITHUB_WORKSPACE}/ios-deps/ffmpeg-src" --strip-components=1
@@ -187,12 +187,19 @@ jobs:
             --extra-cflags="-arch arm64 -miphoneos-version-min=${IOS_DEPLOYMENT_TARGET} -fPIC" \
             --extra-ldflags="-arch arm64 -miphoneos-version-min=${IOS_DEPLOYMENT_TARGET}" \
             --disable-programs --disable-doc --disable-network --disable-everything \
-            --disable-avdevice --disable-avformat --disable-avfilter --disable-swscale \
-            --enable-avcodec --enable-avutil --enable-swresample \
-            --enable-decoder=xma1,xma2,wmapro,wmav2,adpcm_ms,pcm_s16be,pcm_s16le \
+            --disable-avdevice --disable-avfilter \
+            --enable-avformat --enable-avcodec --enable-swscale --enable-avutil --enable-swresample \
+            --enable-decoder=xma1,xma2,wmapro,wmav2,adpcm_ms,pcm_s16be,pcm_s16le,h264,mpeg4,wmv3,vc1 \
+            --enable-demuxer=mov,asf,wav,xmv,mpegps \
+            --enable-protocol=file \
             --enable-static --disable-shared
           make -j"$(sysctl -n hw.ncpu)"
           make install
+
+          # Verifica archivi statici FreeType e FFmpeg pronti per Step 9
+          ls -lh "${GITHUB_WORKSPACE}/ios-deps/freetype-install/lib/libfreetype.a"
+          ls -lh "${GITHUB_WORKSPACE}/ios-deps/freetype-install/include/freetype2/ft2build.h"
+          ls -lh "${GITHUB_WORKSPACE}/ios-deps/ffmpeg-install/lib/"lib*.a
 
       - name: 9. Cross-Compila MarathonRecomp v1.0.0 per iOS arm64 (Metal 3 Nativo)
         working-directory: MarathonRecomp-Upstream
@@ -201,7 +208,25 @@ jobs:
         run: |
           CONFIG="${{ inputs.build_configuration || 'Release' }}"
           IOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
-          HOST_TOOLS="${GITHUB_WORKSPACE}/build-host/tools"
+          FREETYPE_ROOT="${GITHUB_WORKSPACE}/ios-deps/freetype-install"
+          FFMPEG_ROOT="${GITHUB_WORKSPACE}/ios-deps/ffmpeg-install"
+
+          # Localizza dinamicamente i 4 host tool nativi macOS compilati allo Step 7
+          HOST_XENON="$(find "${GITHUB_WORKSPACE}/build-host" -type f -name "XenonRecomp" -perm +111 | head -n 1)"
+          HOST_XENOS="$(find "${GITHUB_WORKSPACE}/build-host" -type f -name "XenosRecomp" -perm +111 | head -n 1)"
+          HOST_U8="$(find "${GITHUB_WORKSPACE}/build-host" -type f -name "u8extract" -perm +111 | head -n 1)"
+          HOST_F2C="$(find "${GITHUB_WORKSPACE}/build-host" -type f -name "file_to_c" -perm +111 | head -n 1)"
+          for BIN in "${HOST_XENON}" "${HOST_XENOS}" "${HOST_U8}" "${HOST_F2C}"; do
+            if [ -z "${BIN}" ] || [ ! -x "${BIN}" ]; then
+              echo "::error::Host tool macOS mancante in build-host! Verifica lo Step 7."
+              exit 1
+            fi
+          done
+          echo "==> Host tools rilevati:"
+          echo "    XenonRecomp: ${HOST_XENON}"
+          echo "    XenosRecomp: ${HOST_XENOS}"
+          echo "    u8extract:   ${HOST_U8}"
+          echo "    file_to_c:   ${HOST_F2C}"
 
           cmake -S . -B "${GITHUB_WORKSPACE}/build-ios" -G Ninja \
             -DCMAKE_SYSTEM_NAME=iOS \
@@ -209,15 +234,24 @@ jobs:
             -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_OSX_DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET}" \
             -DCMAKE_BUILD_TYPE="${CONFIG}" \
+            -DCMAKE_FIND_ROOT_PATH="${IOS_SDK};${FREETYPE_ROOT};${FFMPEG_ROOT}" \
+            -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=BOTH \
+            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \
+            -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+            -DFREETYPE_LIBRARY="${FREETYPE_ROOT}/lib/libfreetype.a" \
+            -DFREETYPE_INCLUDE_DIRS="${FREETYPE_ROOT}/include/freetype2" \
+            -DFREETYPE_INCLUDE_DIR_ft2build="${FREETYPE_ROOT}/include/freetype2" \
+            -DFREETYPE_INCLUDE_DIR_freetype2="${FREETYPE_ROOT}/include/freetype2" \
             -DMARATHON_IOS_PORT=ON \
             -DMARATHON_RECOMP_METAL=ON \
-            -DMARATHON_HOST_XENON_RECOMP="${HOST_TOOLS}/XenonRecomp/XenonRecomp" \
-            -DMARATHON_HOST_XENOS_RECOMP="${HOST_TOOLS}/XenosRecomp/XenosRecomp" \
-            -DMARATHON_HOST_U8EXTRACT="${HOST_TOOLS}/u8extract/u8extract" \
-            -DMARATHON_HOST_FILE_TO_C="${HOST_TOOLS}/file_to_c/file_to_c" \
-            -DMARATHON_IOS_FFMPEG_ROOT="${GITHUB_WORKSPACE}/ios-deps/ffmpeg-install" \
-            -DMARATHON_IOS_FREETYPE_ROOT="${GITHUB_WORKSPACE}/ios-deps/freetype-install" \
-            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/ios-deps/freetype-install"
+            -DMARATHON_HOST_XENON_RECOMP="${HOST_XENON}" \
+            -DMARATHON_HOST_XENOS_RECOMP="${HOST_XENOS}" \
+            -DMARATHON_HOST_U8EXTRACT="${HOST_U8}" \
+            -DMARATHON_HOST_FILE_TO_C="${HOST_F2C}" \
+            -DMARATHON_IOS_FFMPEG_ROOT="${FFMPEG_ROOT}" \
+            -DMARATHON_IOS_FREETYPE_ROOT="${FREETYPE_ROOT}" \
+            -DCMAKE_PREFIX_PATH="${FREETYPE_ROOT};${FFMPEG_ROOT}"
 
           cmake --build "${GITHUB_WORKSPACE}/build-ios" --target MarathonRecomp --parallel
 

@@ -42,6 +42,8 @@ test('generatePortRepository creates all required clean-room overlay files for M
     'scripts/apply_ios_port.sh',
     'ios/nfd_ios.mm',
     'ios/include/nfd.h',
+    'ios/curl_ios_stub.mm',
+    'ios/include/curl/curl.h',
     'ios/os/ios_platform.mm',
     'ios/ios_virtual_controller.mm',
     'ios/include/ios_virtual_controller.h',
@@ -61,6 +63,39 @@ test('generatePortRepository creates all required clean-room overlay files for M
   }
   const plist = files.find((f) => f.path === 'ios/Info.plist')!.content;
   assert.match(plist, /com\.hiperema\.kronos06\.ios/);
+});
+
+test('Step 8/9 workflow and CMake resolve FreeType, FFmpeg 5 archives, NFD, CURL, and IMPORTED host tools on iOS', () => {
+  const files = generatePortRepository(DEFAULT_BUILD_CONFIG);
+  const workflow = files.find((f) => f.path === '.github/workflows/build-ios-ipa.yml')!.content;
+  const iosCmake = files.find((f) => f.path === 'cmake/MarathonRecompIOS.cmake')!.content;
+  const patcher = files.find((f) => f.path === 'scripts/apply_ios_port.sh')!.content;
+  const platformMm = files.find((f) => f.path === 'ios/os/ios_platform.mm')!.content;
+
+  // Step 9 FreeType iOS sysroot bypass + explicit cache hints
+  assert.match(workflow, /CMAKE_FIND_ROOT_PATH_MODE_LIBRARY=BOTH/);
+  assert.match(workflow, /CMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH/);
+  assert.match(workflow, /FREETYPE_LIBRARY=/);
+  assert.match(workflow, /FREETYPE_INCLUDE_DIR_ft2build=/);
+  assert.match(workflow, /FREETYPE_INCLUDE_DIR_freetype2=/);
+
+  // Step 8 FFmpeg builds all 5 archives required by upstream ffmpeg target
+  assert.match(workflow, /--enable-avformat --enable-avcodec --enable-swscale --enable-avutil --enable-swresample/);
+
+  // CMake iOS helpers define nfd::nfd, ffmpeg, CURL::libcurl, IMPORTED GLOBAL host tools, and DIRECTX_DXC_TOOL
+  assert.match(iosCmake, /add_library\(nfd::nfd ALIAS nfd\)/);
+  assert.match(iosCmake, /add_library\(CURL::libcurl ALIAS marathon_ios_curl\)/);
+  assert.match(iosCmake, /foreach\(component avformat avcodec swscale avutil swresample\)/);
+  assert.match(iosCmake, /add_executable\(\$\{_tool_name\} IMPORTED GLOBAL\)/);
+  assert.match(iosCmake, /DIRECTX_DXC_TOOL/);
+
+  // Patcher handles thirdparty skip, IMPORTED XenosRecomp guard, iPhoneOS metal SDK, CheckConsole, SDL_main
+  assert.match(patcher, /marathon_setup_ios_thirdparty/);
+  assert.match(patcher, /marathon_setup_ios_host_tools/);
+  assert.match(patcher, /SKIP_PRECOMPILE_HEADERS ON/);
+  assert.match(patcher, /MarathonIOS_OpenURL/);
+  assert.match(patcher, /SDL3\/SDL_main\.h/);
+  assert.match(platformMm, /void CheckConsole\(\)/);
 });
 
 test('config updates propagate dynamically into Info.plist, workflow YAML, and CMake', () => {

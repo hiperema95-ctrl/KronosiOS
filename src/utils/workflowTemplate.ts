@@ -289,7 +289,7 @@ ${secretSection}
           cmake --build "\${GITHUB_WORKSPACE}/ios-deps/freetype-build" --parallel
           cmake --install "\${GITHUB_WORKSPACE}/ios-deps/freetype-build"
 
-          # Compila FFmpeg statico iOS arm64 (solo avcodec/avutil/swresample + XMA1/XMA2 decoder)
+          # Compila FFmpeg statico iOS arm64 (avformat, avcodec, swscale, avutil, swresample + XMA1/XMA2 decoder)
           mkdir -p "\${GITHUB_WORKSPACE}/ios-deps/ffmpeg-src" "\${GITHUB_WORKSPACE}/ios-deps/ffmpeg-install"
           curl -fSL "https://ffmpeg.org/releases/ffmpeg-\${FFMPEG_VERSION}.tar.xz" -o /tmp/ffmpeg.tar.xz
           tar -xf /tmp/ffmpeg.tar.xz -C "\${GITHUB_WORKSPACE}/ios-deps/ffmpeg-src" --strip-components=1
@@ -301,12 +301,19 @@ ${secretSection}
             --extra-cflags="-arch arm64 -miphoneos-version-min=\${IOS_DEPLOYMENT_TARGET} -fPIC" \\
             --extra-ldflags="-arch arm64 -miphoneos-version-min=\${IOS_DEPLOYMENT_TARGET}" \\
             --disable-programs --disable-doc --disable-network --disable-everything \\
-            --disable-avdevice --disable-avformat --disable-avfilter --disable-swscale \\
-            --enable-avcodec --enable-avutil --enable-swresample \\
-            --enable-decoder=xma1,xma2,wmapro,wmav2,adpcm_ms,pcm_s16be,pcm_s16le \\
+            --disable-avdevice --disable-avfilter \\
+            --enable-avformat --enable-avcodec --enable-swscale --enable-avutil --enable-swresample \\
+            --enable-decoder=xma1,xma2,wmapro,wmav2,adpcm_ms,pcm_s16be,pcm_s16le,h264,mpeg4,wmv3,vc1 \\
+            --enable-demuxer=mov,asf,wav,xmv,mpegps \\
+            --enable-protocol=file \\
             --enable-static --disable-shared
           make -j"\$(sysctl -n hw.ncpu)"
           make install
+
+          # Verifica archivi statici FreeType e FFmpeg pronti per Step 9
+          ls -lh "\${GITHUB_WORKSPACE}/ios-deps/freetype-install/lib/libfreetype.a"
+          ls -lh "\${GITHUB_WORKSPACE}/ios-deps/freetype-install/include/freetype2/ft2build.h"
+          ls -lh "\${GITHUB_WORKSPACE}/ios-deps/ffmpeg-install/lib/"lib*.a
 
       - name: 9. Cross-Compila MarathonRecomp v1.0.0 per iOS arm64 (${p.rendererBackend === 'metal3-native' ? 'Metal 3 Nativo' : 'MoltenVK Metal 3'})
         working-directory: MarathonRecomp-Upstream
@@ -315,7 +322,25 @@ ${secretSection}
         run: |
           CONFIG="\${{ inputs.build_configuration || '${p.buildConfiguration}' }}"
           IOS_SDK="\$(xcrun --sdk iphoneos --show-sdk-path)"
-          HOST_TOOLS="\${GITHUB_WORKSPACE}/build-host/tools"
+          FREETYPE_ROOT="\${GITHUB_WORKSPACE}/ios-deps/freetype-install"
+          FFMPEG_ROOT="\${GITHUB_WORKSPACE}/ios-deps/ffmpeg-install"
+
+          # Localizza dinamicamente i 4 host tool nativi macOS compilati allo Step 7
+          HOST_XENON="\$(find "\${GITHUB_WORKSPACE}/build-host" -type f -name "XenonRecomp" -perm +111 | head -n 1)"
+          HOST_XENOS="\$(find "\${GITHUB_WORKSPACE}/build-host" -type f -name "XenosRecomp" -perm +111 | head -n 1)"
+          HOST_U8="\$(find "\${GITHUB_WORKSPACE}/build-host" -type f -name "u8extract" -perm +111 | head -n 1)"
+          HOST_F2C="\$(find "\${GITHUB_WORKSPACE}/build-host" -type f -name "file_to_c" -perm +111 | head -n 1)"
+          for BIN in "\${HOST_XENON}" "\${HOST_XENOS}" "\${HOST_U8}" "\${HOST_F2C}"; do
+            if [ -z "\${BIN}" ] || [ ! -x "\${BIN}" ]; then
+              echo "::error::Host tool macOS mancante in build-host! Verifica lo Step 7."
+              exit 1
+            fi
+          done
+          echo "==> Host tools rilevati:"
+          echo "    XenonRecomp: \${HOST_XENON}"
+          echo "    XenosRecomp: \${HOST_XENOS}"
+          echo "    u8extract:   \${HOST_U8}"
+          echo "    file_to_c:   \${HOST_F2C}"
 
           cmake -S . -B "\${GITHUB_WORKSPACE}/build-ios" -G Ninja \\
             -DCMAKE_SYSTEM_NAME=iOS \\
@@ -323,15 +348,24 @@ ${secretSection}
             -DCMAKE_OSX_ARCHITECTURES=arm64 \\
             -DCMAKE_OSX_DEPLOYMENT_TARGET="\${IOS_DEPLOYMENT_TARGET}" \\
             -DCMAKE_BUILD_TYPE="\${CONFIG}" \\
+            -DCMAKE_FIND_ROOT_PATH="\${IOS_SDK};\${FREETYPE_ROOT};\${FFMPEG_ROOT}" \\
+            -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \\
+            -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=BOTH \\
+            -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \\
+            -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \\
+            -DFREETYPE_LIBRARY="\${FREETYPE_ROOT}/lib/libfreetype.a" \\
+            -DFREETYPE_INCLUDE_DIRS="\${FREETYPE_ROOT}/include/freetype2" \\
+            -DFREETYPE_INCLUDE_DIR_ft2build="\${FREETYPE_ROOT}/include/freetype2" \\
+            -DFREETYPE_INCLUDE_DIR_freetype2="\${FREETYPE_ROOT}/include/freetype2" \\
             -DMARATHON_IOS_PORT=ON \\
             -DMARATHON_RECOMP_METAL=ON \\
-            -DMARATHON_HOST_XENON_RECOMP="\${HOST_TOOLS}/XenonRecomp/XenonRecomp" \\
-            -DMARATHON_HOST_XENOS_RECOMP="\${HOST_TOOLS}/XenosRecomp/XenosRecomp" \\
-            -DMARATHON_HOST_U8EXTRACT="\${HOST_TOOLS}/u8extract/u8extract" \\
-            -DMARATHON_HOST_FILE_TO_C="\${HOST_TOOLS}/file_to_c/file_to_c" \\
-            -DMARATHON_IOS_FFMPEG_ROOT="\${GITHUB_WORKSPACE}/ios-deps/ffmpeg-install" \\
-            -DMARATHON_IOS_FREETYPE_ROOT="\${GITHUB_WORKSPACE}/ios-deps/freetype-install" \\
-            -DCMAKE_PREFIX_PATH="\${GITHUB_WORKSPACE}/ios-deps/freetype-install"
+            -DMARATHON_HOST_XENON_RECOMP="\${HOST_XENON}" \\
+            -DMARATHON_HOST_XENOS_RECOMP="\${HOST_XENOS}" \\
+            -DMARATHON_HOST_U8EXTRACT="\${HOST_U8}" \\
+            -DMARATHON_HOST_FILE_TO_C="\${HOST_F2C}" \\
+            -DMARATHON_IOS_FFMPEG_ROOT="\${FFMPEG_ROOT}" \\
+            -DMARATHON_IOS_FREETYPE_ROOT="\${FREETYPE_ROOT}" \\
+            -DCMAKE_PREFIX_PATH="\${FREETYPE_ROOT};\${FFMPEG_ROOT}"
 
           cmake --build "\${GITHUB_WORKSPACE}/build-ios" --target MarathonRecomp --parallel
 
@@ -396,17 +430,19 @@ cat << 'EOF_VCPKG' > "\${DEPS_DIR}/vcpkg-ios-stub/scripts/buildsystems/vcpkg.cma
 message(STATUS "MarathonRecomp iOS: utilizzo librerie statiche iOS arm64 native al posto di vcpkg desktop.")
 EOF_VCPKG
 
-echo "==> [2/8] Copia layer nativo iOS (OS, NFD Files Picker XISO/DLC, Controller, Mod Manager, CMake)..."
+echo "==> [2/8] Copia layer nativo iOS (OS, NFD Files Picker XISO/DLC, CURL NSURLSession, Controller, Mod Manager, CMake)..."
 mkdir -p "\${UPSTREAM_DIR}/MarathonRecomp/os/ios"
-mkdir -p "\${UPSTREAM_DIR}/MarathonRecomp/ios_compat/include"
+mkdir -p "\${UPSTREAM_DIR}/MarathonRecomp/ios_compat/include/curl"
 mkdir -p "\${UPSTREAM_DIR}/ios" "\${UPSTREAM_DIR}/cmake"
 
 cp "\${PORT_DIR}/ios/os/ios_platform.mm" "\${UPSTREAM_DIR}/MarathonRecomp/os/ios/ios_platform.mm"
 cp "\${PORT_DIR}/ios/nfd_ios.mm" "\${UPSTREAM_DIR}/MarathonRecomp/os/ios/nfd_ios.mm"
+cp "\${PORT_DIR}/ios/curl_ios_stub.mm" "\${UPSTREAM_DIR}/MarathonRecomp/os/ios/curl_ios_stub.mm"
 cp "\${PORT_DIR}/ios/ios_virtual_controller.mm" "\${UPSTREAM_DIR}/MarathonRecomp/os/ios/ios_virtual_controller.mm"
 cp "\${PORT_DIR}/ios/ios_mod_manager.mm" "\${UPSTREAM_DIR}/MarathonRecomp/os/ios/ios_mod_manager.mm"
 
 cp "\${PORT_DIR}/ios/include/nfd.h" "\${UPSTREAM_DIR}/MarathonRecomp/ios_compat/include/nfd.h"
+cp "\${PORT_DIR}/ios/include/curl/curl.h" "\${UPSTREAM_DIR}/MarathonRecomp/ios_compat/include/curl/curl.h"
 cp "\${PORT_DIR}/ios/include/ios_virtual_controller.h" "\${UPSTREAM_DIR}/MarathonRecomp/ios_compat/include/ios_virtual_controller.h"
 cp "\${PORT_DIR}/ios/include/ios_mod_manager.h" "\${UPSTREAM_DIR}/MarathonRecomp/ios_compat/include/ios_mod_manager.h"
 
@@ -720,52 +756,168 @@ if cm.exists():
         print("Patched thirdparty/plume/CMakeLists.txt to use pure Metal 3 on iOS.")
 PY_PLUME
 
-echo "==> [8/8] Integrazione CMake iOS (Host Tools Override + iOS OS Sources + Target Config)..."
-python3 - "\${UPSTREAM_DIR}/CMakeLists.txt" "\${UPSTREAM_DIR}/MarathonRecomp/CMakeLists.txt" "\${UPSTREAM_DIR}/MarathonRecompLib/CMakeLists.txt" << 'PY_CMAKE'
+echo "==> [8/8] Integrazione CMake iOS (FreeType/FFmpeg/NFD/CURL, Host Tools Override, Metal iOS SDK, SDL_main)..."
+python3 - \\
+  "\${UPSTREAM_DIR}/CMakeLists.txt" \\
+  "\${UPSTREAM_DIR}/thirdparty/CMakeLists.txt" \\
+  "\${UPSTREAM_DIR}/MarathonRecomp/CMakeLists.txt" \\
+  "\${UPSTREAM_DIR}/MarathonRecompLib/CMakeLists.txt" \\
+  "\${UPSTREAM_DIR}/MarathonRecomp/install/update_checker.cpp" \\
+  "\${UPSTREAM_DIR}/MarathonRecomp/main.cpp" << 'PY_CMAKE'
 import sys, pathlib
 
 root_cm = pathlib.Path(sys.argv[1])
+tp_cm = pathlib.Path(sys.argv[2])
+app_cm = pathlib.Path(sys.argv[3])
+lib_cm = pathlib.Path(sys.argv[4])
+upd_cpp = pathlib.Path(sys.argv[5])
+main_cpp = pathlib.Path(sys.argv[6])
+
+# 1. Root CMakeLists.txt: include iOS config BEFORE thirdparty/tools, split host tools vs iOS cross-compile
 rsrc = root_cm.read_text(encoding="utf-8")
 if "MARATHON_IOS_HOST_TOOLS_ONLY" not in rsrc:
     rsrc = rsrc.replace(
-        'add_subdirectory("MarathonRecompLib")\\nadd_subdirectory("MarathonRecomp")',
+        'add_subdirectory(\${MARATHON_RECOMP_THIRDPARTY_ROOT})\\nadd_subdirectory(\${MARATHON_RECOMP_TOOLS_ROOT})',
         'option(MARATHON_IOS_HOST_TOOLS_ONLY "Build only macOS host tools" OFF)\\n'
+        'include("\${CMAKE_SOURCE_DIR}/cmake/MarathonRecompIOS.cmake" OPTIONAL)\\n'
+        'include("\${CMAKE_SOURCE_DIR}/cmake/iOSPortTarget.cmake" OPTIONAL)\\n'
         'if(NOT MARATHON_IOS_HOST_TOOLS_ONLY)\\n'
-        '    include("\${CMAKE_SOURCE_DIR}/cmake/MarathonRecompIOS.cmake" OPTIONAL)\\n'
-        '    include("\${CMAKE_SOURCE_DIR}/cmake/iOSPortTarget.cmake" OPTIONAL)\\n'
+        '    add_subdirectory(\${MARATHON_RECOMP_THIRDPARTY_ROOT})\\n'
+        'endif()\\n'
+        'if(CMAKE_SYSTEM_NAME STREQUAL "iOS")\\n'
+        '    marathon_setup_ios_host_tools()\\n'
+        'else()\\n'
+        '    add_subdirectory(\${MARATHON_RECOMP_TOOLS_ROOT})\\n'
+        '    if(TARGET XenosRecomp)\\n'
+        '        target_compile_definitions(XenosRecomp PRIVATE MARATHON_RECOMP)\\n'
+        '    endif()\\n'
+        'endif()'
+    )
+    rsrc = rsrc.replace(
+        'add_subdirectory("MarathonRecompLib")\\nadd_subdirectory("MarathonRecomp")',
+        'if(NOT MARATHON_IOS_HOST_TOOLS_ONLY)\\n'
         '    add_subdirectory("MarathonRecompLib")\\n'
         '    add_subdirectory("MarathonRecomp")\\n'
         'endif()'
     )
     root_cm.write_text(rsrc, encoding="utf-8")
-    print("Patched root CMakeLists.txt for host-tools/iOS split build.")
+    print("Patched root CMakeLists.txt for iOS FreeType/FFmpeg/NFD/CURL + host-tools split build.")
 
-app_cm = pathlib.Path(sys.argv[2])
+# 2. thirdparty/CMakeLists.txt: skip AppKit nativefiledialog-extended & desktop ffmpeg-core on iOS
+tsrc = tp_cm.read_text(encoding="utf-8")
+if "marathon_setup_ios_thirdparty" not in tsrc:
+    tsrc = tsrc.replace(
+        'add_subdirectory("\${MARATHON_RECOMP_THIRDPARTY_ROOT}/nativefiledialog-extended")',
+        'if(NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")\\n'
+        '    add_subdirectory("\${MARATHON_RECOMP_THIRDPARTY_ROOT}/nativefiledialog-extended")\\n'
+        'endif()'
+    )
+    tsrc = tsrc.replace(
+        'add_subdirectory("\${MARATHON_RECOMP_THIRDPARTY_ROOT}/ffmpeg-core")',
+        'if(CMAKE_SYSTEM_NAME STREQUAL "iOS")\\n'
+        '    marathon_setup_ios_thirdparty()\\n'
+        'else()\\n'
+        '    add_subdirectory("\${MARATHON_RECOMP_THIRDPARTY_ROOT}/ffmpeg-core")\\n'
+        'endif()'
+    )
+    tp_cm.write_text(tsrc, encoding="utf-8")
+    print("Patched thirdparty/CMakeLists.txt to replace nativefiledialog-extended and ffmpeg-core on iOS.")
+
+# 3. MarathonRecomp/CMakeLists.txt: SDL_MAIN_HANDLED, iOS OS sources + SKIP_PCH, iOS bundle, CURL stub, iPhoneOS metal SDK
 asrc = app_cm.read_text(encoding="utf-8")
 if "os/ios/ios_platform.mm" not in asrc:
+    # 3a. Let SDL3 drive UIApplicationMain on iOS
     asrc = asrc.replace(
-        "elseif (APPLE)",
+        "add_compile_definitions(\\n    SDL_MAIN_HANDLED",
+        'if (NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")\\n'
+        '    add_compile_definitions(SDL_MAIN_HANDLED)\\n'
+        'endif()\\n'
+        'add_compile_definitions('
+    )
+    # 3b. First elseif (APPLE): OS sources
+    asrc = asrc.replace(
+        'elseif (APPLE)\\n    set(MARATHON_RECOMP_OS_CXX_SOURCES',
         'elseif (CMAKE_SYSTEM_NAME STREQUAL "iOS")\\n'
         '    set(MARATHON_RECOMP_OS_CXX_SOURCES\\n'
         '        "os/ios/ios_platform.mm"\\n'
         '        "os/ios/nfd_ios.mm"\\n'
+        '        "os/ios/curl_ios_stub.mm"\\n'
         '        "os/ios/ios_virtual_controller.mm"\\n'
         '        "os/ios/ios_mod_manager.mm"\\n'
         '    )\\n'
-        'elseif (APPLE)'
+        '    set_source_files_properties(\${MARATHON_RECOMP_OS_CXX_SOURCES} PROPERTIES SKIP_PRECOMPILE_HEADERS ON)\\n'
+        'elseif (APPLE)\\n    set(MARATHON_RECOMP_OS_CXX_SOURCES',
+        1
+    )
+    # 3c. Second elseif (APPLE): add_executable MACOSX_BUNDLE without macOS icns/plist
+    asrc = asrc.replace(
+        'elseif (APPLE)\\n    # Create version number for app bundle.',
+        'elseif (CMAKE_SYSTEM_NAME STREQUAL "iOS")\\n'
+        '    add_executable(MarathonRecomp MACOSX_BUNDLE \${MARATHON_RECOMP_CXX_SOURCES})\\n'
+        'elseif (APPLE)\\n    # Create version number for app bundle.',
+        1
+    )
+    # 3d. Skip desktop find_package(CURL REQUIRED) on iOS (uses CURL::libcurl NSURLSession stub)
+    asrc = asrc.replace(
+        "find_package(CURL REQUIRED)",
+        'if (NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")\\n'
+        '    find_package(CURL REQUIRED)\\n'
+        'endif()'
+    )
+    # 3e. Compile helper Metal shaders with iPhoneOS SDK on iOS instead of macosx SDK
+    asrc = asrc.replace(
+        '    set(XCRUN_TOOL "/usr/bin/xcrun")',
+        '    set(XCRUN_TOOL "/usr/bin/xcrun")\\n'
+        '    if (CMAKE_SYSTEM_NAME STREQUAL "iOS")\\n'
+        '        set(MARATHON_METAL_SDK "iphoneos")\\n'
+        '        set(MARATHON_METAL_IOS_FLAG "-mios-version-min=${p.deploymentTarget}")\\n'
+        '    else()\\n'
+        '        set(MARATHON_METAL_SDK "macosx")\\n'
+        '        set(MARATHON_METAL_IOS_FLAG "")\\n'
+        '    endif()'
+    )
+    asrc = asrc.replace(
+        "COMMAND \${XCRUN_TOOL} -sdk macosx metal -o \${MSL_FILE_OUT_PATH}.ir -c \${MSL_FILE_PATH}",
+        "COMMAND \${XCRUN_TOOL} -sdk \${MARATHON_METAL_SDK} metal \${MARATHON_METAL_IOS_FLAG} -o \${MSL_FILE_OUT_PATH}.ir -c \${MSL_FILE_PATH}"
+    )
+    asrc = asrc.replace(
+        "COMMAND \${XCRUN_TOOL} -sdk macosx metallib -o \${MSL_FILE_OUT_PATH}.metallib \${MSL_FILE_OUT_PATH}.ir",
+        "COMMAND \${XCRUN_TOOL} -sdk \${MARATHON_METAL_SDK} metallib -o \${MSL_FILE_OUT_PATH}.metallib \${MSL_FILE_OUT_PATH}.ir"
     )
     asrc += '\\nif(COMMAND marathon_configure_ios_target)\\n    marathon_configure_ios_target(MarathonRecomp)\\nendif()\\n'
     app_cm.write_text(asrc, encoding="utf-8")
-    print("Patched MarathonRecomp/CMakeLists.txt with iOS native sources and target helper.")
+    print("Patched MarathonRecomp/CMakeLists.txt with iOS OS sources, bundle, CURL stub, and iPhoneOS Metal helper shaders.")
 
-lib_cm = pathlib.Path(sys.argv[3])
+# 4. MarathonRecompLib/CMakeLists.txt: do not call target_compile_definitions on IMPORTED XenosRecomp
 lsrc = lib_cm.read_text(encoding="utf-8")
-if "MARATHON_HOST_XENON_RECOMP" not in lsrc:
-    lsrc = lsrc.replace("$<TARGET_FILE:XenonRecomp>", "\${MARATHON_HOST_XENON_RECOMP}")
-    lsrc = lsrc.replace("$<TARGET_FILE:XenosRecomp>", "\${MARATHON_HOST_XENOS_RECOMP}")
-    lsrc = lsrc.replace("$<TARGET_FILE:u8extract>", "\${MARATHON_HOST_U8EXTRACT}")
+if 'NOT CMAKE_SYSTEM_NAME STREQUAL "iOS"' not in lsrc:
+    lsrc = lsrc.replace(
+        "target_compile_definitions(XenosRecomp PRIVATE MARATHON_RECOMP)",
+        'if (NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")\\n'
+        '    target_compile_definitions(XenosRecomp PRIVATE MARATHON_RECOMP)\\n'
+        'endif()'
+    )
     lib_cm.write_text(lsrc, encoding="utf-8")
-    print("Patched MarathonRecompLib/CMakeLists.txt to invoke macOS host recompilers during iOS cross-compile.")
+    print("Patched MarathonRecompLib/CMakeLists.txt for IMPORTED XenosRecomp compatibility on iOS.")
+
+# 5. update_checker.cpp: std::system() is unavailable on iOS SDK -> use MarathonIOS_OpenURL
+if upd_cpp.exists():
+    usrc = upd_cpp.read_text(encoding="utf-8")
+    if "MarathonIOS_OpenURL" not in usrc:
+        usrc = usrc.replace(
+            "#elif defined(__APPLE__)\\n    std::string command = \\"open \\" + std::string(VISIT_URL) + \\" &\\";\\n    std::system(command.c_str());",
+            "#elif defined(MARATHON_IOS_PORT)\\n    MarathonIOS_OpenURL(VISIT_URL);\\n#elif defined(__APPLE__)\\n    std::string command = \\"open \\" + std::string(VISIT_URL) + \\" &\\";\\n    std::system(command.c_str());"
+        )
+        upd_cpp.write_text(usrc, encoding="utf-8")
+        print("Patched install/update_checker.cpp to use MarathonIOS_OpenURL instead of unavailable std::system().")
+
+# 6. main.cpp: include <SDL3/SDL_main.h> on iOS so SDL3 bootstraps UIApplicationMain
+if main_cpp.exists():
+    msrc = main_cpp.read_text(encoding="utf-8")
+    if "SDL3/SDL_main.h" not in msrc:
+        msrc = "#if defined(MARATHON_IOS_PORT)\\n#include <SDL3/SDL_main.h>\\n#endif\\n" + msrc
+        main_cpp.write_text(msrc, encoding="utf-8")
+        print("Patched main.cpp with SDL3/SDL_main.h entry point for iOS UIKit.")
 PY_CMAKE
 
 echo "==> Patch iOS Clean-Room applicata con successo!"
