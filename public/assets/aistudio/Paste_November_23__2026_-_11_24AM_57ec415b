@@ -1,0 +1,1182 @@
+Run CONFIG="Release"
+==> Host tools rilevati:
+    XenonRecomp: /Users/runner/work/KronosiOS/KronosiOS/build-host/tools/XenonRecomp/XenonRecomp/XenonRecomp
+    XenosRecomp: /Users/runner/work/KronosiOS/KronosiOS/build-host/tools/XenosRecomp/XenosRecomp/XenosRecomp
+    u8extract:   /Users/runner/work/KronosiOS/KronosiOS/build-host/tools/u8extract/u8extract
+    file_to_c:   /Users/runner/work/KronosiOS/KronosiOS/build-host/tools/file_to_c/file_to_c
+-- The C compiler identification is AppleClang 16.0.0.16000026
+-- The CXX compiler identification is AppleClang 16.0.0.16000026
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- The OBJC compiler identification is AppleClang 16.0.0.16000026
+-- The OBJCXX compiler identification is AppleClang 16.0.0.16000026
+-- Detecting OBJC compiler ABI info
+-- Detecting OBJC compiler ABI info - done
+-- Check for working OBJC compiler: /usr/bin/cc - skipped
+-- Detecting OBJCXX compiler ABI info
+-- Detecting OBJCXX compiler ABI info - done
+-- Check for working OBJCXX compiler: /usr/bin/c++ - skipped
+-- Detected architecture: arm64
+-- Configuring MarathonRecomp v1.0.0 for iOS arm64 (Deployment Target: 17.0)
+-- Using static iOS FreeType: /Users/runner/work/KronosiOS/KronosiOS/ios-deps/freetype-install/lib/libfreetype.a
+-- Using static iOS FFmpeg (XMA decoder): /Users/runner/work/KronosiOS/KronosiOS/ios-deps/ffmpeg-install
+-- Found Freetype: /Users/runner/work/KronosiOS/KronosiOS/ios-deps/freetype-install/lib/libfreetype.a (found version "2.13.3")
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Found PkgConfig: /opt/homebrew/bin/pkg-config (found version "3.0.11")
+-- Performing Test HAVE_GCC_WALL
+-- Performing Test HAVE_GCC_WALL - Success
+-- Performing Test HAVE_GCC_WUNDEF
+-- Performing Test HAVE_GCC_WUNDEF - Success
+-- Performing Test HAVE_GCC_WFLOAT_CONVERSION
+-- Performing Test HAVE_GCC_WFLOAT_CONVERSION - Success
+-- Performing Test HAVE_GCC_NO_STRICT_ALIASING
+-- Performing Test HAVE_GCC_NO_STRICT_ALIASING - Success
+-- Performing Test HAVE_GCC_WDOCUMENTATION
+-- Performing Test HAVE_GCC_WDOCUMENTATION - Success
+-- Performing Test HAVE_GCC_WDOCUMENTATION_UNKNOWN_COMMAND
+-- Performing Test HAVE_GCC_WDOCUMENTATION_UNKNOWN_COMMAND - Success
+-- Performing Test HAVE_GCC_COMMENT_BLOCK_COMMANDS
+-- Performing Test HAVE_GCC_COMMENT_BLOCK_COMMANDS - Success
+-- Performing Test HAVE_GCC_WSHADOW
+-- Performing Test HAVE_GCC_WSHADOW - Success
+-- Performing Test HAVE_GCC_WUNUSED_LOCAL_TYPEDEFS
+-- Performing Test HAVE_GCC_WUNUSED_LOCAL_TYPEDEFS - Success
+-- Performing Test HAVE_GCC_WIMPLICIT_FALLTHROUGH
+-- Performing Test HAVE_GCC_WIMPLICIT_FALLTHROUGH - Success
+-- Performing Test COMPILER_SUPPORTS_FCOLOR_DIAGNOSTICS
+-- Performing Test COMPILER_SUPPORTS_FCOLOR_DIAGNOSTICS - Success
+-- Looking for __GLIBC__
+-- Looking for __GLIBC__ - not found
+-- Performing Test HAVE_WL_VERSION_SCRIPT
+-- Performing Test HAVE_WL_VERSION_SCRIPT - Failed
+-- Performing Test COMPILER_SUPPORTS_GCC_ATOMICS
+-- Performing Test COMPILER_SUPPORTS_GCC_ATOMICS - Success
+-- Performing Test HAVE_GCC_FVISIBILITY
+-- Performing Test HAVE_GCC_FVISIBILITY - Success
+-- Performing Test COMPILER_SUPPORTS_WNO_ERROR_DEPRECATED_DECLARATIONS
+-- Performing Test COMPILER_SUPPORTS_WNO_ERROR_DEPRECATED_DECLARATIONS - Success
+-- Performing Test COMPILER_SUPPORTS_WNO_DEPRECATED_DECLARATIONS
+-- Performing Test COMPILER_SUPPORTS_WNO_DEPRECATED_DECLARATIONS - Success
+-- Performing Test LINKER_SUPPORTS_WL_NO_UNDEFINED
+-- Performing Test LINKER_SUPPORTS_WL_NO_UNDEFINED - Failed
+-- Performing Test COMPILER_SUPPORTS_ARMNEON
+-- Performing Test COMPILER_SUPPORTS_ARMNEON - Success
+-- Looking for alloca.h
+-- Looking for alloca.h - found
+-- Looking for float.h
+-- Looking for float.h - found
+-- Looking for iconv.h
+-- Looking for iconv.h - found
+-- Looking for inttypes.h
+-- Looking for inttypes.h - found
+-- Looking for limits.h
+-- Looking for limits.h - found
+-- Looking for malloc.h
+-- Looking for malloc.h - not found
+-- Looking for math.h
+-- Looking for math.h - found
+-- Looking for memory.h
+-- Looking for memory.h - found
+-- Looking for signal.h
+-- Looking for signal.h - found
+-- Looking for stdarg.h
+-- Looking for stdarg.h - found
+-- Looking for stdbool.h
+-- Looking for stdbool.h - found
+-- Looking for stddef.h
+-- Looking for stddef.h - found
+-- Looking for stdint.h
+-- Looking for stdint.h - found
+-- Looking for stdio.h
+-- Looking for stdio.h - found
+-- Looking for stdlib.h
+-- Looking for stdlib.h - found
+-- Looking for string.h
+-- Looking for string.h - found
+-- Looking for strings.h
+-- Looking for strings.h - found
+-- Looking for sys/types.h
+-- Looking for sys/types.h - found
+-- Looking for time.h
+-- Looking for time.h - found
+-- Looking for wchar.h
+-- Looking for wchar.h - found
+-- Looking for pow in m
+-- Looking for pow in m - found
+-- Looking for abs
+-- Looking for abs - found
+-- Looking for acos
+-- Looking for acos - found
+-- Looking for acosf
+-- Looking for acosf - found
+-- Looking for asin
+-- Looking for asin - found
+-- Looking for asinf
+-- Looking for asinf - found
+-- Looking for atan
+-- Looking for atan - found
+-- Looking for atan2
+-- Looking for atan2 - found
+-- Looking for atan2f
+-- Looking for atan2f - found
+-- Looking for atanf
+-- Looking for atanf - found
+-- Looking for atof
+-- Looking for atof - found
+-- Looking for atoi
+-- Looking for atoi - found
+-- Looking for bcopy
+-- Looking for bcopy - found
+-- Looking for ceil
+-- Looking for ceil - found
+-- Looking for ceilf
+-- Looking for ceilf - found
+-- Looking for copysign
+-- Looking for copysign - found
+-- Looking for copysignf
+-- Looking for copysignf - found
+-- Looking for cos
+-- Looking for cos - found
+-- Looking for cosf
+-- Looking for cosf - found
+-- Looking for _Exit
+-- Looking for _Exit - found
+-- Looking for exp
+-- Looking for exp - found
+-- Looking for expf
+-- Looking for expf - found
+-- Looking for fabs
+-- Looking for fabs - found
+-- Looking for fabsf
+-- Looking for fabsf - found
+-- Looking for floor
+-- Looking for floor - found
+-- Looking for floorf
+-- Looking for floorf - found
+-- Looking for fmod
+-- Looking for fmod - found
+-- Looking for fmodf
+-- Looking for fmodf - found
+-- Looking for fopen64
+-- Looking for fopen64 - not found
+-- Looking for fseeko
+-- Looking for fseeko - found
+-- Looking for fseeko64
+-- Looking for fseeko64 - not found
+-- Looking for getenv
+-- Looking for getenv - found
+-- Looking for _i64toa
+-- Looking for _i64toa - not found
+-- Looking for index
+-- Looking for index - found
+-- Looking for itoa
+-- Looking for itoa - not found
+-- Looking for log
+-- Looking for log - found
+-- Looking for log10
+-- Looking for log10 - found
+-- Looking for log10f
+-- Looking for log10f - found
+-- Looking for logf
+-- Looking for logf - found
+-- Looking for lround
+-- Looking for lround - found
+-- Looking for lroundf
+-- Looking for lroundf - found
+-- Looking for _ltoa
+-- Looking for _ltoa - not found
+-- Looking for malloc
+-- Looking for malloc - found
+-- Looking for memcmp
+-- Looking for memcmp - found
+-- Looking for memcpy
+-- Looking for memcpy - found
+-- Looking for memmove
+-- Looking for memmove - found
+-- Looking for memset
+-- Looking for memset - found
+-- Looking for modf
+-- Looking for modf - found
+-- Looking for modff
+-- Looking for modff - found
+-- Looking for pow
+-- Looking for pow - found
+-- Looking for powf
+-- Looking for powf - found
+-- Looking for putenv
+-- Looking for putenv - found
+-- Looking for rindex
+-- Looking for rindex - found
+-- Looking for round
+-- Looking for round - found
+-- Looking for roundf
+-- Looking for roundf - found
+-- Looking for scalbn
+-- Looking for scalbn - found
+-- Looking for scalbnf
+-- Looking for scalbnf - found
+-- Looking for setenv
+-- Looking for setenv - found
+-- Looking for sin
+-- Looking for sin - found
+-- Looking for sinf
+-- Looking for sinf - found
+-- Looking for sqr
+-- Looking for sqr - not found
+-- Looking for sqrt
+-- Looking for sqrt - found
+-- Looking for sqrtf
+-- Looking for sqrtf - found
+-- Looking for sscanf
+-- Looking for sscanf - found
+-- Looking for strchr
+-- Looking for strchr - found
+-- Looking for strcmp
+-- Looking for strcmp - found
+-- Looking for strlcat
+-- Looking for strlcat - found
+-- Looking for strlcpy
+-- Looking for strlcpy - found
+-- Looking for strlen
+-- Looking for strlen - found
+-- Looking for strncmp
+-- Looking for strncmp - found
+-- Looking for strnlen
+-- Looking for strnlen - found
+-- Looking for strpbrk
+-- Looking for strpbrk - found
+-- Looking for strrchr
+-- Looking for strrchr - found
+-- Looking for strstr
+-- Looking for strstr - found
+-- Looking for strnstr
+-- Looking for strnstr - found
+-- Looking for strtod
+-- Looking for strtod - found
+-- Looking for strtok_r
+-- Looking for strtok_r - found
+-- Looking for strtol
+-- Looking for strtol - found
+-- Looking for strtoll
+-- Looking for strtoll - found
+-- Looking for strtoul
+-- Looking for strtoul - found
+-- Looking for strtoull
+-- Looking for strtoull - found
+-- Looking for tan
+-- Looking for tan - found
+-- Looking for tanf
+-- Looking for tanf - found
+-- Looking for trunc
+-- Looking for trunc - found
+-- Looking for truncf
+-- Looking for truncf - found
+-- Looking for unsetenv
+-- Looking for unsetenv - found
+-- Looking for vsnprintf
+-- Looking for vsnprintf - found
+-- Looking for vsscanf
+-- Looking for vsscanf - found
+-- Looking for wcsnlen
+-- Looking for wcsnlen - found
+-- Looking for wcscmp
+-- Looking for wcscmp - found
+-- Looking for wcsdup
+-- Looking for wcsdup - found
+-- Looking for wcslcat
+-- Looking for wcslcat - found
+-- Looking for wcslcpy
+-- Looking for wcslcpy - found
+-- Looking for wcslen
+-- Looking for wcslen - found
+-- Looking for wcsncmp
+-- Looking for wcsncmp - found
+-- Looking for wcsstr
+-- Looking for wcsstr - found
+-- Looking for wcstol
+-- Looking for wcstol - found
+-- Looking for strcasestr
+-- Looking for strcasestr - found
+-- Performing Test LIBC_HAS_ISINF
+-- Performing Test LIBC_HAS_ISINF - Success
+-- Performing Test LIBC_ISINF_HANDLES_FLOAT
+-- Performing Test LIBC_ISINF_HANDLES_FLOAT - Success
+-- Performing Test LIBC_HAS_ISINFF
+-- Performing Test LIBC_HAS_ISINFF - Failed
+-- Performing Test LIBC_HAS_ISNAN
+-- Performing Test LIBC_HAS_ISNAN - Success
+-- Performing Test LIBC_ISNAN_HANDLES_FLOAT
+-- Performing Test LIBC_ISNAN_HANDLES_FLOAT - Success
+-- Performing Test LIBC_HAS_ISNANF
+-- Performing Test LIBC_HAS_ISNANF - Failed
+-- Looking for fdatasync
+-- Looking for fdatasync - not found
+-- Looking for gethostname
+-- Looking for gethostname - found
+-- Looking for getpagesize
+-- Looking for getpagesize - found
+-- Looking for getresgid
+-- Looking for getresgid - not found
+-- Looking for getresuid
+-- Looking for getresuid - not found
+-- Looking for sigaction
+-- Looking for sigaction - found
+-- Looking for sigtimedwait
+-- Looking for sigtimedwait - not found
+-- Looking for setjmp
+-- Looking for setjmp - found
+-- Looking for nanosleep
+-- Looking for nanosleep - found
+-- Looking for gmtime_r
+-- Looking for gmtime_r - found
+-- Looking for localtime_r
+-- Looking for localtime_r - found
+-- Looking for nl_langinfo
+-- Looking for nl_langinfo - found
+-- Looking for sysconf
+-- Looking for sysconf - found
+-- Looking for sysctlbyname
+-- Looking for sysctlbyname - found
+-- Looking for getauxval
+-- Looking for getauxval - not found
+-- Looking for elf_aux_info
+-- Looking for elf_aux_info - not found
+-- Looking for ppoll
+-- Looking for ppoll - not found
+-- Looking for memfd_create
+-- Looking for memfd_create - not found
+-- Looking for posix_fallocate
+-- Looking for posix_fallocate - not found
+-- Looking for posix_spawn_file_actions_addchdir
+-- Looking for posix_spawn_file_actions_addchdir - not found
+-- Looking for posix_spawn_file_actions_addchdir_np
+-- Looking for posix_spawn_file_actions_addchdir_np - not found
+-- Looking for dlopen
+-- Looking for dlopen - found
+-- Performing Test HAVE_O_CLOEXEC
+-- Performing Test HAVE_O_CLOEXEC - Success
+-- Performing Test HAVE_FRAMEWORK_METAL
+-- Performing Test HAVE_FRAMEWORK_METAL - Success
+-- Performing Test HAVE_PTHREADS
+-- Performing Test HAVE_PTHREADS - Success
+-- Performing Test HAVE_RECURSIVE_MUTEXES
+-- Performing Test HAVE_RECURSIVE_MUTEXES - Success
+-- Performing Test HAVE_PTHREADS_SEM
+-- Performing Test HAVE_PTHREADS_SEM - Success
+-- Performing Test COMPILER_HAS_SEM_TIMEDWAIT
+-- Performing Test COMPILER_HAS_SEM_TIMEDWAIT - Failed
+-- Looking for pthread.h
+-- Looking for pthread.h - found
+-- Looking for pthread_np.h
+-- Looking for pthread_np.h - not found
+-- Performing Test HAVE_PTHREAD_SETNAME_NP
+-- Performing Test HAVE_PTHREAD_SETNAME_NP - Success
+-- Performing Test HAVE_POSIX_SPAWN
+-- Performing Test HAVE_POSIX_SPAWN - Success
+-- Performing Test COMPILER_SUPPORTS_FOBJC_ARC
+-- Performing Test COMPILER_SUPPORTS_FOBJC_ARC - Success
+-- 
+-- SDL3 was configured with the following options:
+-- 
+-- Platform: iOS
+-- 64-bit:   TRUE
+-- Compiler: /usr/bin/cc
+-- Revision: SDL-3.4.16-fa2c02b
+-- Vendor:   
+-- 
+-- Subsystems:
+--   Audio:    ON
+--   Video:    ON
+--   GPU:      ON
+--   Render:   ON
+--   Camera:   ON
+--   Joystick: ON
+--   Haptic:   ON
+--   Hidapi:   ON
+--   Power:    ON
+--   Sensor:   ON
+--   Dialog:   ON
+--   Tray:     ON
+-- 
+-- Options:
+--   SDL_ALSA                    (Wanted: OFF): OFF
+--   SDL_ALSA_SHARED             (Wanted: OFF): OFF
+--   SDL_ALTIVEC                 (Wanted: OFF): OFF
+--   SDL_ARMNEON                 (Wanted: ON): ON
+--   SDL_ASAN                    (Wanted: OFF): OFF
+--   SDL_ASSEMBLY                (Wanted: ON): ON
+--   SDL_ASSERTIONS              (Wanted: auto): auto
+--   SDL_AVX                     (Wanted: OFF): OFF
+--   SDL_AVX2                    (Wanted: OFF): OFF
+--   SDL_AVX512F                 (Wanted: OFF): OFF
+--   SDL_BACKGROUNDING_SIGNAL    (Wanted: OFF): OFF
+--   SDL_CCACHE                  (Wanted: OFF): OFF
+--   SDL_CLANG_TIDY              (Wanted: OFF): OFF
+--   SDL_CLOCK_GETTIME           (Wanted: OFF): OFF
+--   SDL_COCOA                   (Wanted: ON): OFF
+--   SDL_DBUS                    (Wanted: OFF): OFF
+--   SDL_DEPS_SHARED             (Wanted: ON): OFF
+--   SDL_DIRECTX                 (Wanted: OFF): OFF
+--   SDL_DISKAUDIO               (Wanted: ON): ON
+--   SDL_DLOPEN_NOTES            (Wanted: OFF): OFF
+--   SDL_DUMMYAUDIO              (Wanted: ON): ON
+--   SDL_DUMMYCAMERA             (Wanted: ON): ON
+--   SDL_DUMMYVIDEO              (Wanted: ON): ON
+--   SDL_EXAMPLES                (Wanted: OFF): OFF
+--   SDL_EXAMPLES_LINK_SHARED    (Wanted: OFF): OFF
+--   SDL_FOREGROUNDING_SIGNAL    (Wanted: OFF): OFF
+--   SDL_FRIBIDI                 (Wanted: OFF): OFF
+--   SDL_FRIBIDI_SHARED          (Wanted: OFF): OFF
+--   SDL_GCC_ATOMICS             (Wanted: ON): ON
+--   SDL_HIDAPI                  (Wanted: ON): ON
+--   SDL_HIDAPI_JOYSTICK         (Wanted: ON): ON
+--   SDL_HIDAPI_LIBUSB           (Wanted: OFF): OFF
+--   SDL_HIDAPI_LIBUSB_SHARED    (Wanted: OFF): OFF
+--   SDL_IBUS                    (Wanted: OFF): OFF
+--   SDL_INSTALL                 (Wanted: OFF): OFF
+--   SDL_INSTALL_TESTS           (Wanted: OFF): OFF
+--   SDL_JACK                    (Wanted: OFF): OFF
+--   SDL_JACK_SHARED             (Wanted: OFF): OFF
+--   SDL_KMSDRM                  (Wanted: OFF): OFF
+--   SDL_KMSDRM_SHARED           (Wanted: OFF): OFF
+--   SDL_LASX                    (Wanted: OFF): OFF
+--   SDL_LIBC                    (Wanted: ON): ON
+--   SDL_LIBICONV                (Wanted: OFF): OFF
+--   SDL_LIBTHAI                 (Wanted: OFF): OFF
+--   SDL_LIBTHAI_SHARED          (Wanted: OFF): OFF
+--   SDL_LIBUDEV                 (Wanted: ON): OFF
+--   SDL_LIBURING                (Wanted: OFF): OFF
+--   SDL_LSX                     (Wanted: OFF): OFF
+--   SDL_METAL                   (Wanted: ON): ON
+--   SDL_MMX                     (Wanted: OFF): OFF
+--   SDL_OFFSCREEN               (Wanted: ON): ON
+--   SDL_OPENGL                  (Wanted: OFF): OFF
+--   SDL_OPENGLES                (Wanted: ON): ON
+--   SDL_OPENVR                  (Wanted: OFF): OFF
+--   SDL_OSS                     (Wanted: OFF): OFF
+--   SDL_PIPEWIRE                (Wanted: OFF): OFF
+--   SDL_PIPEWIRE_SHARED         (Wanted: OFF): OFF
+--   SDL_PTHREADS                (Wanted: ON): ON
+--   SDL_PTHREADS_SEM            (Wanted: ON): ON
+--   SDL_PULSEAUDIO              (Wanted: OFF): OFF
+--   SDL_PULSEAUDIO_SHARED       (Wanted: OFF): OFF
+--   SDL_RENDER_D3D              (Wanted: OFF): OFF
+--   SDL_RENDER_D3D11            (Wanted: OFF): OFF
+--   SDL_RENDER_D3D12            (Wanted: OFF): OFF
+--   SDL_RENDER_GPU              (Wanted: ON): ON
+--   SDL_RENDER_METAL            (Wanted: ON): ON
+--   SDL_RENDER_VULKAN           (Wanted: OFF): OFF
+--   SDL_ROCKCHIP                (Wanted: OFF): OFF
+--   SDL_RPATH                   (Wanted: ON): OFF
+--   SDL_RPI                     (Wanted: OFF): OFF
+--   SDL_SNDIO                   (Wanted: OFF): OFF
+--   SDL_SNDIO_SHARED            (Wanted: OFF): OFF
+--   SDL_SSE                     (Wanted: OFF): OFF
+--   SDL_SSE2                    (Wanted: OFF): OFF
+--   SDL_SSE3                    (Wanted: OFF): OFF
+--   SDL_SSE4_1                  (Wanted: OFF): OFF
+--   SDL_SSE4_2                  (Wanted: OFF): OFF
+--   SDL_SYSTEM_ICONV            (Wanted: OFF): OFF
+--   SDL_TESTS                   (Wanted: OFF): OFF
+--   SDL_TESTS_LINK_SHARED       (Wanted: OFF): OFF
+--   SDL_UNINSTALL               (Wanted: OFF): OFF
+--   SDL_VIRTUAL_JOYSTICK        (Wanted: ON): ON
+--   SDL_VIVANTE                 (Wanted: OFF): OFF
+--   SDL_VULKAN                  (Wanted: OFF): OFF
+--   SDL_WASAPI                  (Wanted: OFF): OFF
+--   SDL_WAYLAND                 (Wanted: OFF): OFF
+--   SDL_WAYLAND_LIBDECOR        (Wanted: OFF): OFF
+--   SDL_WAYLAND_LIBDECOR_SHARED (Wanted: OFF): OFF
+--   SDL_WAYLAND_SHARED          (Wanted: OFF): OFF
+--   SDL_X11                     (Wanted: OFF): OFF
+--   SDL_X11_SHARED              (Wanted: OFF): OFF
+--   SDL_X11_XCURSOR             (Wanted: OFF): OFF
+--   SDL_X11_XDBE                (Wanted: OFF): OFF
+--   SDL_X11_XFIXES              (Wanted: OFF): OFF
+--   SDL_X11_XINPUT              (Wanted: OFF): OFF
+--   SDL_X11_XRANDR              (Wanted: OFF): OFF
+--   SDL_X11_XSCRNSAVER          (Wanted: OFF): OFF
+--   SDL_X11_XSHAPE              (Wanted: OFF): OFF
+--   SDL_X11_XSYNC               (Wanted: OFF): OFF
+--   SDL_X11_XTEST               (Wanted: OFF): OFF
+--   SDL_XINPUT                  (Wanted: OFF): OFF
+-- 
+--  Build Shared Library: OFF
+--  Build Static Library: ON
+--  Build libraries as Apple Framework: OFF
+-- 
+-- Enabled backends:
+--   Video drivers: dummy offscreen uikit
+--   Render drivers: gpu metal ogl_es2
+--   GPU drivers: metal
+--   Audio drivers: coreaudio disk dummy
+--   Joystick drivers: hidapi mfi virtual
+--   Camera drivers: coremedia dummy
+-- 
+-- If something was not detected, although the libraries
+-- were installed, then make sure you have set the
+-- CMAKE_C_FLAGS and CMAKE_PREFIX_PATH CMake variables correctly.
+-- 
+-- Configuring SDL3_mixer 3.2.4
+-- Performing Test LINKER_SUPPORTS_VERSION_SCRIPT
+-- Performing Test LINKER_SUPPORTS_VERSION_SCRIPT - Failed
+-- Using vendored libogg
+-- Configuring libogg 1.3.5
+-- Looking for include file inttypes.h
+-- Looking for include file inttypes.h - found
+-- Looking for include file stdint.h
+-- Looking for include file stdint.h - found
+-- Looking for include file sys/types.h
+-- Looking for include file sys/types.h - found
+-- Looking for sys/types.h
+-- Looking for sys/types.h - found
+-- Looking for stdint.h
+-- Looking for stdint.h - found
+-- Looking for stddef.h
+-- Looking for stddef.h - found
+-- Check size of int16_t
+-- Check size of int16_t - done
+-- Check size of uint16_t
+-- Check size of uint16_t - done
+-- Check size of u_int16_t
+-- Check size of u_int16_t - done
+-- Check size of int32_t
+-- Check size of int32_t - done
+-- Check size of uint32_t
+-- Check size of uint32_t - done
+-- Check size of u_int32_t
+-- Check size of u_int32_t - done
+-- Check size of int64_t
+-- Check size of int64_t - done
+-- Check size of short
+-- Check size of short - done
+-- Check size of int
+-- Check size of int - done
+-- Check size of long
+-- Check size of long - done
+-- Check size of long long
+-- Check size of long long - done
+-- Using vendored vorbis + vorbisfile
+-- Configuring vorbis 1.3.7
+-- Using vendored libgme
+-- VGM/GYM: Nuked OPN2 emulator will be used
+-- Zlib-Compressed formats excluded
+-- Performing Test LIBM_NOT_NEEDED
+-- Performing Test LIBM_NOT_NEEDED - Success
+-- SDL3_mixer backends:
+-- - enabled:  vorbis_vorbisfile gme wave aiff voc au
+-- - disabled: opus vorbis_stb vorbis_tremor flac_libflac flac_drflac mod_xmp mp3_drmp3 mp3_mpg123 midi_fluidsynth midi_timidity wavpack
+-- Plume - Building with backends: Vulkan=1 Metal=1 D3D12=
+-- Plume - SDL2 Vulkan integration: OFF
+-- Plume - SDL3 Vulkan integration: OFF
+-- Plume - D3D12 Agility SDK: OFF
+-- Plume - Building examples: OFF
+-- {fmt} version: 11.0.2
+-- Build type: Release
+-- Performing Test HAS_NULLPTR_WARNING
+-- Performing Test HAS_NULLPTR_WARNING - Success
+CMake Warning (deprecated) at tools/XenonRecomp/thirdparty/xxHash/cmake_unofficial/CMakeLists.txt:8 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+This warning is for project developers.  Use -Wno-author or -Wno-deprecated
+to suppress it.
+
+-- xxHash build type: Release
+-- Architecture: arm64
+-- The ASM compiler identification is AppleClang
+-- Found assembler: /usr/bin/cc
+-- ZSTD VERSION: 1.5.7
+-- Performing Test C_FLAG_WALL
+-- Performing Test C_FLAG_WALL - Success
+-- Performing Test CXX_FLAG_WALL
+-- Performing Test CXX_FLAG_WALL - Success
+-- Performing Test C_FLAG_WEXTRA
+-- Performing Test C_FLAG_WEXTRA - Success
+-- Performing Test CXX_FLAG_WEXTRA
+-- Performing Test CXX_FLAG_WEXTRA - Success
+-- Performing Test C_FLAG_WUNDEF
+-- Performing Test C_FLAG_WUNDEF - Success
+-- Performing Test CXX_FLAG_WUNDEF
+-- Performing Test CXX_FLAG_WUNDEF - Success
+-- Performing Test C_FLAG_WSHADOW
+-- Performing Test C_FLAG_WSHADOW - Success
+-- Performing Test CXX_FLAG_WSHADOW
+-- Performing Test CXX_FLAG_WSHADOW - Success
+-- Performing Test C_FLAG_WCAST_ALIGN
+-- Performing Test C_FLAG_WCAST_ALIGN - Success
+-- Performing Test CXX_FLAG_WCAST_ALIGN
+-- Performing Test CXX_FLAG_WCAST_ALIGN - Success
+-- Performing Test C_FLAG_WCAST_QUAL
+-- Performing Test C_FLAG_WCAST_QUAL - Success
+-- Performing Test CXX_FLAG_WCAST_QUAL
+-- Performing Test CXX_FLAG_WCAST_QUAL - Success
+-- Performing Test C_FLAG_WSTRICT_PROTOTYPES
+-- Performing Test C_FLAG_WSTRICT_PROTOTYPES - Success
+-- Performing Test LD_FLAG_Z_NOEXECSTACK
+-- Performing Test LD_FLAG_Z_NOEXECSTACK - Failed
+-- Performing Test C_FLAG_QUNUSED_ARGUMENTS
+-- Performing Test C_FLAG_QUNUSED_ARGUMENTS - Success
+-- Performing Test CXX_FLAG_QUNUSED_ARGUMENTS
+-- Performing Test CXX_FLAG_QUNUSED_ARGUMENTS - Success
+-- Performing Test C_FLAG_WA_NOEXECSTACK
+-- Performing Test C_FLAG_WA_NOEXECSTACK - Success
+-- Performing Test CXX_FLAG_WA_NOEXECSTACK
+-- Performing Test CXX_FLAG_WA_NOEXECSTACK - Success
+-- CMAKE_INSTALL_PREFIX: /usr/local
+-- CMAKE_INSTALL_LIBDIR: lib
+-- ZSTD_LEGACY_SUPPORT defined!
+-- ZSTD_MULTITHREAD_SUPPORT is enabled
+-- Generating version information...
+-- Build: v1.0.0
+-- Creating /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/version.h
+-- Creating /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/version.cpp
+-- Configuring done (34.3s)
+-- Generating done (0.2s)
+-- Build files have been written to: /Users/runner/work/KronosiOS/KronosiOS/build-ios
+[0/2] Re-checking globbed directories...
+[1/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/DistanceMapping.cpp.o
+[2/867] Building C object thirdparty/SDL_mixer/external/ogg-build/CMakeFiles/ogg.dir/src/bitwise.c.o
+[3/867] Building C object thirdparty/SDL_mixer/external/ogg-build/CMakeFiles/ogg.dir/src/framing.c.o
+[4/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/EdgeHolder.cpp.o
+[5/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/Projection.cpp.o
+[6/867] Generating shader
+Extraction complete!
+Extraction complete!
+[7/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/Scanline.cpp.o
+[8/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/Contour.cpp.o
+[9/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/edge-segments.cpp.o
+[10/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/edge-selectors.cpp.o
+[11/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/equation-solver.cpp.o
+[12/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/Shape.cpp.o
+[13/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/contour-combiners.cpp.o
+[14/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/MSDFErrorCorrection.cpp.o
+[15/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/export-svg.cpp.o
+[16/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/render-sdf.cpp.o
+[17/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/save-bmp.cpp.o
+[18/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/save-fl32.cpp.o
+[19/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/save-rgba.cpp.o
+[20/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/msdf-error-correction.cpp.o
+[21/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/save-tiff.cpp.o
+[22/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/rasterization.cpp.o
+[23/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/edge-coloring.cpp.o
+[24/867] Linking C static library thirdparty/SDL_mixer/external/ogg-build/libogg.a
+[25/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/mdct.c.o
+[26/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/msdfgen.cpp.o
+[27/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/envelope.c.o
+[28/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/window.c.o
+[29/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/block.c.o
+[30/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/lpc.c.o
+[31/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/lsp.c.o
+[32/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/analysis.c.o
+[33/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/synthesis.c.o
+[34/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/info.c.o
+[35/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/smallft.c.o
+[36/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/floor0.c.o
+[37/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/floor1.c.o
+[38/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/mapping0.c.o
+[39/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/shape-description.cpp.o
+[40/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/registry.c.o
+[41/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/sdf-error-estimation.cpp.o
+[42/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/codebook.c.o
+[43/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/lookup.c.o
+[43/867] Generating generated/ppc/ppc_config.h, generated/ppc/ppc_context.h, generated/ppc/ppc_func_mapping.cpp, generated/ppc/ppc_recomp_shared.h, generated/ppc/ppc_recomp.0.cpp, generated/ppc/ppc_recomp.1.cpp, generated/ppc/ppc_recomp.2.cpp, generated/ppc/ppc_recomp.3.cpp, generated/ppc/ppc_recomp.4.cpp, generated/ppc/ppc_recomp.5.cpp, generated/ppc/ppc_recomp.6.cpp, generated/ppc/ppc_recomp.7.cpp, generated/ppc/ppc_recomp.8.cpp, generated/ppc/ppc_recomp.9.cpp, generated/ppc/ppc_recomp.10.cpp, generated/ppc/ppc_recomp.11.cpp, generated/ppc/ppc_recomp.12.cpp, generated/ppc/ppc_recomp.13.cpp, generated/ppc/ppc_recomp.14.cpp, generated/ppc/ppc_recomp.15.cpp, generated/ppc/ppc_recomp.16.cpp, generated/ppc/ppc_recomp.17.cpp, generated/ppc/ppc_recomp.18.cpp, generated/ppc/ppc_recomp.19.cpp, generated/ppc/ppc_recomp.20.cpp, generated/ppc/ppc_recomp.21.cpp, generated/ppc/ppc_recomp.22.cpp, generated/ppc/ppc_recomp.23.cpp, generated/ppc/ppc_recomp.24.cpp, generated/ppc/ppc_recomp.25.cpp, generated/ppc/ppc_recomp.26.cpp, generated/ppc/ppc_recomp.27.cpp, generated/ppc/ppc_recomp.28.cpp, generated/ppc/ppc_recomp.29.cpp, generated/ppc/ppc_recomp.30.cpp, generated/ppc/ppc_recomp.31.cpp, generated/ppc/ppc_recomp.32.cpp, generated/ppc/ppc_recomp.33.cpp, generated/ppc/ppc_recomp.34.cpp, generated/ppc/ppc_recomp.35.cpp, generated/ppc/ppc_recomp.36.cpp, generated/ppc/ppc_recomp.37.cpp, generated/ppc/ppc_recomp.38.cpp, generated/ppc/ppc_recomp.39.cpp, generated/ppc/ppc_recomp.40.cpp, generated/ppc/ppc_recomp.41.cpp, generated/ppc/ppc_recomp.42.cpp, generated/ppc/ppc_recomp.43.cpp, generated/ppc/ppc_recomp.44.cpp, generated/ppc/ppc_recomp.45.cpp, generated/ppc/ppc_recomp.46.cpp, generated/ppc/ppc_recomp.47.cpp, generated/ppc/ppc_recomp.48.cpp, generated/ppc/ppc_recomp.49.cpp, generated/ppc/ppc_recomp.50.cpp, generated/ppc/ppc_recomp.51.cpp, generated/ppc/ppc_recomp.52.cpp, generated/ppc/ppc_recomp.53.cpp, generated/ppc/ppc_recomp.54.cpp, generated/ppc/ppc_recomp.55.cpp, generated/ppc/ppc_recomp.56.cpp, generated/ppc/ppc_recomp.57.cpp, generated/ppc/ppc_recomp.58.cpp, generated/ppc/ppc_recomp.59.cpp, generated/ppc/ppc_recomp.60.cpp, generated/ppc/ppc_recomp.61.cpp, generated/ppc/ppc_recomp.62.cpp, generated/ppc/ppc_recomp.63.cpp, generated/ppc/ppc_recomp.64.cpp, generated/ppc/ppc_recomp.65.cpp, generated/ppc/ppc_recomp.66.cpp, generated/ppc/ppc_recomp.67.cpp, generated/ppc/ppc_recomp.68.cpp, generated/ppc/ppc_recomp.69.cpp, generated/ppc/ppc_recomp.70.cpp, generated/ppc/ppc_recomp.71.cpp, generated/ppc/ppc_recomp.72.cpp, generated/ppc/ppc_recomp.73.cpp, generated/ppc/ppc_recomp.74.cpp, generated/ppc/ppc_recomp.75.cpp, generated/ppc/ppc_recomp.76.cpp, generated/ppc/ppc_recomp.77.cpp, generated/ppc/ppc_recomp.78.cpp, generated/ppc/ppc_recomp.79.cpp, generated/ppc/ppc_recomp.80.cpp, generated/ppc/ppc_recomp.81.cpp, generated/ppc/ppc_recomp.82.cpp, generated/ppc/ppc_recomp.83.cpp, generated/ppc/ppc_recomp.84.cpp, generated/ppc/ppc_recomp.85.cpp, generated/ppc/ppc_recomp.86.cpp, generated/ppc/ppc_recomp.87.cpp, generated/ppc/ppc_recomp.88.cpp, generated/ppc/ppc_recomp.89.cpp, generated/ppc/ppc_recomp.90.cpp, generated/ppc/ppc_recomp.91.cpp, generated/ppc/ppc_recomp.92.cpp, generated/ppc/ppc_recomp.93.cpp, generated/ppc/ppc_recomp.94.cpp, generated/ppc/ppc_recomp.95.cpp, generated/ppc/ppc_recomp.96.cpp, generated/ppc/ppc_recomp.97.cpp, generated/ppc/ppc_recomp.98.cpp, generated/ppc/ppc_recomp.99.cpp, generated/ppc/ppc_recomp.100.cpp, generated/ppc/ppc_recomp.101.cpp, generated/ppc/ppc_recomp.102.cpp, generated/ppc/ppc_recomp.103.cpp, generated/ppc/ppc_recomp.104.cpp, generated/ppc/ppc_recomp.105.cpp, generated/ppc/ppc_recomp.106.cpp, generated/ppc/ppc_recomp.107.cpp, generated/ppc/ppc_recomp.108.cpp, generated/ppc/ppc_recomp.109.cpp, generated/ppc/ppc_recomp.110.cpp, generated/ppc/ppc_recomp.111.cpp, generated/ppc/ppc_recomp.112.cpp, generated/ppc/ppc_recomp.113.cpp, generated/ppc/ppc_recomp.114.cpp, generated/ppc/ppc_recomp.115.cpp, generated/ppc/ppc_recomp.116.cpp, generated/ppc/ppc_recomp.117.cpp, generated/ppc/ppc_recomp.118.cpp, generated/ppc/ppc_recomp.119.cpp, generated/ppc/ppc_recomp.120.cpp, generated/ppc/ppc_recomp.121.cpp, generated/ppc/ppc_recomp.122.cpp, generated/ppc/ppc_recomp.123.cpp, generated/ppc/ppc_recomp.124.cpp, generated/ppc/ppc_recomp.125.cpp, generated/ppc/ppc_recomp.126.cpp, generated/ppc/ppc_recomp.127.cpp, generated/ppc/ppc_recomp.128.cpp, generated/ppc/ppc_recomp.129.cpp, generated/ppc/ppc_recomp.130.cpp, generated/ppc/ppc_recomp.131.cpp, generated/ppc/ppc_recomp.132.cpp, generated/ppc/ppc_recomp.133.cpp, generated/ppc/ppc_recomp.134.cpp, generated/ppc/ppc_recomp.135.cpp, generated/ppc/ppc_recomp.136.cpp, generated/ppc/ppc_recomp.137.cpp, generated/ppc/ppc_recomp.138.cpp, generated/ppc/ppc_recomp.139.cpp, generated/ppc/ppc_recomp.140.cpp, generated/ppc/ppc_recomp.141.cpp, generated/ppc/ppc_recomp.142.cpp, generated/ppc/ppc_recomp.143.cpp, generated/ppc/ppc_recomp.144.cpp, generated/ppc/ppc_recomp.145.cpp
+Recompiling functions... 0.002686006%
+Recompiling functions... 5.5036263%
+Recompiling functions... 11.004566%
+Recompiling functions... 16.505507%
+Recompiling functions... 22.006447%
+Recompiling functions... 27.507385%
+Recompiling functions... 33.008327%
+Recompiling functions... 38.509266%
+Recompiling functions... 44.01021%
+Recompiling functions... 49.511147%
+Recompiling functions... 55.01209%
+Recompiling functions... 60.513027%
+Recompiling functions... 66.01397%
+Recompiling functions... 71.51491%
+Recompiling functions... 77.01585%
+Recompiling functions... 82.51679%
+Recompiling functions... 88.01772%
+Recompiling functions... 93.51867%
+Recompiling functions... 99.01961%
+Recompiling functions... 100%
+[128/867] Building C object thirdparty/SDL/CMakeFiles/SDL3-static.dir/src/SDL_assert.c.o
+[129/867] Generating generated/shader/shader_cache.cpp
+Recompiling shaders with 3 threads
+Recompiling shaders... 1.0940919%
+Recompiling shaders... 2.1881838%
+Recompiling shaders... 3.2822757%
+Recompiling shaders... 4.3763676%
+Recompiling shaders... 5.4704595%
+Recompiling shaders... 6.5645514%
+Recompiling shaders... 7.6586432%
+Recompiling shaders... 8.752735%
+Recompiling shaders... 9.8468275%
+Recompiling shaders... 10.940919%
+Recompiling shaders... 12.03501%
+Recompiling shaders... 13.129103%
+Recompiling shaders... 14.223194%
+Recompiling shaders... 15.3172865%
+Recompiling shaders... 16.411379%
+Recompiling shaders... 17.50547%
+Recompiling shaders... 18.599562%
+Recompiling shaders... 19.693655%
+Recompiling shaders... 20.787746%
+Recompiling shaders... 21.881838%
+Recompiling shaders... 22.975931%
+Recompiling shaders... 24.07002%
+Recompiling shaders... 25.164112%
+Recompiling shaders... 26.258205%
+Recompiling shaders... 27.352297%
+Recompiling shaders... 28.446388%
+Recompiling shaders... 29.540482%
+Recompiling shaders... 30.634573%
+Recompiling shaders... 31.728664%
+Recompiling shaders... 32.822758%
+Recompiling shaders... 33.916847%
+Recompiling shaders... 35.01094%
+Recompiling shaders... 36.105034%
+Recompiling shaders... 37.199123%
+Recompiling shaders... 38.293217%
+Recompiling shaders... 39.38731%
+Recompiling shaders... 40.4814%
+Recompiling shaders... 41.575493%
+Recompiling shaders... 42.669586%
+Recompiling shaders... 43.763676%
+Recompiling shaders... 44.85777%
+Recompiling shaders... 45.951862%
+Recompiling shaders... 47.04595%
+Recompiling shaders... 48.14004%
+Recompiling shaders... 49.23414%
+Recompiling shaders... 50.328224%
+Recompiling shaders... 51.42232%
+Recompiling shaders... 52.51641%
+Recompiling shaders... 53.610504%
+Recompiling shaders... 54.704594%
+Recompiling shaders... 55.798687%
+Recompiling shaders... 56.892776%
+Recompiling shaders... 57.986874%
+Recompiling shaders... 59.080963%
+Recompiling shaders... 60.175056%
+Recompiling shaders... 61.269146%
+Recompiling shaders... 62.363235%
+Recompiling shaders... 63.45733%
+Recompiling shaders... 64.55142%
+Recompiling shaders... 65.645515%
+Recompiling shaders... 66.73961%
+Recompiling shaders... 67.833694%
+Recompiling shaders... 68.92779%
+Recompiling shaders... 70.02188%
+Recompiling shaders... 71.115974%
+Recompiling shaders... 72.21007%
+Recompiling shaders... 73.30416%
+Recompiling shaders... 74.39825%
+Recompiling shaders... 75.49234%
+Recompiling shaders... 76.58643%
+Recompiling shaders... 77.68052%
+Recompiling shaders... 78.77462%
+Recompiling shaders... 79.86871%
+Recompiling shaders... 80.9628%
+Recompiling shaders... 82.05689%
+Recompiling shaders... 83.150986%
+Recompiling shaders... 84.24507%
+Recompiling shaders... 85.33917%
+Recompiling shaders... 86.43326%
+Recompiling shaders... 87.52735%
+Recompiling shaders... 88.621445%
+Recompiling shaders... 89.71554%
+Recompiling shaders... 90.80962%
+Recompiling shaders... 91.903725%
+Recompiling shaders... 92.99781%
+Recompiling shaders... 94.0919%
+Recompiling shaders... 95.186%
+Recompiling shaders... 96.28008%
+Recompiling shaders... 97.374176%
+Recompiling shaders... 98.46828%
+Recompiling shaders... 99.56236%
+Recompiling shaders... 99.89059%
+Creating shader cache...
+Compressing DXIL cache...
+Compressing AIR cache...
+Compressing SPIRV cache...
+[460/867] Linking C static library zstd/lib/libzstd.a
+[462/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/cmake_pch.hxx.pch
+[463/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_func_mapping.cpp.o
+[464/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.4.cpp.o
+[465/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.0.cpp.o
+[466/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.3.cpp.o
+[467/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.2.cpp.o
+[468/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.5.cpp.o
+[469/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.1.cpp.o
+[470/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.8.cpp.o
+[471/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.6.cpp.o
+[472/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.7.cpp.o
+[473/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.9.cpp.o
+[474/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.10.cpp.o
+[475/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.12.cpp.o
+[476/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.11.cpp.o
+[477/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.15.cpp.o
+[478/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.13.cpp.o
+[479/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.14.cpp.o
+[480/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.16.cpp.o
+[481/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.18.cpp.o
+[482/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.17.cpp.o
+[483/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.19.cpp.o
+[484/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.20.cpp.o
+[485/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.21.cpp.o
+[486/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.22.cpp.o
+[487/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.23.cpp.o
+[488/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.24.cpp.o
+[489/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.28.cpp.o
+[490/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.27.cpp.o
+[491/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.26.cpp.o
+[492/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.25.cpp.o
+[493/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.29.cpp.o
+[494/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.30.cpp.o
+[495/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.31.cpp.o
+[496/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.32.cpp.o
+[497/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.33.cpp.o
+[498/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.34.cpp.o
+[499/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.36.cpp.o
+[500/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.37.cpp.o
+[501/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.35.cpp.o
+[502/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.39.cpp.o
+[503/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.38.cpp.o
+[504/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.40.cpp.o
+[505/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.41.cpp.o
+[506/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.42.cpp.o
+[507/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.45.cpp.o
+[508/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.43.cpp.o
+[509/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.44.cpp.o
+[510/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.46.cpp.o
+[511/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.51.cpp.o
+[512/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.47.cpp.o
+[513/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.52.cpp.o
+[514/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.48.cpp.o
+[515/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.53.cpp.o
+[516/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.50.cpp.o
+[517/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.55.cpp.o
+[518/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.49.cpp.o
+[519/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.54.cpp.o
+[520/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.57.cpp.o
+[521/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.56.cpp.o
+[522/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.59.cpp.o
+[523/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.58.cpp.o
+[524/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.60.cpp.o
+[525/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.64.cpp.o
+[526/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.63.cpp.o
+[527/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.65.cpp.o
+[528/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.62.cpp.o
+[529/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.66.cpp.o
+[530/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.61.cpp.o
+[531/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.70.cpp.o
+[532/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.71.cpp.o
+[533/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.68.cpp.o
+[534/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.72.cpp.o
+[535/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.67.cpp.o
+[536/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.75.cpp.o
+[537/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.76.cpp.o
+[538/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.74.cpp.o
+[539/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.73.cpp.o
+[540/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.77.cpp.o
+[541/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.69.cpp.o
+[542/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.78.cpp.o
+[543/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.79.cpp.o
+[544/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.80.cpp.o
+[545/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.81.cpp.o
+[546/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.83.cpp.o
+[547/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.82.cpp.o
+[548/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.84.cpp.o
+[549/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.85.cpp.o
+[550/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.86.cpp.o
+[551/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.87.cpp.o
+[552/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.88.cpp.o
+[553/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.89.cpp.o
+[554/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.90.cpp.o
+[555/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.91.cpp.o
+[556/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.93.cpp.o
+[557/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.92.cpp.o
+[558/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.94.cpp.o
+[559/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.95.cpp.o
+[560/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.98.cpp.o
+[561/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.96.cpp.o
+[562/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.99.cpp.o
+[563/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.97.cpp.o
+[564/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.100.cpp.o
+[565/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.103.cpp.o
+[566/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.104.cpp.o
+[567/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.102.cpp.o
+[568/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.101.cpp.o
+[569/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.109.cpp.o
+[570/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.105.cpp.o
+[571/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.110.cpp.o
+[572/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.111.cpp.o
+[573/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.106.cpp.o
+[574/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.112.cpp.o
+[575/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.107.cpp.o
+[576/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.115.cpp.o
+[577/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.114.cpp.o
+[578/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.116.cpp.o
+[579/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.117.cpp.o
+[580/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.118.cpp.o
+[581/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.108.cpp.o
+[582/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.113.cpp.o
+[583/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.120.cpp.o
+[584/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.119.cpp.o
+[585/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.121.cpp.o
+[586/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.122.cpp.o
+[587/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.123.cpp.o
+[588/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.124.cpp.o
+[589/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.126.cpp.o
+[590/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.129.cpp.o
+[591/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.127.cpp.o
+[592/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.130.cpp.o
+[593/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.125.cpp.o
+[594/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.134.cpp.o
+[595/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.131.cpp.o
+[596/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.128.cpp.o
+[597/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.132.cpp.o
+[598/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.133.cpp.o
+[599/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.137.cpp.o
+[600/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.135.cpp.o
+[601/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.136.cpp.o
+[602/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.142.cpp.o
+[603/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.143.cpp.o
+[604/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.140.cpp.o
+[605/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.141.cpp.o
+[606/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.138.cpp.o
+[607/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.139.cpp.o
+[608/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.144.cpp.o
+[609/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.145.cpp.o
+[610/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/shader/shader_cache.cpp.o
+[611/867] Linking CXX static library MarathonRecompLib/libMarathonRecompLib.a
+[612/867] Generating generated/gpu/shader/msl/copy_vs.metal.ir
+[613/867] Generating generated/gpu/shader/msl/conditional_survey_ps.metal.ir
+[614/867] Generating generated/gpu/shader/msl/copy_depth_ps.metal.ir
+[615/867] Generating generated/gpu/shader/msl/copy_color_ps.metal.ir
+[616/867] Generating generated/gpu/shader/msl/downsample_ps.metal.ir
+[617/867] Generating generated/gpu/shader/msl/enhanced_burnout_blur_vs.metal.ir
+[618/867] Generating generated/gpu/shader/msl/enhanced_burnout_blur_ps.metal.ir
+[619/867] Generating generated/gpu/shader/msl/imgui_ps.metal.ir
+[620/867] Generating generated/gpu/shader/msl/resolve_msaa_color_2x.metal.ir
+[621/867] Generating generated/gpu/shader/msl/imgui_vs.metal.ir
+[622/867] Generating generated/gpu/shader/msl/resolve_msaa_color_4x.metal.ir
+[623/867] Generating generated/gpu/shader/msl/resolve_msaa_color_8x.metal.ir
+[624/867] Generating generated/gpu/shader/msl/movie_ps.metal.ir
+[625/867] Generating generated/gpu/shader/msl/resolve_msaa_depth_2x.metal.ir
+[626/867] Generating generated/gpu/shader/msl/gamma_correction_ps.metal.ir
+[627/867] Generating generated/gpu/shader/msl/resolve_msaa_depth_4x.metal.ir
+[628/867] Generating generated/gpu/shader/msl/resolve_msaa_depth_8x.metal.ir
+[629/867] Generating generated/gpu/shader/msl/copy_depth_ps.metal.metallib
+[630/867] Generating generated/gpu/shader/msl/copy_vs.metal.metallib
+[631/867] Generating generated/gpu/shader/msl/conditional_survey_ps.metal.metallib
+[632/867] Generating generated/gpu/shader/msl/downsample_ps.metal.metallib
+[633/867] Generating generated/gpu/shader/msl/enhanced_burnout_blur_ps.metal.metallib
+[634/867] Generating generated/gpu/shader/msl/enhanced_burnout_blur_vs.metal.metallib
+[635/867] Generating generated/gpu/shader/msl/movie_ps.metal.metallib
+[636/867] Generating generated/gpu/shader/msl/imgui_vs.metal.metallib
+[637/867] Generating generated/gpu/shader/msl/resolve_msaa_color_2x.metal.metallib
+[638/867] Generating generated/gpu/shader/msl/gamma_correction_ps.metal.metallib
+[639/867] Generating generated/gpu/shader/msl/imgui_ps.metal.metallib
+[640/867] Generating generated/gpu/shader/msl/copy_color_ps.metal.metallib
+[641/867] Generating generated/gpu/shader/msl/resolve_msaa_color_4x.metal.metallib
+[642/867] Generating generated/gpu/shader/msl/resolve_msaa_color_8x.metal.metallib
+[643/867] Generating generated/gpu/shader/msl/resolve_msaa_depth_4x.metal.metallib
+[644/867] Generating generated/gpu/shader/msl/resolve_msaa_depth_2x.metal.metallib
+[645/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/conditional_survey_ps.metal.metallib...
+[646/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/copy_vs.metal.metallib...
+[647/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/copy_color_ps.metal.metallib...
+[648/867] Generating generated/gpu/shader/msl/resolve_msaa_depth_8x.metal.metallib
+[649/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/copy_depth_ps.metal.metallib...
+[650/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/downsample_ps.metal.metallib...
+[651/867] Generating generated/gpu/shader/hlsl/copy_vs.hlsl.spirv.h
+[652/867] Generating generated/gpu/shader/hlsl/downsample_ps.hlsl.spirv.h
+[653/867] Generating generated/gpu/shader/hlsl/conditional_survey_ps.hlsl.spirv.h
+[654/867] Generating generated/gpu/shader/hlsl/copy_color_ps.hlsl.spirv.h
+[655/867] Generating generated/gpu/shader/hlsl/copy_depth_ps.hlsl.spirv.h
+[656/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/enhanced_burnout_blur_vs.metal.metallib...
+[657/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/enhanced_burnout_blur_ps.metal.metallib...
+[658/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/movie_ps.metal.metallib...
+[659/867] Generating generated/gpu/shader/hlsl/enhanced_burnout_blur_vs.hlsl.spirv.h
+[660/867] Generating generated/gpu/shader/hlsl/enhanced_burnout_blur_ps.hlsl.spirv.h
+[661/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/gamma_correction_ps.metal.metallib...
+[662/867] Generating generated/gpu/shader/hlsl/gamma_correction_ps.hlsl.spirv.h
+[663/867] Generating generated/gpu/shader/hlsl/movie_ps.hlsl.spirv.h
+[664/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/imgui_ps.metal.metallib...
+[665/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/imgui_vs.metal.metallib...
+[666/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/resolve_msaa_color_2x.metal.metallib...
+[667/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/resolve_msaa_color_4x.metal.metallib...
+[668/867] Generating generated/gpu/shader/hlsl/resolve_msaa_color_2x.hlsl.spirv.h
+[669/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/resolve_msaa_color_8x.metal.metallib...
+[670/867] Generating generated/gpu/shader/hlsl/imgui_vs.hlsl.spirv.h
+[671/867] Generating generated/gpu/shader/hlsl/resolve_msaa_color_4x.hlsl.spirv.h
+[672/867] Generating generated/gpu/shader/hlsl/resolve_msaa_color_8x.hlsl.spirv.h
+[673/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/resolve_msaa_depth_2x.metal.metallib...
+[674/867] Generating generated/gpu/shader/hlsl/resolve_msaa_depth_2x.hlsl.spirv.h
+[675/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/resolve_msaa_depth_4x.metal.metallib...
+[676/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/resolve_msaa_depth_8x.metal.metallib...
+[677/867] Generating generated/gpu/shader/hlsl/resolve_msaa_depth_4x.hlsl.spirv.h
+[678/867] Generating generated/gpu/shader/hlsl/resolve_msaa_depth_8x.hlsl.spirv.h
+[679/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/button_window.dds...
+[680/867] Generating generated/gpu/shader/hlsl/imgui_ps.hlsl.spirv.h
+[681/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/controller.dds...
+[682/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/kbm.dds...
+[683/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/bc_diff/button_bc_diff.bin...
+[684/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/main_menu1.dds...
+[685/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/main_menu8.dds...
+[686/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/main_menu9.dds...
+[687/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/font/im_font_atlas.bin...
+[688/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/arrow.dds...
+[689/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/window.dds...
+[690/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/select_arrow.dds...
+[691/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/installer/install_001.dds...
+[692/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/installer/install_002.dds...
+[693/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/main_menu7.dds...
+[694/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/installer/install_003.dds...
+[695/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/installer/install_004.dds...
+[696/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/installer/install_005.dds...
+[697/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/installer/install_006.dds...
+[698/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/installer/install_008.dds...
+[699/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/game_icon_mac.png...
+[700/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/sounds/window_open.ogg...
+[701/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/sounds/window_close.ogg...
+[702/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/sounds/cursor.ogg...
+[703/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/sounds/deside.ogg...
+[704/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/sounds/move.ogg...
+[705/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/installer/install_007.dds...
+[706/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/sounds/main_deside.ogg...
+[707/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/sounds/cannot_deside.ogg...
+[708/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/sonicnext-dev.dds...
+[709/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/music/installer.ogg...
+[710/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/font/im_font_atlas.dds...
+[711/867] Building OBJCXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/os/ios/ios_virtual_controller.mm.o
+[712/867] Building OBJCXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/os/ios/curl_ios_stub.mm.o
+[713/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/__/thirdparty/imgui/backends/imgui_impl_sdl3.cpp.o
+[714/867] Building OBJCXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/os/ios/ios_mod_manager.mm.o
+[715/867] Building OBJCXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/os/ios/nfd_ios.mm.o
+[716/867] Building OBJCXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/os/ios/ios_platform.mm.o
+[717/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/__/thirdparty/imgui/imgui_tables.cpp.o
+[718/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/__/thirdparty/imgui/imgui_demo.cpp.o
+[719/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/cmake_pch.hxx.pch
+[720/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/__/thirdparty/implot/implot.cpp.o
+[721/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/__/thirdparty/imgui/imgui_draw.cpp.o
+[722/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/__/thirdparty/imgui/imgui_widgets.cpp.o
+[723/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/__/thirdparty/imgui/imgui.cpp.o
+[724/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/misc_impl.cpp.o
+[725/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/preload_executable.cpp.o
+[726/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/app.cpp.o
+[727/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/sdl_listener.cpp.o
+[728/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/generated/version.cpp.o
+[729/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/exports.cpp.o
+[730/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/kernel/xdm.cpp.o
+[731/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/kernel/memory.cpp.o
+[732/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/kernel/heap.cpp.o
+[733/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/main.cpp.o
+[734/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/kernel/xam.cpp.o
+[735/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/stdafx.cpp.o
+[736/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/kernel/io/file_system.cpp.o
+[737/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/kernel/imports.cpp.o
+[738/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/locale/achievement_locale.cpp.o
+[739/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/cpu/guest_thread.cpp.o
+[740/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/gpu/render_resolution.cpp.o
+[741/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/gpu/guest_convert.cpp.o
+[742/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/gpu/resources.cpp.o
+[743/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/gpu/guest_shader.cpp.o
+[744/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/locale/locale.cpp.o
+[745/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/gpu/guest_device.cpp.o
+[746/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/gpu/vertex_declaration.cpp.o
+[747/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/gpu/surface_variant.cpp.o
+[748/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/gpu/pipeline.cpp.o
+[749/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/gpu/imgui/imgui_common.cpp.o
+[750/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/gpu/texture_loader.cpp.o
+[751/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/gpu/imgui/imgui_font_builder.cpp.o
+[752/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/apu/audio.cpp.o
+[753/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/locale/config_locale.cpp.o
+[754/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/gpu/pipeline_precompile.cpp.o
+[755/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/apu/xma_decoder.cpp.o
+[756/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/gpu/video.cpp.o
+[757/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/apu/embedded_player.cpp.o
+[758/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/hid/hid.cpp.o
+[759/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/gpu/imgui/imgui_snapshot.cpp.o
+[760/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/apu/driver/sdl3_driver.cpp.o
+[761/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/hid/peripheral/peripheral_observer.cpp.o
+[762/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/hid/peripheral/peripheral_user.cpp.o
+[763/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/hid/driver/sdl/peripheral/peripheral_manager_sdl.cpp.o
+[764/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/hid/peripheral/peripheral_manager.cpp.o
+[765/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/patches/input_patches.cpp.o
+[766/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/patches/audio_patches.cpp.o
+[767/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/patches/camera_patches.cpp.o
+[768/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/patches/debug_patches.cpp.o
+[769/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/patches/aspect_ratio_patches.cpp.o
+[770/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/patches/loading_patches.cpp.o
+[771/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/patches/lua_patches.cpp.o
+[772/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/patches/MainMenuTask_patches.cpp.o
+[773/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/patches/pause_listener.cpp.o
+[774/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/patches/misc_patches.cpp.o
+[775/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/patches/pause_patches.cpp.o
+[776/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/patches/player_patches.cpp.o
+[777/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/patches/SaveDataTask_patches.cpp.o
+[778/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/patches/ui_toggle_listener.cpp.o
+[779/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/patches/text_patches.cpp.o
+[780/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/patches/TitleTask_patches.cpp.o
+[781/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/patches/video_patches.cpp.o
+[782/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/ui/black_bar.cpp.o
+[783/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/ui/achievement_menu.cpp.o
+[784/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/ui/achievement_overlay.cpp.o
+[785/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/ui/button_window.cpp.o
+[786/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/ui/fader.cpp.o
+[787/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/ui/common_menu.cpp.o
+[788/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/ui/game_window.cpp.o
+[789/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/ui/message_window.cpp.o
+[790/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/ui/imgui_utils.cpp.o
+[791/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/install/iso_file_system.cpp.o
+FAILED: [code=1] MarathonRecomp/CMakeFiles/MarathonRecomp.dir/install/iso_file_system.cpp.o 
+/usr/bin/c++ -DMARATHON_IOS_NATIVE_METAL=1 -DMARATHON_IOS_PORT=1 -DMARATHON_IOS_STREAMING_XISO=1 -DMARATHON_RECOMP_METAL -DMARATHON_RECOMP_METAL=1 -DMSDFGEN_COPYRIGHT_YEAR=2026 -DMSDFGEN_DISABLE_PNG -DMSDFGEN_DISABLE_SVG -DMSDFGEN_EXTENSIONS -DMSDFGEN_EXT_PUBLIC="" -DMSDFGEN_PUBLIC="" -DMSDFGEN_USE_CPP11 -DMSDFGEN_VERSION=1.12.0 -DMSDFGEN_VERSION_MAJOR=1 -DMSDFGEN_VERSION_MINOR=12 -DMSDFGEN_VERSION_REVISION=0 -DMSDF_ATLAS_COPYRIGHT_YEAR=2026 -DMSDF_ATLAS_NO_ARTERY_FONT -DMSDF_ATLAS_PUBLIC="" -DMSDF_ATLAS_VERSION=1.3.0 -DMSDF_ATLAS_VERSION_MAJOR=1 -DMSDF_ATLAS_VERSION_MINOR=3 -DMSDF_ATLAS_VERSION_REVISION=0 -D_CRT_SECURE_NO_WARNINGS -D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/api -I/Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/concurrentqueue -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/ddspp -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/imgui -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/implot -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/json/include -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/magic_enum/include -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/stb -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/unordered_dense/include -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/tools/bc_diff -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/tools/XenosRecomp/thirdparty/smol-v/source -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/ios_compat/include -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/tools/XenonRecomp/thirdparty/fmt/include -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/tools/XenosRecomp/thirdparty/zstd/build/cmake/../../lib -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/msdf-atlas-gen -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/msdf-atlas-gen/msdfgen -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/o1heap/. -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/tools/XenonRecomp/XenonUtils/. -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/tools/XenonRecomp/thirdparty/simde -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/tools/XenonRecomp/thirdparty/disasm/. -I/Users/runner/work/KronosiOS/KronosiOS/build-ios/thirdparty/SDL/include-revision -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/SDL/include -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/SDL_mixer/include -I/Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecompLib/generated -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/tools/XenonRecomp/thirdparty/xxHash/cmake_unofficial/.. -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/plume -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/plume/contrib/volk -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/plume/contrib/Vulkan-Headers/include -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/plume/contrib/VulkanMemoryAllocator/include -I/Users/runner/work/KronosiOS/KronosiOS/ios-deps/ffmpeg-install/include -isystem /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/tools/XenonRecomp/thirdparty/tomlplusplus/include -O3 -DNDEBUG -std=gnu++20 -arch arm64 -isysroot /Applications/Xcode_16.2.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.2.sdk -miphoneos-version-min=17.0 -fPIE -Xclang -fvalidate-ast-input-files-content -fPIC -fno-strict-aliasing -Wno-switch -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-void-pointer-to-int-cast -Wno-int-to-void-pointer-cast -Wno-invalid-offsetof -Wno-null-arithmetic -Wno-null-conversion -Wno-tautological-undefined-compare -ffp-model=strict -Winvalid-pch -Xclang -include-pch -Xclang /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/CMakeFiles/MarathonRecomp.dir/cmake_pch.hxx.pch -Xclang -include -Xclang /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/CMakeFiles/MarathonRecomp.dir/cmake_pch.hxx -MD -MT MarathonRecomp/CMakeFiles/MarathonRecomp.dir/install/iso_file_system.cpp.o -MF MarathonRecomp/CMakeFiles/MarathonRecomp.dir/install/iso_file_system.cpp.o.d -o MarathonRecomp/CMakeFiles/MarathonRecomp.dir/install/iso_file_system.cpp.o -c /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/install/iso_file_system.cpp
+/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/install/iso_file_system.cpp:20:1: error: use of undeclared identifier 'ISOFileSystem'
+   20 | ISOFileSystem::~ISOFileSystem() {
+      | ^
+/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/install/iso_file_system.cpp:27:1: error: use of undeclared identifier 'ISOFileSystem'
+   27 | ISOFileSystem::ISOFileSystem(const std::filesystem::path &isoPath) {
+      | ^
+/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/install/iso_file_system.cpp:116:6: error: use of undeclared identifier 'ISOFileSystem'
+  116 | bool ISOFileSystem::load(const std::string &path, uint8_t *fileData, size_t fileDataMaxByteCount) const {
+      |      ^
+/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/install/iso_file_system.cpp:126:8: error: use of undeclared identifier 'ISOFileSystem'
+  126 | size_t ISOFileSystem::getSize(const std::string &path) const {
+      |        ^
+/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/install/iso_file_system.cpp:131:6: error: use of undeclared identifier 'ISOFileSystem'
+  131 | bool ISOFileSystem::exists(const std::string &path) const {
+      |      ^
+/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/install/iso_file_system.cpp:135:20: error: use of undeclared identifier 'ISOFileSystem'
+  135 | const std::string &ISOFileSystem::getName() const { return name; }
+      |                    ^
+/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/install/iso_file_system.cpp:136:6: error: use of undeclared identifier 'ISOFileSystem'
+  136 | bool ISOFileSystem::empty() const { return fileMap.empty(); }
+      |      ^
+/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/install/iso_file_system.cpp:137:17: error: use of undeclared identifier 'ISOFileSystem'
+  137 | std::unique_ptr<ISOFileSystem> ISOFileSystem::create(const std::filesystem::path &isoPath) {
+      |                 ^
+/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/install/iso_file_system.cpp:137:32: error: use of undeclared identifier 'ISOFileSystem'
+  137 | std::unique_ptr<ISOFileSystem> ISOFileSystem::create(const std::filesystem::path &isoPath) {
+      |                                ^
+9 errors generated.
+[792/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/ui/installer_wizard.cpp.o
+[793/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/install/installer.cpp.o
+[794/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/ui/options_menu.cpp.o
+[795/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/install/update_checker.cpp.o
+ninja: build stopped: subcommand failed.
+Error: Process completed with exit code 1.

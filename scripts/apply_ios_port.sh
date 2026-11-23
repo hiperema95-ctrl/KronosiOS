@@ -76,7 +76,7 @@ if h_path.exists() and cpp_path.exists():
             "#if defined(MARATHON_IOS_STREAMING_XISO) && MARATHON_IOS_STREAMING_XISO\n"
             "    int isoFd = -1;\n"
             "    size_t isoFileSize = 0;\n"
-            "    ~ISOFileSystem();\n"
+            "    ~ISOFileSystem() override;\n"
             "#else\n"
             "    MemoryMappedFile mappedFile;\n"
             "#endif"
@@ -88,18 +88,24 @@ if h_path.exists() and cpp_path.exists():
     if "MARATHON_IOS_STREAMING_XISO" not in cpp_src:
         streaming_impl = r'''
 #if defined(MARATHON_IOS_STREAMING_XISO) && MARATHON_IOS_STREAMING_XISO
+#include "iso_file_system.h"
+#include <cerrno>
+#include <cstring>
 #include <fcntl.h>
+#include <stack>
 #include <sys/stat.h>
 #include <unistd.h>
-#include <stack>
-#include <cstring>
 
 static bool ReadExactAt(int fd, size_t offset, void* outBuf, size_t len) {
     uint8_t* dst = static_cast<uint8_t*>(outBuf);
     size_t done = 0;
     while (done < len) {
         ssize_t n = pread(fd, dst + done, len - done, static_cast<off_t>(offset + done));
-        if (n <= 0) return false;
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            return false;
+        }
+        if (n == 0) return false;
         done += static_cast<size_t>(n);
     }
     return true;
@@ -178,10 +184,12 @@ ISOFileSystem::ISOFileSystem(const std::filesystem::path &isoPath) {
         uint8_t hdr[14]{};
         if (!ReadExactAt(isoFd, step.dirOff + step.entryOff, hdr, sizeof(hdr))) continue;
 
-        uint16_t nodeL = *reinterpret_cast<uint16_t*>(&hdr[0]);
-        uint16_t nodeR = *reinterpret_cast<uint16_t*>(&hdr[2]);
-        uint32_t sector = *reinterpret_cast<uint32_t*>(&hdr[4]);
-        uint32_t length = *reinterpret_cast<uint32_t*>(&hdr[8]);
+        uint16_t nodeL = 0, nodeR = 0;
+        uint32_t sector = 0, length = 0;
+        std::memcpy(&nodeL, &hdr[0], sizeof(nodeL));
+        std::memcpy(&nodeR, &hdr[2], sizeof(nodeR));
+        std::memcpy(&sector, &hdr[4], sizeof(sector));
+        std::memcpy(&length, &hdr[8], sizeof(length));
         uint8_t attrs = hdr[12];
         uint8_t nameLen = hdr[13];
 
@@ -224,7 +232,8 @@ const std::string &ISOFileSystem::getName() const { return name; }
 bool ISOFileSystem::empty() const { return fileMap.empty(); }
 std::unique_ptr<ISOFileSystem> ISOFileSystem::create(const std::filesystem::path &isoPath) {
     auto fs = std::make_unique<ISOFileSystem>(isoPath);
-    return fs->empty() ? nullptr : std::move(fs);
+    if (fs->empty()) return nullptr;
+    return fs;
 }
 #else
 '''

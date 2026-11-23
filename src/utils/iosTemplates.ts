@@ -1548,6 +1548,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         "-framework CoreMedia"
         "-framework CoreVideo"
         "-framework VideoToolbox"
+        "-framework IOSurface"
         "-framework Security"
     )
 endif()

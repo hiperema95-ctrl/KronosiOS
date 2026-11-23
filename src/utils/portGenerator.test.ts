@@ -191,6 +191,7 @@ test('generated apply_ios_port.sh and nfd_ios.mm implement direct XISO streaming
   const nfd = files.find((f) => f.path === 'ios/nfd_ios.mm')!.content;
 
   assert.match(patcher, /MARATHON_IOS_STREAMING_XISO/);
+  assert.match(patcher, /#if defined\(MARATHON_IOS_STREAMING_XISO\) && MARATHON_IOS_STREAMING_XISO\n#include "iso_file_system\.h"/);
   assert.match(patcher, /MICROSOFT\*XBOX\*MEDIA/);
   assert.match(patcher, /MARATHON_IOS_PICKER_MODE_GAME_XISO/);
   assert.match(patcher, /MARATHON_IOS_PICKER_MODE_DLC_SEPARATE/);
