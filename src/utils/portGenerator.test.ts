@@ -205,6 +205,13 @@ test('generated apply_ios_port.sh and nfd_ios.mm implement direct XISO streaming
   assert.match(patcher, /MarathonIOS_MapWindowPointToImGui/);
   assert.match(patcher, /ButtonWindow::HitTest/);
   assert.match(patcher, /g_iosMsgButtonRects/);
+  assert.match(patcher, /MARATHON_IOS_PORT_CREDITS/);
+  assert.match(patcher, /Porting iOS creato da hiperema/);
+  assert.match(patcher, /iOS port created by hiperema/);
+  assert.match(patcher, /iOS版制作：hiperema/);
+  assert.match(patcher, /iOS-Port erstellt von hiperema/);
+  assert.match(patcher, /Portage iOS créé par hiperema/);
+  assert.match(patcher, /Port para iOS creado por hiperema/);
   assert.match(nfd, /ScanLocalXisoCandidates/);
   assert.match(nfd, /NFD_OpenDialogMultipleN/);
 

@@ -241,14 +241,15 @@ std::unique_ptr<ISOFileSystem> ISOFileSystem::create(const std::filesystem::path
         print("Patched iso_file_system.cpp with streaming pread() XISO reader for iOS.")
 PY_ISO
 
-echo "==> [5/8] Patch UI Touch Smartphone (InstallerWizard tap diretto + ButtonWindow Indietro cliccabile + MessageWindow + HID)..."
+echo "==> [5/8] Patch UI Touch Smartphone (InstallerWizard tap diretto + ButtonWindow Indietro cliccabile + MessageWindow + HID + Crediti iOS multilingua)..."
 python3 - \
   "${UPSTREAM_DIR}/MarathonRecomp/ui/installer_wizard.cpp" \
   "${UPSTREAM_DIR}/MarathonRecomp/ui/button_window.h" \
   "${UPSTREAM_DIR}/MarathonRecomp/ui/button_window.cpp" \
   "${UPSTREAM_DIR}/MarathonRecomp/ui/message_window.cpp" \
   "${UPSTREAM_DIR}/MarathonRecomp/hid/hid.cpp" \
-  "${UPSTREAM_DIR}/MarathonRecomp/kernel/memory.cpp" << 'PY_WIZ'
+  "${UPSTREAM_DIR}/MarathonRecomp/kernel/memory.cpp" \
+  "${UPSTREAM_DIR}/MarathonRecomp/locale/locale.cpp" << 'PY_WIZ'
 import sys, pathlib
 
 wiz_p = pathlib.Path(sys.argv[1])
@@ -257,6 +258,7 @@ bw_c  = pathlib.Path(sys.argv[3])
 mw_c  = pathlib.Path(sys.argv[4])
 hid_c = pathlib.Path(sys.argv[5])
 mem_c = pathlib.Path(sys.argv[6])
+loc_c = pathlib.Path(sys.argv[7])
 
 # 5a. ui/button_window.h & .cpp: salva il rettangolo renderizzato per rendere cliccabile con tap il bottone "Indietro / Back"
 if bw_h.exists() and bw_c.exists():
@@ -564,6 +566,38 @@ if mem_c.exists():
         ksrc = ksrc.replace(old_mmap, new_mmap, 1)
         mem_c.write_text(ksrc, encoding="utf-8")
         print("Patched kernel/memory.cpp: fixed MAP_FAILED pre-main crash on Feather.")
+
+# 5f. locale/locale.cpp: crediti multilingua del porting iOS ("Porting iOS creato da hiperema") nella schermata InstallSucceeded
+if loc_c.exists():
+    lsrc = loc_c.read_text(encoding="utf-8")
+    if "MARATHON_IOS_PORT_CREDITS" not in lsrc:
+        old_credits_locale = r'''    {
+        "Installer_Page_InstallSucceeded",
+        {
+            { ELanguage::English,  "Installation complete!\n\nThis project is brought to you by:" },
+            { ELanguage::Japanese, "インストール完了！\n\nプロジェクト制作：" },
+            { ELanguage::German,   "Installation abgeschlossen!\n\nDieses Projekt wird präsentiert von:" },
+            { ELanguage::French,   "Installation terminée !\n\nCe projet vous est présenté par :" },
+            { ELanguage::Spanish,  "¡Instalación completada!\n\nEste proyecto ha sido posible gracias a:" },
+            { ELanguage::Italian,  "Installazione completata!\n\nQuesto progetto è stato creato da:" }
+        }
+    },'''
+        new_credits_locale = r'''    // MARATHON_IOS_PORT_CREDITS
+    {
+        "Installer_Page_InstallSucceeded",
+        {
+            { ELanguage::English,  "Installation complete!\niOS port created by hiperema\n\nThis project is brought to you by:" },
+            { ELanguage::Japanese, "インストール完了！\niOS版制作：hiperema\n\nプロジェクト制作：" },
+            { ELanguage::German,   "Installation abgeschlossen!\niOS-Port erstellt von hiperema\n\nDieses Projekt wird präsentiert von:" },
+            { ELanguage::French,   "Installation terminée !\nPortage iOS créé par hiperema\n\nCe projet vous est présenté par :" },
+            { ELanguage::Spanish,  "¡Instalación completada!\nPort para iOS creado por hiperema\n\nEste proyecto ha sido posible gracias a:" },
+            { ELanguage::Italian,  "Installazione completata!\nPorting iOS creato da hiperema\n\nQuesto progetto è stato creato da:" }
+        }
+    },'''
+        assert old_credits_locale in lsrc, "Failed to locate Installer_Page_InstallSucceeded in locale/locale.cpp"
+        lsrc = lsrc.replace(old_credits_locale, new_credits_locale, 1)
+        loc_c.write_text(lsrc, encoding="utf-8")
+        print("Patched locale/locale.cpp with multilingual iOS port credits (hiperema).")
 PY_WIZ
 
 echo "==> [6/8] Patch paths.cpp, paths.h e stdafx.h (Documents/MarathonRecomp + Apple libc++ std::atomic_ref)..."
