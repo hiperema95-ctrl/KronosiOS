@@ -853,7 +853,7 @@ std::unique_ptr<ISOFileSystem> ISOFileSystem::create(const std::filesystem::path
         print("Patched iso_file_system.cpp with streaming pread() XISO reader for iOS.")
 PY_ISO
 
-echo "==> [5/8] Patch UI Touch Smartphone (InstallerWizard tap diretto + ButtonWindow Indietro cliccabile + MessageWindow + HID + Crediti iOS multilingua)..."
+echo "==> [5/8] Patch UI Touch Smartphone (InstallerWizard tap diretto + ButtonWindow touch senza simboli mouse/tastiera + MessageWindow + HID + Crediti iOS multilingua)..."
 python3 - \\
   "\${UPSTREAM_DIR}/MarathonRecomp/ui/installer_wizard.cpp" \\
   "\${UPSTREAM_DIR}/MarathonRecomp/ui/button_window.h" \\
@@ -861,7 +861,8 @@ python3 - \\
   "\${UPSTREAM_DIR}/MarathonRecomp/ui/message_window.cpp" \\
   "\${UPSTREAM_DIR}/MarathonRecomp/hid/hid.cpp" \\
   "\${UPSTREAM_DIR}/MarathonRecomp/kernel/memory.cpp" \\
-  "\${UPSTREAM_DIR}/MarathonRecomp/locale/locale.cpp" << 'PY_WIZ'
+  "\${UPSTREAM_DIR}/MarathonRecomp/locale/locale.cpp" \\
+  "\${UPSTREAM_DIR}/MarathonRecomp/ui/imgui_utils.cpp" << 'PY_WIZ'
 import sys, pathlib
 
 wiz_p = pathlib.Path(sys.argv[1])
@@ -871,14 +872,24 @@ mw_c  = pathlib.Path(sys.argv[4])
 hid_c = pathlib.Path(sys.argv[5])
 mem_c = pathlib.Path(sys.argv[6])
 loc_c = pathlib.Path(sys.argv[7])
+imu_c = pathlib.Path(sys.argv[8])
 
-# 5a. ui/button_window.h & .cpp: salva il rettangolo renderizzato per rendere cliccabile con tap il bottone "Indietro / Back"
+# 5a. ui/button_window.h & .cpp: hit-test touch + modalità input iOS (Touch senza simboli mouse/tastiera, Keyboard solo su tasto reale, Gamepad su controller)
 if bw_h.exists() and bw_c.exists():
     bwh = bw_h.read_text(encoding="utf-8")
     if "HitTest(" not in bwh:
         bwh = bwh.replace(
             "static void Close();",
             "static void Close();\\n"
+            "#if defined(MARATHON_IOS_PORT)\\n"
+            "    enum class EIOSInputMode : int\\n"
+            "    {\\n"
+            "        Touch = 0,\\n"
+            "        Keyboard = 1,\\n"
+            "        Gamepad = 2\\n"
+            "    };\\n"
+            "    static inline EIOSInputMode s_iosInputMode = EIOSInputMode::Touch;\\n"
+            "#endif\\n"
             "    static inline float s_hitMinX = 0.0f;\\n"
             "    static inline float s_hitMinY = 0.0f;\\n"
             "    static inline float s_hitMaxX = 0.0f;\\n"
@@ -888,6 +899,77 @@ if bw_h.exists() and bw_c.exists():
         bw_h.write_text(bwh, encoding="utf-8")
     bwc = bw_c.read_text(encoding="utf-8")
     if "ButtonWindow::HitTest" not in bwc:
+        old_bw_inc = "#include <app.h>"
+        new_bw_inc = (
+            "#include <app.h>\\n"
+            "#if defined(MARATHON_IOS_PORT)\\n"
+            "#include <sdl_listener.h>\\n\\n"
+            "class SDLEventListenerForIOSButtonMode : public SDLEventListener\\n"
+            "{\\n"
+            "public:\\n"
+            "    bool OnSDLEvent(SDL_Event* event) override\\n"
+            "    {\\n"
+            "        if (!event || App::s_isInit)\\n"
+            "            return false;\\n\\n"
+            "        switch (event->type)\\n"
+            "        {\\n"
+            "            case SDL_EVENT_KEY_DOWN:\\n"
+            "                ButtonWindow::s_iosInputMode = ButtonWindow::EIOSInputMode::Keyboard;\\n"
+            "                break;\\n\\n"
+            "            case SDL_EVENT_GAMEPAD_BUTTON_DOWN:\\n"
+            "                ButtonWindow::s_iosInputMode = ButtonWindow::EIOSInputMode::Gamepad;\\n"
+            "                break;\\n\\n"
+            "            case SDL_EVENT_GAMEPAD_AXIS_MOTION:\\n"
+            "                if (event->gaxis.value > 16384 || event->gaxis.value < -16384)\\n"
+            "                    ButtonWindow::s_iosInputMode = ButtonWindow::EIOSInputMode::Gamepad;\\n"
+            "                break;\\n\\n"
+            "            case SDL_EVENT_FINGER_DOWN:\\n"
+            "            case SDL_EVENT_FINGER_MOTION:\\n"
+            "            case SDL_EVENT_MOUSE_BUTTON_DOWN:\\n"
+            "            case SDL_EVENT_MOUSE_MOTION:\\n"
+            "                ButtonWindow::s_iosInputMode = ButtonWindow::EIOSInputMode::Touch;\\n"
+            "                break;\\n\\n"
+            "            default:\\n"
+            "                break;\\n"
+            "        }\\n\\n"
+            "        return false;\\n"
+            "    }\\n"
+            "}\\n"
+            "g_sdlEventListenerForIOSButtonMode;\\n"
+            "#endif"
+        )
+        assert old_bw_inc in bwc, "Failed to locate #include <app.h> in button_window.cpp"
+        bwc = bwc.replace(old_bw_inc, new_bw_inc, 1)
+
+        old_bw_locale = "    auto buttonLocale = &Localise(g_buttonKey);"
+        new_bw_locale = (
+            "    auto buttonLocale = &Localise(g_buttonKey);\\n"
+            "#if defined(MARATHON_IOS_PORT)\\n"
+            "    if (!App::s_isInit && s_iosInputMode == EIOSInputMode::Touch)\\n"
+            "    {\\n"
+            "        if (g_buttonKey == \\"Button_SelectBack\\" || g_buttonKey == \\"Button_Back\\")\\n"
+            "        {\\n"
+            "            buttonLocale = &Localise(\\"Common_Back\\");\\n"
+            "        }\\n"
+            "        else if (g_buttonKey == \\"Button_Cancel\\")\\n"
+            "        {\\n"
+            "            buttonLocale = &Localise(\\"Common_Cancel\\");\\n"
+            "        }\\n"
+            "        else if (g_buttonKey == \\"Button_SelectQuit\\")\\n"
+            "        {\\n"
+            "            buttonLocale = &Localise(\\"Common_Quit\\");\\n"
+            "        }\\n"
+            "        else\\n"
+            "        {\\n"
+            "            s_hitMinX = s_hitMinY = s_hitMaxX = s_hitMaxY = 0.0f;\\n"
+            "            return;\\n"
+            "        }\\n"
+            "    }\\n"
+            "#endif"
+        )
+        assert old_bw_locale in bwc, "Failed to locate buttonLocale in button_window.cpp"
+        bwc = bwc.replace(old_bw_locale, new_bw_locale, 1)
+
         bwc = bwc.replace(
             "drawList->AddImage(g_upTexButtonWindow.get(), windowEdgeMin, windowEdgeMax, GET_UV_COORDS(windowEdgeUVs), windowColour);",
             "drawList->AddImage(g_upTexButtonWindow.get(), windowEdgeMin, windowEdgeMax, GET_UV_COORDS(windowEdgeUVs), windowColour);\\n"
@@ -908,7 +990,7 @@ if bw_h.exists() and bw_c.exists():
             "}"
         )
         bw_c.write_text(bwc, encoding="utf-8")
-        print("Patched button_window.{h,cpp} for direct smartphone tap on Back/Cancel/Quit button.")
+        print("Patched button_window.{h,cpp} for touch-first iOS installer (no mouse/keyboard icons unless keyboard/controller is used).")
 
 # 5b. ui/installer_wizard.cpp: tap diretto sulle scritte delle opzioni + tap su ButtonWindow Indietro + skip tutorial desktop + XISO/DLC picker mode
 if wiz_p.exists():
@@ -1210,6 +1292,85 @@ if loc_c.exists():
         lsrc = lsrc.replace(old_credits_locale, new_credits_locale, 1)
         loc_c.write_text(lsrc, encoding="utf-8")
         print("Patched locale/locale.cpp with multilingual iOS port credits (hiperema).")
+
+# 5g. ui/imgui_utils.cpp: su iOS nell'installatore non mostrare mai simboli mouse; simboli tastiera SOLO in modalità Keyboard, controller in modalità Gamepad
+if imu_c.exists():
+    isrc = imu_c.read_text(encoding="utf-8")
+    if "MARATHON_IOS_INSTALLER_HID_ICONS" not in isrc:
+        assert "#include <ui/black_bar.h>" in isrc, "Failed to locate #include <ui/black_bar.h> in ui/imgui_utils.cpp"
+        isrc = isrc.replace(
+            "#include <ui/black_bar.h>",
+            "#include <ui/black_bar.h>\\n#if defined(MARATHON_IOS_PORT)\\n#include <ui/button_window.h>\\n#endif",
+            1
+        )
+        old_hid_icons = '''    if (!App::s_isInit)
+    {
+        if (const auto pMutator = HID::GetManager()->GetUser(0)->GetMutator())
+        {
+            const auto type = pMutator->GetType();
+            const auto isKeyboard = type == HID::PeripheralType::Keyboard;
+            const auto isMouse = type == HID::PeripheralType::Mouse;
+
+            if (isKeyboard || isMouse)
+            {
+                buttonTexture = &g_upTexKbm;
+                buttonTextureWidth = uint16_t(84);
+                buttonTextureHeight = uint16_t(28);
+            }
+
+            if (isKeyboard)
+            {
+                buttonCrops = &g_buttonCropsKeyboard;
+            }
+            else if (isMouse)
+            {
+                buttonCrops = &g_buttonCropsMouse;
+            }
+        }
+    }'''
+        new_hid_icons = '''    // MARATHON_IOS_INSTALLER_HID_ICONS
+#if defined(MARATHON_IOS_PORT)
+    if (!App::s_isInit)
+    {
+        if (ButtonWindow::s_iosInputMode == ButtonWindow::EIOSInputMode::Keyboard)
+        {
+            buttonTexture = &g_upTexKbm;
+            buttonTextureWidth = uint16_t(84);
+            buttonTextureHeight = uint16_t(28);
+            buttonCrops = &g_buttonCropsKeyboard;
+        }
+    }
+#else
+    if (!App::s_isInit)
+    {
+        if (const auto pMutator = HID::GetManager()->GetUser(0)->GetMutator())
+        {
+            const auto type = pMutator->GetType();
+            const auto isKeyboard = type == HID::PeripheralType::Keyboard;
+            const auto isMouse = type == HID::PeripheralType::Mouse;
+
+            if (isKeyboard || isMouse)
+            {
+                buttonTexture = &g_upTexKbm;
+                buttonTextureWidth = uint16_t(84);
+                buttonTextureHeight = uint16_t(28);
+            }
+
+            if (isKeyboard)
+            {
+                buttonCrops = &g_buttonCropsKeyboard;
+            }
+            else if (isMouse)
+            {
+                buttonCrops = &g_buttonCropsMouse;
+            }
+        }
+    }
+#endif'''
+        assert old_hid_icons in isrc, "Failed to locate GetHidInterpTextData block in ui/imgui_utils.cpp"
+        isrc = isrc.replace(old_hid_icons, new_hid_icons, 1)
+        imu_c.write_text(isrc, encoding="utf-8")
+        print("Patched ui/imgui_utils.cpp: disabled mouse icons in iOS installer, keyboard icons only on real keyboard input.")
 PY_WIZ
 
 echo "==> [6/8] Patch paths.cpp, paths.h e stdafx.h (Documents/MarathonRecomp + Apple libc++ std::atomic_ref)..."

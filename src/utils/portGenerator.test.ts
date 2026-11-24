@@ -212,6 +212,9 @@ test('generated apply_ios_port.sh and nfd_ios.mm implement direct XISO streaming
   assert.match(patcher, /iOS-Port erstellt von hiperema/);
   assert.match(patcher, /Portage iOS créé par hiperema/);
   assert.match(patcher, /Port para iOS creado por hiperema/);
+  assert.match(patcher, /EIOSInputMode/);
+  assert.match(patcher, /SDLEventListenerForIOSButtonMode/);
+  assert.match(patcher, /MARATHON_IOS_INSTALLER_HID_ICONS/);
   assert.match(nfd, /ScanLocalXisoCandidates/);
   assert.match(nfd, /NFD_OpenDialogMultipleN/);
 
