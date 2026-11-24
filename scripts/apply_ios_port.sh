@@ -52,13 +52,19 @@ if p.exists():
             '"-sdk", "iphoneos", "metal", "-mios-version-min=17.0",'
         )
         src = src.replace(
+            '"-sdk", "macosx", "metallib",',
+            '"-sdk", "iphoneos", "metallib",'
+        )
+        src = src.replace(
             'posix_spawn(&pid, argv[0], nullptr, nullptr, const_cast<char**>(argv), nullptr)',
             'posix_spawn(&pid, argv[0], nullptr, nullptr, const_cast<char**>(argv), environ)'
         )
+        header = "// XENOS_RECOMP_METAL_IOS\n"
         if "extern char** environ;" not in src:
-            src = '#include <unistd.h>\nextern char** environ;\n' + src
+            header += "#include <unistd.h>\nextern char** environ;\n"
+        src = header + src
         p.write_text(src, encoding="utf-8")
-        print("Patched XenosRecomp/air_compiler.cpp for iPhoneOS Metal SDK.")
+        print("Patched XenosRecomp/air_compiler.cpp for iPhoneOS Metal SDK (metal + metallib).")
 PY_XENOS
 
 echo "==> [4/8] Patch ISOFileSystem: Streaming pread() su iOS per immagini .xiso/.iso da 6+ GB senza limiti mmap..."
@@ -761,8 +767,13 @@ if imu_c.exists():
         print("Patched ui/imgui_utils.cpp: disabled mouse icons in iOS installer, keyboard icons only on real keyboard input.")
 PY_WIZ
 
-echo "==> [6/8] Patch paths.cpp, config.cpp e stdafx.h (Documents/MarathonRecomp + Config::Save safe + Apple libc++ std::atomic_ref)..."
-python3 - "${UPSTREAM_DIR}/MarathonRecomp/user/paths.cpp" "${UPSTREAM_DIR}/MarathonRecomp/stdafx.h" "${UPSTREAM_DIR}/MarathonRecomp/user/config.cpp" << 'PY_PATHS'
+echo "==> [6/8] Patch paths.cpp, paths.h, config.cpp, file_system.cpp e stdafx.h (Documents/MarathonRecomp + APFS case-insensitive + Apple libc++ std::atomic_ref deadlock-free)..."
+python3 - \
+  "${UPSTREAM_DIR}/MarathonRecomp/user/paths.cpp" \
+  "${UPSTREAM_DIR}/MarathonRecomp/stdafx.h" \
+  "${UPSTREAM_DIR}/MarathonRecomp/user/config.cpp" \
+  "${UPSTREAM_DIR}/MarathonRecomp/user/paths.h" \
+  "${UPSTREAM_DIR}/MarathonRecomp/kernel/io/file_system.cpp" << 'PY_PATHS'
 import sys, pathlib
 
 p = pathlib.Path(sys.argv[1])
@@ -801,6 +812,86 @@ if cfg_p.exists():
         cfg_p.write_text(csrc, encoding="utf-8")
         print("Patched user/config.cpp: non-throwing create_directories in Config::Save().")
 
+ph_p = pathlib.Path(sys.argv[4])
+if ph_p.exists():
+    ph_src = ph_p.read_text(encoding="utf-8")
+    if "MARATHON_IOS_PATH_CACHE_FIX" not in ph_src:
+        old_bpc = '''inline void BuildPathCache(const std::string& gamePath) {
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(gamePath)) {
+        std::string fullPath = entry.path().string();
+        std::string key = toLower(fullPath);
+        g_pathCache[key] = entry.path();
+    }
+}'''
+        new_bpc = '''// MARATHON_IOS_PATH_CACHE_FIX: non-throwing iterator + lexically_normal() per APFS case-sensitive su iOS
+inline void BuildPathCache(const std::string& gamePath) {
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(gamePath, ec)) {
+        std::string fullPath = entry.path().lexically_normal().string();
+        std::string key = toLower(fullPath);
+        g_pathCache[key] = entry.path();
+    }
+}'''
+        assert old_bpc in ph_src, "Failed to locate BuildPathCache in user/paths.h"
+        ph_src = ph_src.replace(old_bpc, new_bpc, 1)
+        ph_p.write_text(ph_src, encoding="utf-8")
+        print("Patched user/paths.h: non-throwing BuildPathCache with lexically_normal().")
+
+fs_p = pathlib.Path(sys.argv[5])
+if fs_p.exists():
+    fsrc = fs_p.read_text(encoding="utf-8")
+    if "MARATHON_IOS_CASE_INSENSITIVE_FS" not in fsrc:
+        old_open_fallback = '''    if (!fileStream.is_open()) {
+        std::filesystem::path cachedPath = FindInPathCache(filePath.string());
+        if (!cachedPath.empty()) {
+            fileStream.open(cachedPath, fileOpenMode);
+        }
+    }'''
+        new_open_fallback = '''    // MARATHON_IOS_CASE_INSENSITIVE_FS: aggiorna filePath con cachedPath su APFS case-sensitive (altrimenti XGetFileSizeA fallisce!)
+    if (!fileStream.is_open()) {
+        std::filesystem::path cachedPath = FindInPathCache(filePath.lexically_normal().string());
+        if (!cachedPath.empty()) {
+            fileStream.open(cachedPath, fileOpenMode);
+            if (fileStream.is_open()) {
+                filePath = std::move(cachedPath);
+            }
+        }
+    }'''
+        assert old_open_fallback in fsrc, "Failed to locate FindInPathCache fallback in kernel/io/file_system.cpp"
+        fsrc = fsrc.replace(old_open_fallback, new_open_fallback, 1)
+
+        old_attrs = '''uint32_t XGetFileAttributesA(const char* lpFileName)
+{
+    std::filesystem::path filePath = FileSystem::ResolvePath(lpFileName, true);
+    if (std::filesystem::is_directory(filePath))
+        return FILE_ATTRIBUTE_DIRECTORY;
+    else if (std::filesystem::is_regular_file(filePath))
+        return FILE_ATTRIBUTE_NORMAL;
+    else
+        return INVALID_FILE_ATTRIBUTES;
+}'''
+        new_attrs = '''uint32_t XGetFileAttributesA(const char* lpFileName)
+{
+    std::filesystem::path filePath = FileSystem::ResolvePath(lpFileName, true);
+    std::error_code ec;
+    if (!std::filesystem::exists(filePath, ec))
+    {
+        std::filesystem::path cachedPath = FindInPathCache(filePath.lexically_normal().string());
+        if (!cachedPath.empty())
+            filePath = std::move(cachedPath);
+    }
+    if (std::filesystem::is_directory(filePath, ec))
+        return FILE_ATTRIBUTE_DIRECTORY;
+    else if (std::filesystem::is_regular_file(filePath, ec))
+        return FILE_ATTRIBUTE_NORMAL;
+    else
+        return INVALID_FILE_ATTRIBUTES;
+}'''
+        assert old_attrs in fsrc, "Failed to locate XGetFileAttributesA in kernel/io/file_system.cpp"
+        fsrc = fsrc.replace(old_attrs, new_attrs, 1)
+        fs_p.write_text(fsrc, encoding="utf-8")
+        print("Patched kernel/io/file_system.cpp: case-insensitive APFS filePath update + non-throwing XGetFileAttributesA.")
+
 sa = pathlib.Path(sys.argv[2])
 if sa.exists():
     sa_src = sa.read_text(encoding="utf-8")
@@ -822,14 +913,18 @@ struct WaitBucket {
     std::condition_variable cv;
 };
 inline WaitBucket& get_wait_bucket(const void* addr) noexcept {
-    static auto* buckets = new WaitBucket[64]();
-    const auto idx = (reinterpret_cast<std::uintptr_t>(addr) >> 2) & 63u;
+    static auto* buckets = new WaitBucket[256]();
+    const std::uint64_t h = static_cast<std::uint64_t>(reinterpret_cast<std::uintptr_t>(addr)) * 0x9E3779B97F4A7C15ull;
+    const auto idx = static_cast<std::size_t>((h >> 56) & 255u);
     return buckets[idx];
 }
 constexpr memory_order fail_order_from_success(memory_order o) noexcept {
     if (o == memory_order_acq_rel) return memory_order_acquire;
     if (o == memory_order_release) return memory_order_relaxed;
     return o;
+}
+constexpr memory_order load_order_for_wait(memory_order o) noexcept {
+    return (o == memory_order_relaxed) ? memory_order_acquire : o;
 }
 } // namespace marathon_atomic_detail
 
@@ -892,23 +987,27 @@ public:
     }
 
     void wait(T old, memory_order m = memory_order_seq_cst) const noexcept {
-        T cur = load(m);
+        const memory_order loadOrder = marathon_atomic_detail::load_order_for_wait(m);
+        T cur = load(loadOrder);
         if (std::memcmp(&cur, &old, sizeof(T)) != 0) return;
         auto& bucket = marathon_atomic_detail::get_wait_bucket(ptr_);
         std::unique_lock<std::mutex> lk(bucket.mtx);
         for (;;) {
-            cur = load(m);
+            cur = load(loadOrder);
             if (std::memcmp(&cur, &old, sizeof(T)) != 0) break;
             bucket.cv.wait(lk);
         }
     }
 
+    // In a hashed wait-bucket table, multiple distinct addresses share one condition_variable.
+    // notify_one() MUST call bucket.cv.notify_all() so a waiter on a colliding critical section
+    // can never steal the wakeup and permanently deadlock another Xbox 360 guest thread.
     void notify_one() const noexcept {
         auto& bucket = marathon_atomic_detail::get_wait_bucket(ptr_);
         {
             std::lock_guard<std::mutex> lk(bucket.mtx);
         }
-        bucket.cv.notify_one();
+        bucket.cv.notify_all();
     }
 
     void notify_all() const noexcept {
@@ -948,7 +1047,7 @@ public:
 #endif
 '''
         sa.write_text(sa_src + polyfill, encoding="utf-8")
-        print("Patched stdafx.h with full C++20 Apple libc++ std::atomic_ref polyfill.")
+        print("Patched stdafx.h with deadlock-free C++20 Apple libc++ std::atomic_ref polyfill (256 buckets, notify_all).")
 PY_PATHS
 
 echo "==> [7/8] Patch thirdparty/plume (UIKit CAMetalLayer landscape fix + ProMotion), SDL3 UIKit LiveContainer layout/rotation, game_window.cpp e video.cpp..."
@@ -1301,12 +1400,112 @@ if metal_cpp.exists():
         assert old_needs_resize in msrc, "Failed to locate MetalSwapChain::needsResize in plume_metal.cpp"
         msrc = msrc.replace(old_needs_resize, new_needs_resize, 1)
 
-        # Reject mismatched drawable dimensions instead of silently mutating width/height, so CheckSwapChain() runs a full clean resize
-        old_acq = '''        *textureIndex = currentAvailableDrawableIndex;
+        # 2a. MetalShader: avoid dispatch_get_main_queue() destructor & dispatch_data_t leak during parallel PSO compilation
+        old_shader_dispatch = '''        NS::Error *error = nullptr;
+        const dispatch_data_t dispatchData = dispatch_data_create(data, size, dispatch_get_main_queue(), ^{});
+        library = device->mtl->newLibrary(dispatchData, &error);'''
+        new_shader_dispatch = '''        NS::Error *error = nullptr;
+        const dispatch_data_t dispatchData = dispatch_data_create(data, size, nullptr, DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+        library = device->mtl->newLibrary(dispatchData, &error);
+        if (dispatchData != nullptr) {
+            dispatch_release(dispatchData);
+        }'''
+        assert old_shader_dispatch in msrc, "Failed to locate dispatch_data_create in MetalShader"
+        msrc = msrc.replace(old_shader_dispatch, new_shader_dispatch, 1)
+
+        msrc = msrc.replace(
+            "        functionName->release();\n        library->release();",
+            "        if (functionName != nullptr) functionName->release();\n        if (library != nullptr) library->release();",
+            1
+        )
+
+        # 2b. MetalSwapChain::present: transfer drawable ownership to presentBuffer so iOS CAMetalLayer's 3-drawable pool never exhausts
+        old_present_drawable = '''        const MetalDrawable &drawable = drawables[textureIndex];
+        assert(drawable.mtl != nullptr && "Cannot present without a valid drawable.");
+
+        // Create a new command buffer just for presenting
+        MTL::CommandBuffer *presentBuffer = commandQueue->mtl->commandBufferWithUnretainedReferences();
+        presentBuffer->setLabel(MTLSTR("Present Command Buffer"));
+        presentBuffer->enqueue();
+
+        for (uint32_t i = 0; i < waitSemaphoreCount; i++) {
+            MetalCommandSemaphore *interfaceSemaphore = static_cast<MetalCommandSemaphore *>(waitSemaphores[i]);
+            presentBuffer->encodeWait(interfaceSemaphore->mtl, interfaceSemaphore->mtlEventValue++);
+        }
+
+        const uint64_t presentId = ++currentPresentId;
+
+        // According to Apple, presenting via scheduled handler is more performant than using the presentDrawable method.
+        // We grab the underlying drawable because we might've acquired a new one by now and the old one would have been released.
+        CA::MetalDrawable *drawableMtl = drawable.mtl->retain();'''
+        new_present_drawable = '''        MetalDrawable &drawable = drawables[textureIndex];
+        CA::MetalDrawable *drawableMtl = drawable.mtl;
+        drawable.mtl = nullptr;
+        if (drawableMtl == nullptr) {
+            return false;
+        }
+
+        // Create a new command buffer just for presenting
+        MTL::CommandBuffer *presentBuffer = commandQueue->mtl->commandBufferWithUnretainedReferences();
+        presentBuffer->setLabel(MTLSTR("Present Command Buffer"));
+        presentBuffer->enqueue();
+
+        for (uint32_t i = 0; i < waitSemaphoreCount; i++) {
+            MetalCommandSemaphore *interfaceSemaphore = static_cast<MetalCommandSemaphore *>(waitSemaphores[i]);
+            presentBuffer->encodeWait(interfaceSemaphore->mtl, interfaceSemaphore->mtlEventValue++);
+        }
+
+        const uint64_t presentId = ++currentPresentId;'''
+        assert old_present_drawable in msrc, "Failed to locate drawable retain in MetalSwapChain::present"
+        msrc = msrc.replace(old_present_drawable, new_present_drawable, 1)
+
+        # 2c. MetalSwapChain::acquireTexture: release stale slot before nextDrawable(), validate dimensions, and signal semaphore only on success
+        old_acq_full = '''        // Create a command buffer just to encode the signal
+        MetalAutoreleasePool releasePool;
+        MTL::CommandBuffer *acquireBuffer = commandQueue->mtl->commandBufferWithUnretainedReferences();
+        acquireBuffer->setLabel(MTLSTR("Acquire Drawable Command Buffer"));
+        const MetalCommandSemaphore *interfaceSemaphore = static_cast<MetalCommandSemaphore *>(signalSemaphore);
+        acquireBuffer->enqueue();
+        acquireBuffer->encodeSignalEvent(interfaceSemaphore->mtl, interfaceSemaphore->mtlEventValue);
+        acquireBuffer->commit();
+
+        CA::MetalDrawable *nextDrawable = layer->nextDrawable();
+        if (nextDrawable == nullptr) {
+            fprintf(stderr, "No more drawables available for rendering.\\n");
+            return false;
+        }
+
+        // Set the texture index and drawable data
+        *textureIndex = currentAvailableDrawableIndex;
         MetalDrawable &drawable = drawables[currentAvailableDrawableIndex];
         drawable.desc.width = width;
-        drawable.desc.height = height;'''
-        new_acq = '''#if !PLUME_MACOS
+        drawable.desc.height = height;
+        drawable.desc.flags = RenderTextureFlag::RENDER_TARGET;
+        drawable.desc.format = mapRenderFormat(nextDrawable->texture()->pixelFormat());
+        if (drawable.mtl) {
+            // Release our reference before replacing.
+            drawable.mtl->release();
+        }
+        drawable.mtl = nextDrawable;
+
+        drawable.mtl->retain();
+
+        return true;'''
+        new_acq_full = '''        MetalAutoreleasePool releasePool;
+        const uint32_t slotIndex = currentAvailableDrawableIndex;
+        MetalDrawable &drawable = drawables[slotIndex];
+        if (drawable.mtl != nullptr) {
+            // Release any previous drawable before asking iOS CAMetalLayer (3-drawable pool) for the next one.
+            drawable.mtl->release();
+            drawable.mtl = nullptr;
+        }
+
+        CA::MetalDrawable *nextDrawable = layer->nextDrawable();
+        if (nextDrawable == nullptr) {
+            fprintf(stderr, "No more drawables available for rendering.\\n");
+            return false;
+        }
+#if !PLUME_MACOS
         if (nextDrawable->texture() != nullptr) {
             const uint32_t texW = static_cast<uint32_t>(nextDrawable->texture()->width());
             const uint32_t texH = static_cast<uint32_t>(nextDrawable->texture()->height());
@@ -1315,12 +1514,109 @@ if metal_cpp.exists():
             }
         }
 #endif
-        *textureIndex = currentAvailableDrawableIndex;
-        MetalDrawable &drawable = drawables[currentAvailableDrawableIndex];
+        // Signal acquire semaphore only once a valid drawable has been obtained.
+        MTL::CommandBuffer *acquireBuffer = commandQueue->mtl->commandBufferWithUnretainedReferences();
+        acquireBuffer->setLabel(MTLSTR("Acquire Drawable Command Buffer"));
+        const MetalCommandSemaphore *interfaceSemaphore = static_cast<MetalCommandSemaphore *>(signalSemaphore);
+        acquireBuffer->enqueue();
+        acquireBuffer->encodeSignalEvent(interfaceSemaphore->mtl, interfaceSemaphore->mtlEventValue);
+        acquireBuffer->commit();
+
+        // Set the texture index and drawable data
+        *textureIndex = slotIndex;
         drawable.desc.width = width;
-        drawable.desc.height = height;'''
-        assert old_acq in msrc, "Failed to locate acquireTexture drawable size in plume_metal.cpp"
-        msrc = msrc.replace(old_acq, new_acq, 1)
+        drawable.desc.height = height;
+        drawable.desc.flags = RenderTextureFlag::RENDER_TARGET;
+        drawable.desc.format = mapRenderFormat(nextDrawable->texture()->pixelFormat());
+        drawable.mtl = nextDrawable;
+        drawable.mtl->retain();
+
+        return true;'''
+        assert old_acq_full in msrc, "Failed to locate acquireTexture body in plume_metal.cpp"
+        msrc = msrc.replace(old_acq_full, new_acq_full, 1)
+
+        # 2d. Defensive null-guards for MetalQueryPool, timestampCounterSet, and residencySet on iOS GPUs
+        old_qp = '''        MTL::CounterSampleBufferDescriptor *sampleBufferDesc = MTL::CounterSampleBufferDescriptor::alloc()->init();
+        sampleBufferDesc->setCounterSet(device->timestampCounterSet);
+        sampleBufferDesc->setStorageMode(MTL::StorageModeShared);
+        sampleBufferDesc->setSampleCount(queryCount);
+        sampleBuffer = device->mtl->newCounterSampleBuffer(sampleBufferDesc, nullptr);
+        sampleBufferDesc->release();
+
+        results.resize(queryCount, 0);
+    }
+
+    MetalQueryPool::~MetalQueryPool() {
+        MetalAutoreleasePool releasePool;
+        sampleBuffer->release();
+    }
+
+    void MetalQueryPool::queryResults() {
+        MetalAutoreleasePool releasePool;
+        const NS::Data* data = sampleBuffer->resolveCounterRange(NS::Range(0, results.size()));
+        std::memcpy(results.data(), data->mutableBytes(), results.size() * sizeof(uint64_t));
+    }'''
+        new_qp = '''        if (device->timestampCounterSet != nullptr) {
+            MTL::CounterSampleBufferDescriptor *sampleBufferDesc = MTL::CounterSampleBufferDescriptor::alloc()->init();
+            sampleBufferDesc->setCounterSet(device->timestampCounterSet);
+            sampleBufferDesc->setStorageMode(MTL::StorageModeShared);
+            sampleBufferDesc->setSampleCount(queryCount);
+            sampleBuffer = device->mtl->newCounterSampleBuffer(sampleBufferDesc, nullptr);
+            sampleBufferDesc->release();
+        } else {
+            sampleBuffer = nullptr;
+        }
+
+        results.resize(queryCount, 0);
+    }
+
+    MetalQueryPool::~MetalQueryPool() {
+        MetalAutoreleasePool releasePool;
+        if (sampleBuffer != nullptr) {
+            sampleBuffer->release();
+        }
+    }
+
+    void MetalQueryPool::queryResults() {
+        if (sampleBuffer == nullptr) {
+            return;
+        }
+        MetalAutoreleasePool releasePool;
+        const NS::Data* data = sampleBuffer->resolveCounterRange(NS::Range(0, results.size()));
+        if (data != nullptr && data->mutableBytes() != nullptr) {
+            std::memcpy(results.data(), data->mutableBytes(), results.size() * sizeof(uint64_t));
+        }
+    }'''
+        assert old_qp in msrc, "Failed to locate MetalQueryPool in plume_metal.cpp"
+        msrc = msrc.replace(old_qp, new_qp, 1)
+
+        old_wt = '''        const MetalQueryPool *interfaceQueryPool = static_cast<const MetalQueryPool *>(queryPool);
+
+        MTL::ComputeCommandEncoder *computeEncoder = activeComputeEncoder != nullptr ? activeComputeEncoder : activeResolveComputeEncoder;'''
+        new_wt = '''        const MetalQueryPool *interfaceQueryPool = static_cast<const MetalQueryPool *>(queryPool);
+        if (interfaceQueryPool->sampleBuffer == nullptr) {
+            return;
+        }
+
+        MTL::ComputeCommandEncoder *computeEncoder = activeComputeEncoder != nullptr ? activeComputeEncoder : activeResolveComputeEncoder;'''
+        assert old_wt in msrc, "Failed to locate MetalCommandList::writeTimestamp in plume_metal.cpp"
+        msrc = msrc.replace(old_wt, new_wt, 1)
+
+        msrc = msrc.replace(
+            "    MTL::CounterSet* MetalDevice::findTimestampCounterSet() const {\n        for (uint32_t setIndex = 0; setIndex < mtl->counterSets()->count(); setIndex++){",
+            "    MTL::CounterSet* MetalDevice::findTimestampCounterSet() const {\n        if (mtl->counterSets() == nullptr) return nullptr;\n        for (uint32_t setIndex = 0; setIndex < mtl->counterSets()->count(); setIndex++){",
+            1
+        )
+        msrc = msrc.replace(
+            "    void MetalDevice::addResource(MTL::Resource *resource, bool addressable) {\n        if (residencySet != nullptr || addressable) {",
+            "    void MetalDevice::addResource(MTL::Resource *resource, bool addressable) {\n        if (resource == nullptr) return;\n        if (residencySet != nullptr || addressable) {",
+            1
+        )
+        msrc = msrc.replace(
+            "    void MetalDevice::removeResource(MTL::Resource *resource, bool addressable) {\n        if (residencySet != nullptr || addressable) {",
+            "    void MetalDevice::removeResource(MTL::Resource *resource, bool addressable) {\n        if (resource == nullptr) return;\n        if (residencySet != nullptr || addressable) {",
+            1
+        )
 
         old_dev_sel = '''        // Device Selection
         NS::Array* devices = MTL::CopyAllDevices();
@@ -1387,7 +1683,7 @@ if metal_cpp.exists():
             msrc = msrc.replace(old_iface_devs, new_iface_devs, 1)
 
         metal_cpp.write_text(msrc, encoding="utf-8")
-        print("Patched thirdparty/plume/plume_metal.cpp for iOS Metal (CAMetalLayer size, drawable sync, CreateSystemDefaultDevice).")
+        print("Patched thirdparty/plume/plume_metal.cpp for iOS Metal (drawable ownership, main-queue-free shaders, queryPool safety, CAMetalLayer size).")
 
 # 3. thirdparty/plume/CMakeLists.txt: skip plume_vulkan.cpp on iOS when building pure Metal 3
 if cm.exists():

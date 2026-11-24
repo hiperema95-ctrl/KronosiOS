@@ -218,6 +218,18 @@ test('generated apply_ios_port.sh and nfd_ios.mm implement direct XISO streaming
   assert.match(patcher, /COMPILE_OPTIONS "-fobjc-arc"/);
   assert.match(patcher, /MARATHON_IOS_SKIP_DESKTOP_UPDATE_CHECK/);
   assert.match(patcher, /MARATHON_IOS_SAFE_CONFIG_DIR/);
+  // Post-installer freeze fixes: deadlock-free atomic_ref, APFS case-insensitive FS, Metal drawable ownership & shader loading, iphoneos metallib
+  assert.match(patcher, /new WaitBucket\[256\]\(\)/);
+  assert.doesNotMatch(patcher, /bucket\.cv\.notify_one\(\)/);
+  assert.match(patcher, /load_order_for_wait/);
+  assert.match(patcher, /MARATHON_IOS_PATH_CACHE_FIX/);
+  assert.match(patcher, /MARATHON_IOS_CASE_INSENSITIVE_FS/);
+  assert.match(patcher, /filePath = std::move\(cachedPath\)/);
+  assert.match(patcher, /DISPATCH_DATA_DESTRUCTOR_DEFAULT/);
+  assert.match(patcher, /dispatch_release\(dispatchData\)/);
+  assert.match(patcher, /CA::MetalDrawable \*drawableMtl = drawable\.mtl;\s+drawable\.mtl = nullptr;/);
+  assert.match(patcher, /if \(interfaceQueryPool->sampleBuffer == nullptr\)/);
+  assert.match(patcher, /"-sdk", "iphoneos", "metallib",/);
   const curlMm = files.find((f) => f.path === 'ios/curl_ios_stub.mm')!.content;
   assert.match(curlMm, /ephemeralSessionConfiguration/);
   assert.match(curlMm, /MarathonCurlAsyncState/);
