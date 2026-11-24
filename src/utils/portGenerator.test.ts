@@ -195,8 +195,26 @@ test('generated apply_ios_port.sh and nfd_ios.mm implement direct XISO streaming
   assert.match(patcher, /MICROSOFT\*XBOX\*MEDIA/);
   assert.match(patcher, /MARATHON_IOS_PICKER_MODE_GAME_XISO/);
   assert.match(patcher, /MARATHON_IOS_PICKER_MODE_DLC_SEPARATE/);
+  assert.match(patcher, /MARATHON_IOS_MMAP_GUARD/);
+  assert.match(patcher, /getIOSMetalLayerSize/);
+  assert.match(patcher, /syncIOSMetalViewOnMainThread/);
+  assert.doesNotMatch(patcher, /metalLayer\.frame\s*=\s*superBounds/);
+  assert.match(patcher, /MARATHON_IOS_METALVIEW_LAYOUT_FIX/);
+  assert.match(patcher, /MARATHON_IOS_WINDOW_ROTATION_FIX/);
+  assert.match(patcher, /UIWindowSceneGeometryPreferencesIOS/);
+  assert.match(patcher, /MarathonIOS_MapWindowPointToImGui/);
+  assert.match(patcher, /ButtonWindow::HitTest/);
+  assert.match(patcher, /g_iosMsgButtonRects/);
   assert.match(nfd, /ScanLocalXisoCandidates/);
   assert.match(nfd, /NFD_OpenDialogMultipleN/);
+
+  const plist = files.find((f) => f.path === 'ios/Info.plist')!.content;
+  const entitlements = files.find((f) => f.path === 'ios/Entitlements.plist')!.content;
+  const workflow = files.find((f) => f.path === '.github/workflows/build-ios-ipa.yml')!.content;
+  assert.match(plist, /<key>UILaunchScreen<\/key>\n\s+<dict\/>/);
+  assert.match(entitlements, /<key>get-task-allow<\/key>/);
+  assert.match(workflow, /xcrun actool/);
+  assert.match(workflow, /rm -rf "\$\{APP_DIR\}\/_CodeSignature"/);
 });
 
 test('inspectXisoCandidate validates extensions and detects real MICROSOFT*XBOX*MEDIA magic', () => {
