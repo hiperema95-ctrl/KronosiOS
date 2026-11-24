@@ -6,6 +6,8 @@
 #include <curl/curl.h>
 
 #include <cstdarg>
+#include <memory>
+#include <mutex>
 #include <string>
 
 struct MarathonCurlHandle {
@@ -14,6 +16,14 @@ struct MarathonCurlHandle {
     curl_write_callback writeFn = nullptr;
     void* writeData = nullptr;
     long followLocation = 1;
+};
+
+struct MarathonCurlAsyncState {
+    std::mutex mtx;
+    std::string body;
+    NSInteger statusCode = 0;
+    bool hasError = false;
+    bool hasData = false;
 };
 
 extern "C" {
@@ -80,18 +90,31 @@ CURLcode curl_easy_perform(CURL* handle) {
             [req setValue:ua forHTTPHeaderField:@"User-Agent"];
         }
 
-        __block NSData* responseData = nil;
-        __block NSError* responseErr = nil;
-        __block NSInteger statusCode = 0;
+        // Use an ephemeral NSURLSession (RAM-only, no Library/Caches SQLite DB creation on first launch in LiveContainer)
+        // and copy response bytes into heap-owned std::shared_ptr inside the completion handler to guarantee zero use-after-free.
+        NSURLSessionConfiguration* cfg = [NSURLSessionConfiguration ephemeralSessionConfiguration];
+        cfg.timeoutIntervalForRequest = 12.0;
+        cfg.timeoutIntervalForResource = 15.0;
+        NSURLSession* session = [NSURLSession sessionWithConfiguration:cfg];
+
+        auto state = std::make_shared<MarathonCurlAsyncState>();
         dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
-        NSURLSessionDataTask* task = [[NSURLSession sharedSession]
+        NSURLSessionDataTask* task = [session
             dataTaskWithRequest:req
               completionHandler:^(NSData* data, NSURLResponse* response, NSError* error) {
-                  responseData = data;
-                  responseErr = error;
-                  if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
-                      statusCode = ((NSHTTPURLResponse*)response).statusCode;
+                  {
+                      std::lock_guard<std::mutex> lock(state->mtx);
+                      state->hasError = (error != nil);
+                      if ([response isKindOfClass:[NSHTTPURLResponse class]]) {
+                          state->statusCode = ((NSHTTPURLResponse*)response).statusCode;
+                      }
+                      if (data != nil) {
+                          state->hasData = true;
+                          if (data.length > 0 && data.bytes != nullptr) {
+                              state->body.assign(static_cast<const char*>(data.bytes), static_cast<size_t>(data.length));
+                          }
+                      }
                   }
                   dispatch_semaphore_signal(sem);
               }];
@@ -99,18 +122,32 @@ CURLcode curl_easy_perform(CURL* handle) {
 
         if (dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, (int64_t)(15 * NSEC_PER_SEC))) != 0) {
             [task cancel];
+            [session invalidateAndCancel];
             return CURLE_OPERATION_TIMEDOUT;
         }
+        [session finishTasksAndInvalidate];
 
-        if (responseErr || !responseData) {
+        std::string bodyCopy;
+        NSInteger statusCode = 0;
+        bool hasError = false;
+        bool hasData = false;
+        {
+            std::lock_guard<std::mutex> lock(state->mtx);
+            hasError = state->hasError;
+            hasData = state->hasData;
+            statusCode = state->statusCode;
+            bodyCopy = std::move(state->body);
+        }
+
+        if (hasError || !hasData) {
             return CURLE_COULDNT_CONNECT;
         }
         if (statusCode >= 400) {
             return CURLE_HTTP_RETURNED_ERROR;
         }
 
-        if (ctx->writeFn && responseData.length > 0) {
-            ctx->writeFn(const_cast<void*>(responseData.bytes), 1, responseData.length, ctx->writeData);
+        if (ctx->writeFn && !bodyCopy.empty()) {
+            ctx->writeFn(bodyCopy.data(), 1, bodyCopy.size(), ctx->writeData);
         }
         return CURLE_OK;
     }

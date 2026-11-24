@@ -1373,8 +1373,8 @@ if imu_c.exists():
         print("Patched ui/imgui_utils.cpp: disabled mouse icons in iOS installer, keyboard icons only on real keyboard input.")
 PY_WIZ
 
-echo "==> [6/8] Patch paths.cpp, paths.h e stdafx.h (Documents/MarathonRecomp + Apple libc++ std::atomic_ref)..."
-python3 - "\${UPSTREAM_DIR}/MarathonRecomp/user/paths.cpp" "\${UPSTREAM_DIR}/MarathonRecomp/stdafx.h" << 'PY_PATHS'
+echo "==> [6/8] Patch paths.cpp, config.cpp e stdafx.h (Documents/MarathonRecomp + Config::Save safe + Apple libc++ std::atomic_ref)..."
+python3 - "\${UPSTREAM_DIR}/MarathonRecomp/user/paths.cpp" "\${UPSTREAM_DIR}/MarathonRecomp/stdafx.h" "\${UPSTREAM_DIR}/MarathonRecomp/user/config.cpp" << 'PY_PATHS'
 import sys, pathlib
 
 p = pathlib.Path(sys.argv[1])
@@ -1397,6 +1397,21 @@ if p.exists():
         )
         p.write_text(src, encoding="utf-8")
         print("Patched user/paths.cpp for writable iOS Documents/MarathonRecomp + SIOF safety.")
+
+cfg_p = pathlib.Path(sys.argv[3])
+if cfg_p.exists():
+    csrc = cfg_p.read_text(encoding="utf-8")
+    if "MARATHON_IOS_SAFE_CONFIG_DIR" not in csrc:
+        old_cfg_dir = '''    if (!std::filesystem::exists(userPath))
+        std::filesystem::create_directory(userPath);'''
+        new_cfg_dir = '''    // MARATHON_IOS_SAFE_CONFIG_DIR: usa create_directories con error_code per evitare eccezioni al primo avvio su LiveContainer
+    std::error_code cfgDirEc;
+    if (!userPath.empty() && !std::filesystem::exists(userPath, cfgDirEc))
+        std::filesystem::create_directories(userPath, cfgDirEc);'''
+        assert old_cfg_dir in csrc, "Failed to locate create_directory in user/config.cpp"
+        csrc = csrc.replace(old_cfg_dir, new_cfg_dir, 1)
+        cfg_p.write_text(csrc, encoding="utf-8")
+        print("Patched user/config.cpp: non-throwing create_directories in Config::Save().")
 
 sa = pathlib.Path(sys.argv[2])
 if sa.exists():
@@ -2347,7 +2362,7 @@ if "os/ios/ios_platform.mm" not in asrc:
         'endif()\\n'
         'add_compile_definitions('
     )
-    # 3b. First elseif (APPLE): OS sources
+    # 3b. First elseif (APPLE): OS sources (abilita -fobjc-arc su tutti i .mm iOS per prevenire crash MRC al primo avvio!)
     asrc = asrc.replace(
         'elseif (APPLE)\\n    set(MARATHON_RECOMP_OS_CXX_SOURCES',
         'elseif (CMAKE_SYSTEM_NAME STREQUAL "iOS")\\n'
@@ -2358,7 +2373,10 @@ if "os/ios/ios_platform.mm" not in asrc:
         '        "os/ios/ios_virtual_controller.mm"\\n'
         '        "os/ios/ios_mod_manager.mm"\\n'
         '    )\\n'
-        '    set_source_files_properties(\${MARATHON_RECOMP_OS_CXX_SOURCES} PROPERTIES SKIP_PRECOMPILE_HEADERS ON)\\n'
+        '    set_source_files_properties(\${MARATHON_RECOMP_OS_CXX_SOURCES} PROPERTIES\\n'
+        '        SKIP_PRECOMPILE_HEADERS ON\\n'
+        '        COMPILE_OPTIONS "-fobjc-arc"\\n'
+        '    )\\n'
         'elseif (APPLE)\\n    set(MARATHON_RECOMP_OS_CXX_SOURCES',
         1
     )
@@ -2444,6 +2462,29 @@ if main_cpp.exists():
             1
         )
         msrc = msrc.replace(
+            "    if (timeDifferenceSeconds > TimeBetweenUpdateChecksInSeconds)\\n"
+            "    {\\n"
+            "        UpdateChecker::initialize();\\n"
+            "        UpdateChecker::start();\\n"
+            "        Config::LastChecked = timeNow;\\n"
+            "        Config::Save();\\n"
+            "    }",
+            "#if !defined(MARATHON_IOS_PORT)\\n"
+            "    if (timeDifferenceSeconds > TimeBetweenUpdateChecksInSeconds)\\n"
+            "    {\\n"
+            "        UpdateChecker::initialize();\\n"
+            "        UpdateChecker::start();\\n"
+            "        Config::LastChecked = timeNow;\\n"
+            "        Config::Save();\\n"
+            "    }\\n"
+            "#else\\n"
+            "    // MARATHON_IOS_SKIP_DESKTOP_UPDATE_CHECK: evita il thread UpdateChecker desktop al primo avvio su LiveContainer\\n"
+            "    (void)timeDifferenceSeconds;\\n"
+            "    (void)timeNow;\\n"
+            "#endif",
+            1
+        )
+        msrc = msrc.replace(
             "GuestThread::Start({ entry, 0, 0 });",
             "#if defined(MARATHON_IOS_PORT)\\n"
             "    MarathonIOS_AttachVirtualController(nullptr);\\n"
@@ -2452,7 +2493,7 @@ if main_cpp.exists():
             1
         )
         main_cpp.write_text(msrc, encoding="utf-8")
-        print("Patched main.cpp: SDL3/SDL_main.h, writable iOS cwd (Feather fix), and post-installer virtual controller attach.")
+        print("Patched main.cpp: SDL3/SDL_main.h, writable iOS cwd, skip desktop UpdateChecker on first launch, and virtual controller attach.")
 PY_CMAKE
 
 echo "==> Patch iOS Clean-Room applicata con successo!"

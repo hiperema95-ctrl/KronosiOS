@@ -215,6 +215,12 @@ test('generated apply_ios_port.sh and nfd_ios.mm implement direct XISO streaming
   assert.match(patcher, /EIOSInputMode/);
   assert.match(patcher, /SDLEventListenerForIOSButtonMode/);
   assert.match(patcher, /MARATHON_IOS_INSTALLER_HID_ICONS/);
+  assert.match(patcher, /COMPILE_OPTIONS "-fobjc-arc"/);
+  assert.match(patcher, /MARATHON_IOS_SKIP_DESKTOP_UPDATE_CHECK/);
+  assert.match(patcher, /MARATHON_IOS_SAFE_CONFIG_DIR/);
+  const curlMm = files.find((f) => f.path === 'ios/curl_ios_stub.mm')!.content;
+  assert.match(curlMm, /ephemeralSessionConfiguration/);
+  assert.match(curlMm, /MarathonCurlAsyncState/);
   assert.match(nfd, /ScanLocalXisoCandidates/);
   assert.match(nfd, /NFD_OpenDialogMultipleN/);
 
