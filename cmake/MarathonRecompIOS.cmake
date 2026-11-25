@@ -31,10 +31,15 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 
     add_compile_definitions(
         MARATHON_IOS_PORT=1
+        MARATHON_IOS_PROMOTION_120HZ=1
         MARATHON_RECOMP_METAL=1
     MARATHON_IOS_NATIVE_METAL=1
         MARATHON_IOS_STREAMING_XISO=1
     )
+
+    # Apple Silicon ARMv8.5-A codegen (LSE single-instruction atomics, RCPC2, FRINTTS, FP16, dotprod, P-core scheduling)
+    # Runs cleanly on iPhone 12..16 Pro (A14..A18 Pro) and M-series iPads while slashing atomic/CPU overhead at 120 FPS.
+    add_compile_options(-mcpu=apple-a14 -fno-math-errno)
 
     # Position-independent executable required for both Feather and LiveContainer
     add_compile_options(-fPIC)

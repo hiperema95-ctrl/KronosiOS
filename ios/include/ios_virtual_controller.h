@@ -24,9 +24,9 @@ typedef struct MarathonTouchGamepadState {
 } MarathonTouchGamepadState;
 
 typedef struct MarathonIOSHardwareProfile {
-    int tier;                  // 0 = Compact (<=4GB), 1 = Mid (6GB), 2 = Flagship (>=8GB)
+    int tier;                  // 0 = Compact (<=4GB), 1 = Mid (6GB), 2 = 60Hz Flagship (>=8GB), 3 = ProMotion 120Hz Flagship (iPhone 15 Pro/16 Pro)
     int maxRefreshHz;          // 60 or 120 (ProMotion)
-    int recommendedFps;        // 30 or 60 (thermal-friendly default; 30/60/120 selectable in Video Options)
+    int recommendedFps;        // 30, 60, or 120 (auto-tuned for device tier & thermals)
     float screenScale;         // Native Retina scale (e.g. 2.0 or 3.0)
     float recommendedResScale; // Optimal mobile ResolutionScale for crisp visuals + low heat
     int recommendedAA;         // 0 = Off, 1 = MSAA2x
@@ -46,7 +46,7 @@ void MarathonIOS_TriggerHapticRumble(uint16_t lowFreqMotor, uint16_t highFreqMot
 void MarathonIOS_ResetVirtualControllerInputs(void);
 void MarathonIOS_GetFPSOverlayAnchorPoints(float* outWinX, float* outWinY);
 
-// On-device diagnostics, lifecycle pause/resume, ProMotion FPS pacing & hardware auto-config (ios/os/ios_platform.mm)
+// On-device diagnostics, lifecycle pause/resume, ProMotion 120Hz LTPO driver, Thermal Guardian & hardware auto-config (ios/os/ios_platform.mm)
 void MarathonIOS_LogLine(const char* tag, const char* msg);
 void MarathonIOS_Heartbeat(const char* phase);
 void MarathonIOS_RenderHeartbeat(const char* phase);
@@ -55,6 +55,9 @@ void MarathonIOS_SetAppSuspended(bool suspended);
 void MarathonIOS_WaitUntilActive(void);
 void MarathonIOS_SetTargetFPS(int fps);
 int MarathonIOS_GetTargetFPS(void);
+int MarathonIOS_GetEffectiveTargetFPS(void);
+int MarathonIOS_GetThermalState(void);
+void MarathonIOS_ApplyProMotionRefreshRate(int targetFps);
 void MarathonIOS_GetHardwareProfile(MarathonIOSHardwareProfile* outProfile);
 
 #ifdef __cplusplus

@@ -658,11 +658,13 @@ export function generateIosPlatformMm(): string {
 // Includes:
 // - Persistent Documents/MarathonRecomp/ios_debug.log diagnostics & ARM64 Mach freeze watchdog
 // - Zero-stall UIKit lifecycle pause/resume (prevents Metal 00000006 background GPU faults on screen lock / app switch)
-// - First-launch iOS hardware auto-detection for balanced mobile thermal defaults
-// - Shared ProMotion target FPS state (30 / 60 / 120 FPS)
+// - Native ProMotion 120Hz CADisplayLink driver + event-driven Thermal Guardian (prevents thermal cliff & battery drain)
+// - First-launch iOS hardware auto-detection (Tier 3 ProMotion 120Hz flagship for iPhone 15 Pro / 16 Pro)
+// - Buffered non-blocking logging + low-overhead per-frame heartbeat
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
+#import <QuartzCore/QuartzCore.h>
 #import <AVFoundation/AVFoundation.h>
 #import <CoreFoundation/CoreFoundation.h>
 #import <os/log.h>
@@ -672,6 +674,7 @@ export function generateIosPlatformMm(): string {
 #include <mach-o/dyld.h>
 #include <mach/mach.h>
 #include <pthread.h>
+#include <pthread/qos.h>
 #include <signal.h>
 #include <sys/param.h>
 #include <sys/sysctl.h>
@@ -698,11 +701,50 @@ export function generateIosPlatformMm(): string {
 #include <os/user.h>
 #include <os/version.h>
 
+// Lightweight CADisplayLink driver that explicitly declares CAFrameRateRange to iOS ProMotion LTPO
+// (without an active CAFrameRateRange hint, iPhone 15 Pro / 16 Pro frequently throttle Metal layers to 60Hz/80Hz).
+@interface MarathonProMotionDriver : NSObject
+@property (nonatomic, strong) CADisplayLink *displayLink;
+- (void)applyTargetFps:(int)fps suspended:(BOOL)suspended;
+@end
+
+@implementation MarathonProMotionDriver
+- (void)onTick:(__unused CADisplayLink *)link {
+    // Intentionally empty: solely drives CoreAnimation ProMotion LTPO CAFrameRateRange negotiation.
+}
+
+- (void)applyTargetFps:(int)fps suspended:(BOOL)suspended {
+    if (!self.displayLink) {
+        self.displayLink = [CADisplayLink displayLinkWithTarget:self selector:@selector(onTick:)];
+        [self.displayLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
+    }
+    if (suspended) {
+        self.displayLink.paused = YES;
+        return;
+    }
+    if (@available(iOS 15.0, *)) {
+        CAFrameRateRange range;
+        if (fps >= 100) {
+            range = CAFrameRateRangeMake(80.0f, 120.0f, 120.0f);
+        } else if (fps >= 80) {
+            range = CAFrameRateRangeMake(60.0f, 90.0f, 90.0f);
+        } else if (fps >= 45) {
+            range = CAFrameRateRangeMake(48.0f, 60.0f, 60.0f);
+        } else {
+            range = CAFrameRateRangeMake(30.0f, 30.0f, 30.0f);
+        }
+        self.displayLink.preferredFrameRateRange = range;
+    }
+    self.displayLink.paused = NO;
+}
+@end
+
 namespace {
 
 static std::mutex g_logFileMutex;
 static FILE* g_logFile = nullptr;
 static int g_logFd = -1;
+static std::atomic<bool> g_logDirty{false};
 static std::atomic<uint64_t> g_bootMonotonicMs{0};
 static std::atomic<bool> g_diagInitialized{false};
 
@@ -720,8 +762,11 @@ static std::atomic<bool> g_lifecycleRegistered{false};
 static std::mutex g_suspendMutex;
 static std::condition_variable g_suspendCv;
 
-// Target FPS shared with Plume ProMotion LTPO presenter (30 / 60 / 120)
-static std::atomic<int> g_targetFps{60};
+// ProMotion LTPO target FPS & event-driven Thermal Guardian state
+static std::atomic<int> g_targetFps{120};
+static std::atomic<int> g_thermalState{0}; // 0=Nominal, 1=Fair, 2=Serious, 3=Critical
+static std::atomic<int> g_effectiveTargetFps{120};
+static MarathonProMotionDriver *g_proMotionDriver = nil;
 
 static uint64_t MonotonicNowMs() {
     struct timespec ts{};
@@ -735,6 +780,22 @@ static uint64_t CurrentTidHash() {
     return tid;
 }
 
+static bool IsUrgentLogTag(const char* tag) {
+    if (!tag) return false;
+    return std::strcmp(tag, "ERR") == 0 ||
+           std::strcmp(tag, "WARN") == 0 ||
+           std::strcmp(tag, "BOOT") == 0 ||
+           std::strcmp(tag, "LIFECYCLE") == 0 ||
+           std::strcmp(tag, "WATCHDOG") == 0 ||
+           std::strcmp(tag, "METAL_ERR") == 0 ||
+           std::strcmp(tag, "METAL_WARN") == 0 ||
+           std::strcmp(tag, "METAL_INFO") == 0 ||
+           std::strcmp(tag, "THERMAL") == 0 ||
+           std::strcmp(tag, "AUTOCFG") == 0 ||
+           std::strcmp(tag, "TERMINATE") == 0 ||
+           std::strcmp(tag, "NS_EXC") == 0;
+}
+
 static void WriteRawLogLocked(const char* tag, const char* msg) {
     if (!g_logFile) return;
     uint64_t now = MonotonicNowMs();
@@ -745,7 +806,51 @@ static void WriteRawLogLocked(const char* tag, const char* msg) {
                  static_cast<unsigned long long>(CurrentTidHash() & 0xFFFFFFULL),
                  tag ? tag : "INFO",
                  msg ? msg : "");
-    std::fflush(g_logFile);
+    // Avoid synchronous NAND fflush() on gameplay INFO spam at 120 FPS; watchdog flushes every 2s.
+    if (IsUrgentLogTag(tag)) {
+        std::fflush(g_logFile);
+        g_logDirty.store(false, std::memory_order_relaxed);
+    } else {
+        g_logDirty.store(true, std::memory_order_relaxed);
+    }
+}
+
+static int ComputeEffectiveTargetFps(int userFps, int thermal) {
+    int eff = userFps;
+    // Gentle Thermal Guardian: prevents Apple's sudden OS thermal cliff (~30fps throttle)
+    // by easing 120 -> 90 FPS (ProMotion LTPO) under Serious heat and 60 FPS under Critical heat.
+    if (thermal >= 3 && eff > 60) {
+        eff = 60;
+    } else if (thermal == 2 && eff > 90) {
+        eff = 90;
+    }
+    return eff;
+}
+
+static void RefreshThermalAndProMotion(bool logChange) {
+    int thermal = 0;
+    switch ([NSProcessInfo processInfo].thermalState) {
+        case NSProcessInfoThermalStateNominal:  thermal = 0; break;
+        case NSProcessInfoThermalStateFair:     thermal = 1; break;
+        case NSProcessInfoThermalStateSerious:  thermal = 2; break;
+        case NSProcessInfoThermalStateCritical: thermal = 3; break;
+        default:                                thermal = 0; break;
+    }
+    int prevThermal = g_thermalState.exchange(thermal, std::memory_order_acq_rel);
+    int userFps = g_targetFps.load(std::memory_order_acquire);
+    int eff = ComputeEffectiveTargetFps(userFps, thermal);
+    int prevEff = g_effectiveTargetFps.exchange(eff, std::memory_order_acq_rel);
+
+    MarathonIOS_ApplyProMotionRefreshRate(eff);
+
+    if (logChange && (prevThermal != thermal || prevEff != eff)) {
+        static const char* kThermalNames[4] = { "Nominal", "Fair", "Serious", "Critical" };
+        char buf[160];
+        std::snprintf(buf, sizeof(buf),
+                      "Thermal=%s -> effectiveFPS=%d (userTarget=%d)",
+                      kThermalNames[thermal & 3], eff, userFps);
+        MarathonIOS_LogLine("THERMAL", buf);
+    }
 }
 
 static void SafeWriteFd(int fd, const char* str) {
@@ -901,6 +1006,13 @@ static void RegisterIOSLifecycleObservers() {
                     usingBlock:^(__unused NSNotification *note) {
             MarathonIOS_SetAppSuspended(false);
         }];
+        [nc addObserverForName:NSProcessInfoThermalStateDidChangeNotification
+                        object:nil
+                         queue:[NSOperationQueue mainQueue]
+                    usingBlock:^(__unused NSNotification *note) {
+            RefreshThermalAndProMotion(true);
+        }];
+        RefreshThermalAndProMotion(false);
     };
 
     if ([NSThread isMainThread]) {
@@ -913,9 +1025,17 @@ static void RegisterIOSLifecycleObservers() {
 static void StartFreezeWatchdogThread() {
     std::thread([]() {
         pthread_setname_np("MarathonIOSWatchdog");
+        // Pin watchdog strictly to Apple Silicon E-cores (zero interference with 120 FPS P-cores)
+        pthread_set_qos_class_self_np(QOS_CLASS_BACKGROUND, 0);
         static constexpr uint64_t kThresholdsMs[3] = { 4000, 12000, 30000 };
+        uint32_t tick = 0;
         while (true) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
+            ++tick;
+            if ((tick & 1u) == 0u && g_logDirty.exchange(false, std::memory_order_relaxed)) {
+                std::lock_guard<std::mutex> lock(g_logFileMutex);
+                if (g_logFile) std::fflush(g_logFile);
+            }
             if (!g_watchdogArmed.load(std::memory_order_acquire)) continue;
             if (g_appSuspended.load(std::memory_order_acquire)) {
                 uint64_t nowPaused = MonotonicNowMs();
@@ -938,6 +1058,7 @@ static void StartFreezeWatchdogThread() {
 }
 
 static void EnsureDiagnosticsInitialized() {
+    if (g_diagInitialized.load(std::memory_order_acquire)) return;
     bool expected = false;
     if (!g_diagInitialized.compare_exchange_strong(expected, true)) return;
 
@@ -1024,25 +1145,34 @@ void MarathonIOS_LogLine(const char* tag, const char* msg) {
 }
 
 void MarathonIOS_Heartbeat(const char* phase) {
-    EnsureDiagnosticsInitialized();
-    g_lastMainHbMs.store(MonotonicNowMs(), std::memory_order_release);
+    if (!g_diagInitialized.load(std::memory_order_acquire)) {
+        EnsureDiagnosticsInitialized();
+    }
     if (phase) {
         g_lastMainPhase.store(phase, std::memory_order_relaxed);
     }
-    if (phase && std::strcmp(phase, "Video::Present:Done") == 0) {
-        g_hbFrameCount.fetch_add(1, std::memory_order_relaxed);
+    // Only sample clock_gettime once per completed frame (eliminates 480 syscalls/sec at 120 FPS)
+    const bool isFrameEnd = (phase && std::strcmp(phase, "Video::Present:Done") == 0);
+    if (isFrameEnd || !g_watchdogArmed.load(std::memory_order_relaxed)) {
+        g_lastMainHbMs.store(MonotonicNowMs(), std::memory_order_release);
+        if (isFrameEnd) {
+            g_hbFrameCount.fetch_add(1, std::memory_order_relaxed);
+        }
+        if (g_stallDumpStage.load(std::memory_order_relaxed) != 0) {
+            g_stallDumpStage.store(0, std::memory_order_relaxed);
+            MarathonIOS_LogLine("WATCHDOG", "Heartbeat resumed after stall.");
+        }
+        g_watchdogArmed.store(true, std::memory_order_release);
     }
-    if (g_stallDumpStage.load(std::memory_order_relaxed) != 0) {
-        g_stallDumpStage.store(0, std::memory_order_relaxed);
-        MarathonIOS_LogLine("WATCHDOG", "Heartbeat resumed after stall.");
-    }
-    g_watchdogArmed.store(true, std::memory_order_release);
 }
 
 void MarathonIOS_RenderHeartbeat(const char* phase) {
-    g_lastRenderHbMs.store(MonotonicNowMs(), std::memory_order_release);
     if (phase) {
         g_lastRenderPhase.store(phase, std::memory_order_relaxed);
+    }
+    static std::atomic<uint32_t> s_renderTick{0};
+    if ((s_renderTick.fetch_add(1, std::memory_order_relaxed) & 7u) == 0u) {
+        g_lastRenderHbMs.store(MonotonicNowMs(), std::memory_order_release);
     }
 }
 
@@ -1057,7 +1187,8 @@ void MarathonIOS_SetAppSuspended(bool suspended) {
 
     if (suspended) {
         MarathonIOS_ResetVirtualControllerInputs();
-        MarathonIOS_LogLine("LIFECYCLE", "App suspended (lock/background) — pausing Metal submissions cleanly");
+        MarathonIOS_ApplyProMotionRefreshRate(g_effectiveTargetFps.load(std::memory_order_acquire));
+        MarathonIOS_LogLine("LIFECYCLE", "App suspended (lock/background) — pausing Metal submissions & ProMotion cleanly");
     } else {
         uint64_t now = MonotonicNowMs();
         g_lastMainHbMs.store(now, std::memory_order_release);
@@ -1067,6 +1198,7 @@ void MarathonIOS_SetAppSuspended(bool suspended) {
             std::lock_guard<std::mutex> lock(g_suspendMutex);
         }
         g_suspendCv.notify_all();
+        RefreshThermalAndProMotion(false);
         MarathonIOS_LogLine("LIFECYCLE", "App active (foreground/unlocked) — resuming Metal rendering immediately");
     }
 }
@@ -1092,16 +1224,49 @@ void MarathonIOS_WaitUntilActive(void) {
     }
 }
 
+void MarathonIOS_ApplyProMotionRefreshRate(int targetFps) {
+    const BOOL suspended = g_appSuspended.load(std::memory_order_acquire) ? YES : NO;
+    static std::atomic<int> s_lastAppliedKey{-1};
+    const int key = (targetFps << 1) | (suspended ? 1 : 0);
+    if (s_lastAppliedKey.exchange(key, std::memory_order_acq_rel) == key) return;
+
+    auto updateBlock = ^{
+        if (!g_proMotionDriver) {
+            g_proMotionDriver = [[MarathonProMotionDriver alloc] init];
+        }
+        [g_proMotionDriver applyTargetFps:targetFps suspended:suspended];
+    };
+    if ([NSThread isMainThread]) {
+        updateBlock();
+    } else {
+        dispatch_async(dispatch_get_main_queue(), updateBlock);
+    }
+}
+
 void MarathonIOS_SetTargetFPS(int fps) {
     int normalized = 60;
     if (fps <= 35) normalized = 30;
     else if (fps >= 100) normalized = 120;
     else normalized = 60;
-    g_targetFps.store(normalized, std::memory_order_release);
+
+    const int prev = g_targetFps.exchange(normalized, std::memory_order_acq_rel);
+    const int eff = ComputeEffectiveTargetFps(normalized, g_thermalState.load(std::memory_order_acquire));
+    const int prevEff = g_effectiveTargetFps.exchange(eff, std::memory_order_acq_rel);
+    if (prev != normalized || prevEff != eff) {
+        MarathonIOS_ApplyProMotionRefreshRate(eff);
+    }
 }
 
 int MarathonIOS_GetTargetFPS(void) {
     return g_targetFps.load(std::memory_order_acquire);
+}
+
+int MarathonIOS_GetEffectiveTargetFPS(void) {
+    return g_effectiveTargetFps.load(std::memory_order_acquire);
+}
+
+int MarathonIOS_GetThermalState(void) {
+    return g_thermalState.load(std::memory_order_acquire);
 }
 
 void MarathonIOS_GetHardwareProfile(MarathonIOSHardwareProfile* outProfile) {
@@ -1136,25 +1301,35 @@ void MarathonIOS_GetHardwareProfile(MarathonIOSHardwareProfile* outProfile) {
     p.screenScale = scale;
     p.isPad = isPad;
 
-    // Smart mobile thermal tiering:
-    // - Avoids desktop 3x Retina (2622x1206) + MSAA4x + 4096 shadows + 16x AF thermal meltdown
-    // - Keeps visuals crisp (>900p on flagship iPhones/iPads, >720p on mid-tier) while running cool & locked
-    if (ramMiB >= 7500) {
-        // Tier 2: Flagship (iPhone 15 Pro / 16 Pro / 16 / M-series iPad, >=8GB RAM)
+    // Smart mobile thermal tiering (paired with 2.0x Retina CAMetalLayer cap = 1748x804 on iPhone 16 Pro):
+    // - Eliminates wasteful 3x Retina (2622x1206) + MSAA4x + 4096 shadows + 16x AF thermal meltdown
+    // - Unlocks cool, locked 120 FPS ProMotion on iPhone 15 Pro / 16 Pro / M-series ProMotion iPads
+    if (ramMiB >= 7500 && maxHz >= 120) {
+        // Tier 3: ProMotion 120Hz Flagship (iPhone 15 Pro / 16 Pro / 16 Pro Max / ProMotion M-series iPad)
+        p.tier = 3;
+        p.recommendedFps = 120;
+        p.recommendedResScale = isPad ? 0.80f : 0.85f; // ~1486x683 internal on iPhone 16 Pro (crisper than 720p, <50% fillrate)
+        p.recommendedAA = 0;         // Off (avoids TBDR MSAA tile bandwidth & heat)
+        p.recommendedShadowRes = 1;  // x1024
+        p.recommendedReflection = 1; // Quarter
+        p.recommendedRadialBlur = 1; // Original
+        p.recommendedAF = 4;
+    } else if (ramMiB >= 7500) {
+        // Tier 2: 60Hz Flagship (iPhone 16 / 16 Plus / 60Hz 8GB iPad)
         p.tier = 2;
         p.recommendedFps = 60;
-        p.recommendedResScale = isPad ? 0.85f : (scale >= 2.5f ? 0.75f : 0.90f);
-        p.recommendedAA = 0;         // Off (460 PPI OLED @ >900p looks razor-sharp & cuts TBDR tile heat dramatically)
+        p.recommendedResScale = isPad ? 0.85f : 0.90f;
+        p.recommendedAA = 0;
         p.recommendedShadowRes = 1;  // x1024
         p.recommendedReflection = 1; // Quarter
         p.recommendedRadialBlur = 1; // Original
         p.recommendedAF = 4;
     } else if (ramMiB >= 5500) {
-        // Tier 1: Mid-High (iPhone 13 Pro / 14 / 15 / A15-A16 iPad, 6GB RAM)
+        // Tier 1: Mid-High (iPhone 13 Pro / 14 / 15 / 6GB iPad)
         p.tier = 1;
         p.recommendedFps = 60;
-        p.recommendedResScale = (scale >= 2.5f ? 0.65f : 0.80f);
-        p.recommendedAA = 0;         // Off
+        p.recommendedResScale = 0.75f;
+        p.recommendedAA = 0;
         p.recommendedShadowRes = 1;  // x1024
         p.recommendedReflection = 1; // Quarter
         p.recommendedRadialBlur = 1; // Original
@@ -1163,8 +1338,8 @@ void MarathonIOS_GetHardwareProfile(MarathonIOSHardwareProfile* outProfile) {
         // Tier 0: Compact / 4GB devices
         p.tier = 0;
         p.recommendedFps = 30;
-        p.recommendedResScale = 0.55f;
-        p.recommendedAA = 0;         // Off
+        p.recommendedResScale = 0.60f;
+        p.recommendedAA = 0;
         p.recommendedShadowRes = 0;  // x512
         p.recommendedReflection = 0; // Eighth
         p.recommendedRadialBlur = 0; // Off
@@ -1364,9 +1539,9 @@ typedef struct MarathonTouchGamepadState {
 } MarathonTouchGamepadState;
 
 typedef struct MarathonIOSHardwareProfile {
-    int tier;                  // 0 = Compact (<=4GB), 1 = Mid (6GB), 2 = Flagship (>=8GB)
+    int tier;                  // 0 = Compact (<=4GB), 1 = Mid (6GB), 2 = 60Hz Flagship (>=8GB), 3 = ProMotion 120Hz Flagship (iPhone 15 Pro/16 Pro)
     int maxRefreshHz;          // 60 or 120 (ProMotion)
-    int recommendedFps;        // 30 or 60 (thermal-friendly default; 30/60/120 selectable in Video Options)
+    int recommendedFps;        // 30, 60, or 120 (auto-tuned for device tier & thermals)
     float screenScale;         // Native Retina scale (e.g. 2.0 or 3.0)
     float recommendedResScale; // Optimal mobile ResolutionScale for crisp visuals + low heat
     int recommendedAA;         // 0 = Off, 1 = MSAA2x
@@ -1386,7 +1561,7 @@ void MarathonIOS_TriggerHapticRumble(uint16_t lowFreqMotor, uint16_t highFreqMot
 void MarathonIOS_ResetVirtualControllerInputs(void);
 void MarathonIOS_GetFPSOverlayAnchorPoints(float* outWinX, float* outWinY);
 
-// On-device diagnostics, lifecycle pause/resume, ProMotion FPS pacing & hardware auto-config (ios/os/ios_platform.mm)
+// On-device diagnostics, lifecycle pause/resume, ProMotion 120Hz LTPO driver, Thermal Guardian & hardware auto-config (ios/os/ios_platform.mm)
 void MarathonIOS_LogLine(const char* tag, const char* msg);
 void MarathonIOS_Heartbeat(const char* phase);
 void MarathonIOS_RenderHeartbeat(const char* phase);
@@ -1395,6 +1570,9 @@ void MarathonIOS_SetAppSuspended(bool suspended);
 void MarathonIOS_WaitUntilActive(void);
 void MarathonIOS_SetTargetFPS(int fps);
 int MarathonIOS_GetTargetFPS(void);
+int MarathonIOS_GetEffectiveTargetFPS(void);
+int MarathonIOS_GetThermalState(void);
+void MarathonIOS_ApplyProMotionRefreshRate(int targetFps);
 void MarathonIOS_GetHardwareProfile(MarathonIOSHardwareProfile* outProfile);
 
 #ifdef __cplusplus
@@ -3081,9 +3259,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 
     add_compile_definitions(
         MARATHON_IOS_PORT=1
+        MARATHON_IOS_PROMOTION_120HZ=1
         ${rendererDef}
         ${p.enableDirectXisoImport ? 'MARATHON_IOS_STREAMING_XISO=1' : 'MARATHON_IOS_STREAMING_XISO=0'}
     )
+
+    # Apple Silicon ARMv8.5-A codegen (LSE single-instruction atomics, RCPC2, FRINTTS, FP16, dotprod, P-core scheduling)
+    # Runs cleanly on iPhone 12..16 Pro (A14..A18 Pro) and M-series iPads while slashing atomic/CPU overhead at 120 FPS.
+    add_compile_options(-mcpu=apple-a14 -fno-math-errno)
 
     ${isLiveContainerCompat ? `# Position-independent executable required for both Feather and LiveContainer
     add_compile_options(-fPIC)

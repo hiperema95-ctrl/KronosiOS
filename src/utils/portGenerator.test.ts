@@ -336,8 +336,8 @@ test('iOS lifecycle pause/resume, hardware thermal auto-config, 30/60/120 FPS Pr
   assert.match(vcHeader, /typedef struct MarathonIOSHardwareProfile/);
   assert.match(platformMm, /void MarathonIOS_GetHardwareProfile\(MarathonIOSHardwareProfile\* outProfile\)/);
   assert.match(patcher, /ApplyIOSHardwareDefaults/);
-  assert.match(patcher, /ios_hw_tuned_v1/);
-  assert.match(patcher, /std::this_thread::sleep_for\(remaining - 250us\)/);
+  assert.match(patcher, /ios_hw_tuned_v2/);
+  assert.match(patcher, /std::this_thread::sleep_until\(s_next\)/);
 
   // 3. 30 / 60 / 120 FPS selector in Options Menu & ProMotion LTPO pacing
   assert.match(plist, /<key>CADisableMinimumFrameDurationOnPhone<\/key>\s*<true\/>/);
@@ -345,9 +345,10 @@ test('iOS lifecycle pause/resume, hardware thermal auto-config, 30/60/120 FPS Pr
   assert.match(patcher, /DrawOption\(rowCount\+\+, &Config::FPS, true, nullptr, 30, 60, 120, false\);/);
   assert.match(patcher, /kIOSFpsPresets\[3\] = \{ 30, 60, 120 \}/);
   assert.match(patcher, /valueText = fmt::format\("\{\} FPS", config->Value\);/);
-  assert.match(patcher, /presentIOSDrawable\(drawableMtl, MarathonIOS_GetTargetFPS\(\)\)/);
+  assert.match(patcher, /presentIOSDrawable\(drawableMtl, MarathonIOS_GetEffectiveTargetFPS\(\)\)/);
   assert.match(patcher, /presentAfterMinimumDuration:\(1\.0 \/ 32\.0\)/);
   assert.match(patcher, /presentAfterMinimumDuration:\(1\.0 \/ 65\.0\)/);
+  assert.match(patcher, /presentAfterMinimumDuration:\(1\.0 \/ 95\.0\)/);
   assert.match(patcher, /if \(Config::FPS <= 35\) Config::FPS = 30;/);
 
   // 4. Ultra-responsive direct multi-touch virtual controller (no UIButton lag, ABXY thumb-slide, pre-warmed UIImpactFeedbackGenerator)
@@ -357,6 +358,54 @@ test('iOS lifecycle pause/resume, hardware thermal auto-config, 30/60/120 FPS Pr
   assert.match(vcMm, /\[CATransaction setDisableActions:YES\]/);
   assert.match(vcMm, /void MarathonIOS_ResetVirtualControllerInputs\(void\)/);
   assert.doesNotMatch(vcMm, /@interface Sonic06PadButton : UIButton/);
+});
+
+test('iPhone 16 Pro 120 FPS ProMotion driver, Thermal Guardian, Metal useResources batching, audio/QoS/Jetsam, and ARMv8.5-A tuning are wired', () => {
+  const files = generatePortRepository(DEFAULT_BUILD_CONFIG);
+  const patcher = files.find((f) => f.path === 'scripts/apply_ios_port.sh')!.content;
+  const platformMm = files.find((f) => f.path === 'ios/os/ios_platform.mm')!.content;
+  const vcHeader = files.find((f) => f.path === 'ios/include/ios_virtual_controller.h')!.content;
+  const iosCmake = files.find((f) => f.path === 'cmake/MarathonRecompIOS.cmake')!.content;
+
+  // 1. ProMotion 120Hz CADisplayLink driver & event-driven Thermal Guardian
+  assert.match(vcHeader, /int MarathonIOS_GetEffectiveTargetFPS\(void\);/);
+  assert.match(vcHeader, /int MarathonIOS_GetThermalState\(void\);/);
+  assert.match(vcHeader, /void MarathonIOS_ApplyProMotionRefreshRate\(int targetFps\);/);
+  assert.match(platformMm, /@interface MarathonProMotionDriver : NSObject/);
+  assert.match(platformMm, /CAFrameRateRangeMake\(80\.0f, 120\.0f, 120\.0f\)/);
+  assert.match(platformMm, /NSProcessInfoThermalStateDidChangeNotification/);
+  assert.match(platformMm, /p\.tier = 3;/);
+  assert.match(platformMm, /p\.recommendedFps = 120;/);
+  assert.match(platformMm, /QOS_CLASS_BACKGROUND/);
+
+  // 2. Batched Metal useResources(), 2.0x Retina cap, triple buffering, framebufferOnly AFBC, throttled UIKit layout sync
+  assert.match(patcher, /bindIOSAddressableResources/);
+  assert.match(patcher, /->useResources\(/);
+  assert.match(patcher, /metalLayer\.maximumDrawableCount = 3;/);
+  assert.match(patcher, /metalLayer\.framebufferOnly = YES;/);
+  assert.match(patcher, /\(native > 2\.0\) \? 2\.0 : native/);
+  assert.match(patcher, /g_iosMetalLastSyncSec/);
+  assert.match(patcher, /if \(scale > 2\.0\)/);
+  assert.match(patcher, /setDef\(Config::TripleBuffering, ETripleBuffering::On\);/);
+  assert.match(patcher, /bufferCount = 3;/);
+
+  // 3. Zero-busy-spin audio + 1024-frame CoreAudio buffer + Apple Silicon P-core QoS + autorelease pools + Jetsam MADV_FREE
+  assert.match(patcher, /MARATHON_IOS_AUDIO_OPT/);
+  assert.match(patcher, /SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES, "1024"/);
+  assert.match(patcher, /std::this_thread::sleep_until\(next\);/);
+  assert.match(patcher, /MARATHON_IOS_JETSAM_DISCARD/);
+  assert.match(patcher, /MarathonIOSDiscardFreedPages/);
+  assert.match(patcher, /MADV_FREE/);
+  assert.match(patcher, /MARATHON_IOS_QOS_THREAD/);
+  assert.match(patcher, /pthread_set_qos_class_self_np\(QOS_CLASS_USER_INTERACTIVE, 0\);/);
+  assert.match(patcher, /objc_autoreleasePoolPush\(\)/);
+  assert.match(patcher, /objc_autoreleasePoolPop\(/);
+
+  // 4. Apple Silicon ARMv8.5-A codegen (LSE atomics) & host -ffp-model=precise (keeping strict FP in MarathonRecompLib)
+  assert.match(iosCmake, /MARATHON_IOS_PROMOTION_120HZ=1/);
+  assert.match(iosCmake, /-mcpu=apple-a14/);
+  assert.match(iosCmake, /-fno-math-errno/);
+  assert.match(patcher, /add_compile_options\(-ffp-model=precise\)/);
 });
 
 test('in-game ShowFPS Video option, 6-language localization, top-left safe-area FPS overlay, and on-disk parity are intact', async () => {
@@ -390,6 +439,8 @@ test('in-game ShowFPS Video option, 6-language localization, top-left safe-area 
     'scripts/apply_ios_port.sh',
     'ios/include/ios_virtual_controller.h',
     'ios/ios_virtual_controller.mm',
+    'ios/os/ios_platform.mm',
+    'cmake/MarathonRecompIOS.cmake',
   ]) {
     const generated = files.find((f) => f.path === relPath)!.content;
     const onDisk = fs.readFileSync(relPath, 'utf8');

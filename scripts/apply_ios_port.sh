@@ -982,7 +982,7 @@ CONFIG_DEFINE_LOCALE(Brightness)'''
         print("Patched locale/config_locale.cpp: added 6-language ShowFPS option localization.")
 PY_WIZ
 
-echo "==> [6/8] Patch paths.cpp, paths.h, config.cpp, file_system.cpp, imports.cpp (FIX FREEZE ARM64!), app.cpp e stdafx.h..."
+echo "==> [6/8] Patch paths.cpp, paths.h, config.cpp, file_system.cpp, imports.cpp (FIX FREEZE ARM64!), app.cpp, sdl3_driver.cpp, heap.cpp, guest_thread.cpp e stdafx.h..."
 python3 - \
   "${UPSTREAM_DIR}/MarathonRecomp/user/paths.cpp" \
   "${UPSTREAM_DIR}/MarathonRecomp/stdafx.h" \
@@ -990,7 +990,10 @@ python3 - \
   "${UPSTREAM_DIR}/MarathonRecomp/user/paths.h" \
   "${UPSTREAM_DIR}/MarathonRecomp/kernel/io/file_system.cpp" \
   "${UPSTREAM_DIR}/MarathonRecomp/kernel/imports.cpp" \
-  "${UPSTREAM_DIR}/MarathonRecomp/app.cpp" << 'PY_PATHS'
+  "${UPSTREAM_DIR}/MarathonRecomp/app.cpp" \
+  "${UPSTREAM_DIR}/MarathonRecomp/apu/driver/sdl3_driver.cpp" \
+  "${UPSTREAM_DIR}/MarathonRecomp/kernel/heap.cpp" \
+  "${UPSTREAM_DIR}/MarathonRecomp/cpu/guest_thread.cpp" << 'PY_PATHS'
 import sys, pathlib
 
 p = pathlib.Path(sys.argv[1])
@@ -1035,6 +1038,7 @@ if cfg_p.exists():
             '    };\n'
             '    setDef(Config::FPS, static_cast<int32_t>(prof.recommendedFps));\n'
             '    setDef(Config::VSync, true);\n'
+            '    setDef(Config::TripleBuffering, ETripleBuffering::On);\n'
             '    setDef(Config::ResolutionScale, prof.recommendedResScale);\n'
             '    setDef(Config::AntiAliasing, prof.recommendedAA == 1 ? EAntiAliasing::MSAA2x : EAntiAliasing::Off);\n'
             '    setDef(Config::TransparencyAntiAliasing, false);\n'
@@ -1077,7 +1081,7 @@ if cfg_p.exists():
         MarathonIOS_SetTargetFPS(Config::FPS);
         Config::Save();
         std::error_code tuneEc;
-        std::ofstream(GetUserPath() / "ios_hw_tuned_v1") << "1";
+        std::ofstream(GetUserPath() / "ios_hw_tuned_v2") << "2";
 #else
         Config::Save();
 #endif
@@ -1098,19 +1102,22 @@ if cfg_p.exists():
 #if defined(MARATHON_IOS_PORT)
     {
         std::error_code tuneEc;
-        auto markerPath = GetUserPath() / "ios_hw_tuned_v1";
+        auto markerPath = GetUserPath() / "ios_hw_tuned_v2";
         if (!std::filesystem::exists(markerPath, tuneEc))
         {
-            // One-time thermal migration for configs generated before smart iOS auto-tuning
+            MarathonIOSHardwareProfile prof{};
+            MarathonIOS_GetHardwareProfile(&prof);
+            // One-time migration for configs created before Tier 3 (120Hz ProMotion + cool thermal defaults)
             const bool isOldHeavyDefault =
                 std::fabs(Config::ResolutionScale.Value - 1.0f) < 0.01f &&
                 Config::AntiAliasing.Value != EAntiAliasing::Off;
-            ApplyIOSHardwareDefaults(isOldHeavyDefault);
-            if (isOldHeavyDefault)
+            const bool isTier3Upgrade = (prof.tier >= 3);
+            ApplyIOSHardwareDefaults(isOldHeavyDefault || isTier3Upgrade);
+            if (isOldHeavyDefault || isTier3Upgrade)
             {
                 Config::Save();
             }
-            std::ofstream(markerPath) << "1";
+            std::ofstream(markerPath) << "2";
         }
         else
         {
@@ -1675,6 +1682,183 @@ public:
 '''
         sa.write_text(sa_src + polyfill, encoding="utf-8")
         print("Patched stdafx.h with deadlock-free C++20 Apple libc++ std::atomic_ref polyfill (256 buckets, notify_all).")
+
+# 8. apu/driver/sdl3_driver.cpp: eliminate 187.5 Hz audio busy-spin (huge thermal/battery win!), 1024-frame CoreAudio buffer, QoS & suspend pause
+aud_p = pathlib.Path(sys.argv[8])
+if aud_p.exists():
+    asrc = aud_p.read_text(encoding="utf-8")
+    if "MARATHON_IOS_AUDIO_OPT" not in asrc:
+        assert '#include <user/config.h>' in asrc, "Failed to locate #include <user/config.h> in apu/driver/sdl3_driver.cpp"
+        asrc = asrc.replace(
+            '#include <user/config.h>',
+            '#include <user/config.h>\n'
+            '#if defined(MARATHON_IOS_PORT)\n'
+            '#include <pthread/qos.h>\n'
+            '#include <ios_virtual_controller.h>\n'
+            '#endif',
+            1
+        )
+        old_audio_init = '    SDL_SetHint(SDL_HINT_AUDIO_CATEGORY, "playback");'
+        new_audio_init = (
+            '    SDL_SetHint(SDL_HINT_AUDIO_CATEGORY, "playback");\n'
+            '#if defined(MARATHON_IOS_PORT)\n'
+            '    // MARATHON_IOS_AUDIO_OPT: 1024-frame CoreAudio buffer (~21.3ms at 48kHz) cuts audio DSP wakeups & battery drain\n'
+            '    SDL_SetHint(SDL_HINT_AUDIO_DEVICE_SAMPLE_FRAMES, "1024");\n'
+            '#endif'
+        )
+        assert old_audio_init in asrc, "Failed to locate SDL_HINT_AUDIO_CATEGORY in apu/driver/sdl3_driver.cpp"
+        asrc = asrc.replace(old_audio_init, new_audio_init, 1)
+
+        old_audio_loop = '''    GuestThreadContext ctx(0);
+
+    size_t channels = g_downMixToStereo ? 2 : XAUDIO_NUM_CHANNELS;
+
+    while (!g_audioThreadShouldExit)
+    {'''
+        new_audio_loop = '''    GuestThreadContext ctx(0);
+#if defined(MARATHON_IOS_PORT)
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INITIATED, 0);
+#endif
+
+    size_t channels = g_downMixToStereo ? 2 : XAUDIO_NUM_CHANNELS;
+
+    while (!g_audioThreadShouldExit)
+    {
+#if defined(MARATHON_IOS_PORT)
+        if (MarathonIOS_IsAppSuspended())
+        {
+            std::this_thread::sleep_for(20ms);
+            continue;
+        }
+#endif'''
+        assert old_audio_loop in asrc, "Failed to locate AudioThread loop in apu/driver/sdl3_driver.cpp"
+        asrc = asrc.replace(old_audio_loop, new_audio_loop, 1)
+
+        old_audio_spin = '''        std::this_thread::sleep_for(std::chrono::floor<std::chrono::milliseconds>(next - now));
+
+        while (std::chrono::steady_clock::now() < next)
+            std::this_thread::yield();'''
+        new_audio_spin = '''#if defined(MARATHON_IOS_PORT)
+        // Zero busy-spin on iOS: sleep_until avoids burning an A18 Pro core 187.5 times/sec
+        std::this_thread::sleep_until(next);
+#else
+        std::this_thread::sleep_for(std::chrono::floor<std::chrono::milliseconds>(next - now));
+
+        while (std::chrono::steady_clock::now() < next)
+            std::this_thread::yield();
+#endif'''
+        assert old_audio_spin in asrc, "Failed to locate AudioThread busy-spin in apu/driver/sdl3_driver.cpp"
+        asrc = asrc.replace(old_audio_spin, new_audio_spin, 1)
+        aud_p.write_text(asrc, encoding="utf-8")
+        print("Patched apu/driver/sdl3_driver.cpp: eliminated 187.5Hz busy-spin + 1024-frame CoreAudio buffer + QoS.")
+
+# 9. kernel/heap.cpp: return freed >=64KB interior pages back to iOS Jetsam via madvise(MADV_FREE) without touching o1heap headers
+heap_p = pathlib.Path(sys.argv[9])
+if heap_p.exists():
+    hsrc = heap_p.read_text(encoding="utf-8")
+    if "MARATHON_IOS_JETSAM_DISCARD" not in hsrc:
+        assert '#include "xdm.h"' in hsrc, "Failed to locate #include \"xdm.h\" in kernel/heap.cpp"
+        hsrc = hsrc.replace(
+            '#include "xdm.h"',
+            '#include "xdm.h"\n'
+            '#if defined(MARATHON_IOS_PORT)\n'
+            '#include <cstdint>\n'
+            '#include <sys/mman.h>\n'
+            '// MARATHON_IOS_JETSAM_DISCARD: reclaim interior 16KB pages of freed >=64KB blocks for iOS Jetsam\n'
+            '// Skips the first 64 bytes so o1heap fragment headers & intrusive free-list pointers are NEVER touched.\n'
+            'static inline void MarathonIOSDiscardFreedPages(void* rawPtr, size_t payloadSize)\n'
+            '{\n'
+            '    if (!rawPtr || payloadSize < 65536) return;\n'
+            '    constexpr uintptr_t kPageSize = 16384;\n'
+            '    const uintptr_t start = (reinterpret_cast<uintptr_t>(rawPtr) + 64u + (kPageSize - 1u)) & ~(kPageSize - 1u);\n'
+            '    const uintptr_t end = (reinterpret_cast<uintptr_t>(rawPtr) + payloadSize) & ~(kPageSize - 1u);\n'
+            '    if (end > start)\n'
+            '    {\n'
+            '        madvise(reinterpret_cast<void*>(start), static_cast<size_t>(end - start), MADV_FREE);\n'
+            '    }\n'
+            '}\n'
+            '#endif',
+            1
+        )
+        old_heap_free = '''void Heap::Free(void* ptr)
+{
+    if (ptr >= physicalHeap)
+    {
+        std::lock_guard lock(physicalMutex);
+        o1heapFree(physicalHeap, *((void**)ptr - 1));
+    }
+    else
+    {
+        std::lock_guard lock(mutex);
+        o1heapFree(heap, ptr);
+    }
+}'''
+        new_heap_free = '''void Heap::Free(void* ptr)
+{
+    if (ptr >= physicalHeap)
+    {
+        std::lock_guard lock(physicalMutex);
+        void* rawPtr = *((void**)ptr - 1);
+#if defined(MARATHON_IOS_PORT)
+        const size_t rawSize = rawPtr ? (*((size_t*)rawPtr - 2) - O1HEAP_ALIGNMENT) : 0;
+#endif
+        o1heapFree(physicalHeap, rawPtr);
+#if defined(MARATHON_IOS_PORT)
+        MarathonIOSDiscardFreedPages(rawPtr, rawSize);
+#endif
+    }
+    else
+    {
+        std::lock_guard lock(mutex);
+#if defined(MARATHON_IOS_PORT)
+        const size_t rawSize = ptr ? (*((size_t*)ptr - 2) - O1HEAP_ALIGNMENT) : 0;
+#endif
+        o1heapFree(heap, ptr);
+#if defined(MARATHON_IOS_PORT)
+        MarathonIOSDiscardFreedPages(ptr, rawSize);
+#endif
+    }
+}'''
+        assert old_heap_free in hsrc, "Failed to locate Heap::Free in kernel/heap.cpp"
+        hsrc = hsrc.replace(old_heap_free, new_heap_free, 1)
+        heap_p.write_text(hsrc, encoding="utf-8")
+        print("Patched kernel/heap.cpp: added safe 16KB interior MADV_FREE Jetsam page reclamation.")
+
+# 10. cpu/guest_thread.cpp: pin PowerPC guest threads to A18 Pro P-cores (QOS_CLASS_USER_INTERACTIVE) + ObjC autorelease pool guard
+gt_p = pathlib.Path(sys.argv[10])
+if gt_p.exists():
+    gtsrc = gt_p.read_text(encoding="utf-8")
+    if "MARATHON_IOS_QOS_THREAD" not in gtsrc:
+        assert '#include "ppc_context.h"' in gtsrc, "Failed to locate #include \"ppc_context.h\" in cpu/guest_thread.cpp"
+        gtsrc = gtsrc.replace(
+            '#include "ppc_context.h"',
+            '#include "ppc_context.h"\n'
+            '#if defined(MARATHON_IOS_PORT)\n'
+            '#include <pthread/qos.h>\n'
+            'extern "C" void* objc_autoreleasePoolPush(void);\n'
+            'extern "C" void objc_autoreleasePoolPop(void*);\n'
+            '#endif',
+            1
+        )
+        old_gt_start = '''uint32_t GuestThread::Start(const GuestThreadParams& params)
+{
+    const auto procMask = (uint8_t)(params.flags >> 24);'''
+        new_gt_start = '''uint32_t GuestThread::Start(const GuestThreadParams& params)
+{
+#if defined(MARATHON_IOS_PORT)
+    // MARATHON_IOS_QOS_THREAD: schedule PowerPC guest threads on Apple Silicon P-cores + drain ObjC autorelease pool on exit
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+    struct IOSAutoreleaseGuard {
+        void* pool;
+        IOSAutoreleaseGuard() : pool(objc_autoreleasePoolPush()) {}
+        ~IOSAutoreleaseGuard() { if (pool) objc_autoreleasePoolPop(pool); }
+    } iosPoolGuard;
+#endif
+    const auto procMask = (uint8_t)(params.flags >> 24);'''
+        assert old_gt_start in gtsrc, "Failed to locate GuestThread::Start in cpu/guest_thread.cpp"
+        gtsrc = gtsrc.replace(old_gt_start, new_gt_start, 1)
+        gt_p.write_text(gtsrc, encoding="utf-8")
+        print("Patched cpu/guest_thread.cpp: Apple Silicon P-core QoS + ObjC autorelease pool guard.")
 PY_PATHS
 
 echo "==> [7/8] Patch thirdparty/plume (UIKit CAMetalLayer landscape fix + ProMotion), SDL3 UIKit LiveContainer layout/rotation, game_window.cpp e video.cpp..."
@@ -1722,6 +1906,9 @@ void presentIOSDrawable(void *drawablePtr, int targetFps) {
         [drawable presentAfterMinimumDuration:(1.0 / 32.0)];
     } else if (targetFps > 0 && targetFps <= 65) {
         [drawable presentAfterMinimumDuration:(1.0 / 65.0)];
+    } else if (targetFps > 0 && targetFps <= 95) {
+        // 90Hz ProMotion LTPO thermal step (smooth & cool on iPhone 16 Pro)
+        [drawable presentAfterMinimumDuration:(1.0 / 95.0)];
     } else {
         [drawable present];
     }
@@ -1735,7 +1922,10 @@ static CGFloat getIOSScaleFactor(UIWindow *uiWindow) {
 #ifdef PLUME_APPLE_RETINA_ENABLED
     UIScreen *screen = uiWindow ? uiWindow.screen : nil;
     if (!screen) screen = [UIScreen mainScreen];
-    return screen ? screen.nativeScale : 1.0;
+    // Cap 3x Super Retina (2622x1206 -> 3.16M px) to 2.0x (1748x804 -> 1.40M px, 310+ PPI):
+    // cuts 120 FPS swapchain fillrate & DRAM bandwidth by 55.6% while staying razor-sharp on iPhone 16 Pro.
+    CGFloat native = screen ? screen.nativeScale : 1.0;
+    return (native > 2.0) ? 2.0 : native;
 #else
     (void)uiWindow;
     return 1.0;
@@ -1745,6 +1935,7 @@ static CGFloat getIOSScaleFactor(UIWindow *uiWindow) {
 static std::atomic<uint32_t> g_iosMetalCachedW{0};
 static std::atomic<uint32_t> g_iosMetalCachedH{0};
 static std::atomic<bool> g_iosMetalSyncPending{false};
+static std::atomic<double> g_iosMetalLastSyncSec{0.0};
 
 // Safely syncs UIWindow + SDL_uikitmetalview + CAMetalLayer on main thread (fixes LiveContainer portrait-squished half-screen!)
 static void syncIOSMetalViewOnMainThread(CAMetalLayer *metalLayer) {
@@ -1804,6 +1995,13 @@ static void syncIOSMetalViewOnMainThread(CAMetalLayer *metalLayer) {
     if (metalLayer.contentsScale != scale) {
         metalLayer.contentsScale = scale;
     }
+    // Apple Silicon 120 FPS swapchain tuning: triple buffering (3 drawables) + framebufferOnly (enables hardware AFBC compression)
+    if (metalLayer.maximumDrawableCount != 3) {
+        metalLayer.maximumDrawableCount = 3;
+    }
+    if (!metalLayer.framebufferOnly) {
+        metalLayer.framebufferOnly = YES;
+    }
 
     uint32_t w = (uint32_t)std::lround(bounds.size.width * scale);
     uint32_t h = (uint32_t)std::lround(bounds.size.height * scale);
@@ -1828,13 +2026,20 @@ void getIOSMetalLayerSize(void *layerPtr, uint32_t &dstWidth, uint32_t &dstHeigh
     if ([NSThread isMainThread]) {
         syncIOSMetalViewOnMainThread(metalLayer);
     } else {
-        // Trigger non-blocking main-thread layout sync from render thread (never dispatch_sync -> zero deadlocks!)
-        bool expected = false;
-        if (g_iosMetalSyncPending.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
-            dispatch_async(dispatch_get_main_queue(), ^{
-                syncIOSMetalViewOnMainThread(metalLayer);
-                g_iosMetalSyncPending.store(false, std::memory_order_release);
-            });
+        // Once cached, throttle main-thread UIKit layout sync to 4 Hz (250ms) instead of 120 Hz -> saves 116 GCD dispatches/sec!
+        const bool hasCache = (g_iosMetalCachedW.load(std::memory_order_relaxed) > 0 &&
+                               g_iosMetalCachedH.load(std::memory_order_relaxed) > 0);
+        const double nowSec = CFAbsoluteTimeGetCurrent();
+        const double lastSec = g_iosMetalLastSyncSec.load(std::memory_order_relaxed);
+        if (!hasCache || (nowSec - lastSec) >= 0.25) {
+            bool expected = false;
+            if (g_iosMetalSyncPending.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+                g_iosMetalLastSyncSec.store(nowSec, std::memory_order_relaxed);
+                dispatch_async(dispatch_get_main_queue(), ^{
+                    syncIOSMetalViewOnMainThread(metalLayer);
+                    g_iosMetalSyncPending.store(false, std::memory_order_release);
+                });
+            }
         }
     }
 
@@ -1975,9 +2180,11 @@ if metal_cpp.exists():
             "#if !PLUME_MACOS\n"
             "#include <atomic>\n"
             "#include <cstdio>\n"
+            "#include <vector>\n"
             'extern "C" void MarathonIOS_LogLine(const char* tag, const char* msg);\n'
             'extern "C" bool MarathonIOS_IsAppSuspended(void);\n'
             'extern "C" int MarathonIOS_GetTargetFPS(void);\n'
+            'extern "C" int MarathonIOS_GetEffectiveTargetFPS(void);\n'
             "#endif\n"
             "namespace plume {\n"
             "#if !PLUME_MACOS\n"
@@ -2008,24 +2215,61 @@ if metal_cpp.exists():
             "            MarathonIOS_LogLine(\"METAL_ERR\", \"Further GPU command buffer errors suppressed (limit 24 reached)\");\n"
             "        }\n"
             "    }\n"
+            "    // Batched useResources() replaces N individual ObjC msgSend driver calls with 1-3 C-array calls per encoder!\n"
+            "    static inline void bindIOSAddressableResources(MTL::CommandEncoder* encoder, bool isCompute, MetalDevice* device) {\n"
+            "        if (encoder == nullptr || device == nullptr) return;\n"
+            "        static thread_local std::vector<const MTL::Resource*> s_addrBatch;\n"
+            "        s_addrBatch.clear();\n"
+            "        std::lock_guard<std::mutex> lock(device->resourcesMutex);\n"
+            "        s_addrBatch.reserve(device->gpuAddressableResources.size());\n"
+            "        for (const auto* resource : device->gpuAddressableResources) {\n"
+            "            if (resource != nullptr) s_addrBatch.push_back(resource);\n"
+            "        }\n"
+            "        if (s_addrBatch.empty()) return;\n"
+            "        const MTL::ResourceUsage usage = MTL::ResourceUsageRead | MTL::ResourceUsageWrite;\n"
+            "        if (isCompute) {\n"
+            "            static_cast<MTL::ComputeCommandEncoder*>(encoder)->useResources(\n"
+            "                s_addrBatch.data(), static_cast<NS::UInteger>(s_addrBatch.size()), usage);\n"
+            "        } else {\n"
+            "            static_cast<MTL::RenderCommandEncoder*>(encoder)->useResources(\n"
+            "                s_addrBatch.data(), static_cast<NS::UInteger>(s_addrBatch.size()), usage,\n"
+            "                MTL::RenderStageVertex | MTL::RenderStageFragment);\n"
+            "        }\n"
+            "    }\n"
             "    static inline void bindIOSDescriptorSetResources(MTL::CommandEncoder* encoder, bool isCompute, const MetalDescriptorSet* descriptorSet) {\n"
             "        if (encoder == nullptr || descriptorSet == nullptr) return;\n"
+            "        static thread_local std::vector<const MTL::Resource*> s_readBatch;\n"
+            "        static thread_local std::vector<const MTL::Resource*> s_writeBatch;\n"
+            "        static thread_local std::vector<const MTL::Resource*> s_rwBatch;\n"
+            "        s_readBatch.clear();\n"
+            "        s_writeBatch.clear();\n"
+            "        s_rwBatch.clear();\n"
             "        std::lock_guard<std::mutex> lock(g_iosDescriptorSetMutex);\n"
-            "        if (isCompute) {\n"
-            "            auto* computeEncoder = static_cast<MTL::ComputeCommandEncoder*>(encoder);\n"
-            "            for (const auto& entry : descriptorSet->resourceEntries) {\n"
-            "                if (entry.resource != nullptr) {\n"
-            "                    computeEncoder->useResource(entry.resource, mapResourceUsage(entry.type));\n"
-            "                }\n"
-            "            }\n"
-            "        } else {\n"
-            "            auto* renderEncoder = static_cast<MTL::RenderCommandEncoder*>(encoder);\n"
-            "            for (const auto& entry : descriptorSet->resourceEntries) {\n"
-            "                if (entry.resource != nullptr) {\n"
-            "                    renderEncoder->useResource(entry.resource, mapResourceUsage(entry.type), MTL::RenderStageVertex | MTL::RenderStageFragment);\n"
-            "                }\n"
+            "        for (const auto& entry : descriptorSet->resourceEntries) {\n"
+            "            if (entry.resource == nullptr) continue;\n"
+            "            const MTL::ResourceUsage usage = mapResourceUsage(entry.type);\n"
+            "            if (usage == MTL::ResourceUsageRead) {\n"
+            "                s_readBatch.push_back(entry.resource);\n"
+            "            } else if (usage == MTL::ResourceUsageWrite) {\n"
+            "                s_writeBatch.push_back(entry.resource);\n"
+            "            } else {\n"
+            "                s_rwBatch.push_back(entry.resource);\n"
             "            }\n"
             "        }\n"
+            "        auto flushBatch = [&](const std::vector<const MTL::Resource*>& batch, MTL::ResourceUsage usage) {\n"
+            "            if (batch.empty()) return;\n"
+            "            if (isCompute) {\n"
+            "                static_cast<MTL::ComputeCommandEncoder*>(encoder)->useResources(\n"
+            "                    batch.data(), static_cast<NS::UInteger>(batch.size()), usage);\n"
+            "            } else {\n"
+            "                static_cast<MTL::RenderCommandEncoder*>(encoder)->useResources(\n"
+            "                    batch.data(), static_cast<NS::UInteger>(batch.size()), usage,\n"
+            "                    MTL::RenderStageVertex | MTL::RenderStageFragment);\n"
+            "            }\n"
+            "        };\n"
+            "        flushBatch(s_readBatch, MTL::ResourceUsageRead);\n"
+            "        flushBatch(s_writeBatch, MTL::ResourceUsageWrite);\n"
+            "        flushBatch(s_rwBatch, MTL::ResourceUsageRead | MTL::ResourceUsageWrite);\n"
             "    }\n"
             "#endif",
             1
@@ -2604,7 +2848,7 @@ if metal_cpp.exists():
         });'''
         new_present_sched = '''        presentBuffer->addScheduledHandler([drawableMtl](MTL::CommandBuffer* cmdBuffer) {
 #if !PLUME_MACOS
-            presentIOSDrawable(drawableMtl, MarathonIOS_GetTargetFPS());
+            presentIOSDrawable(drawableMtl, MarathonIOS_GetEffectiveTargetFPS());
 #else
             drawableMtl->present();
 #endif
@@ -2753,11 +2997,22 @@ if metal_cpp.exists():
         if (device->residencySet == nullptr && activeComputeEncoder != nullptr) {
             const uint64_t addrGen = g_iosAddressableGen.load(std::memory_order_acquire);
             const uint64_t descGen = g_iosDescriptorGen.load(std::memory_order_acquire);
-            if (g_iosLastComputeEncoder != activeComputeEncoder || addrGen != g_iosLastComputeAddrGen || descGen != g_iosLastComputeDescGen) {
+            if (g_iosLastComputeEncoder != activeComputeEncoder) {
                 bindEncoderResources(activeComputeEncoder, true);
                 g_iosLastComputeEncoder = activeComputeEncoder;
                 g_iosLastComputeAddrGen = addrGen;
                 g_iosLastComputeDescGen = descGen;
+            } else {
+                if (addrGen != g_iosLastComputeAddrGen) {
+                    bindIOSAddressableResources(activeComputeEncoder, true, device);
+                    g_iosLastComputeAddrGen = addrGen;
+                }
+                if (descGen != g_iosLastComputeDescGen) {
+                    for (const auto* descriptorSet : currentEncoderDescriptorSets) {
+                        bindIOSDescriptorSetResources(activeComputeEncoder, true, descriptorSet);
+                    }
+                    g_iosLastComputeDescGen = descGen;
+                }
             }
         }
 #endif'''
@@ -2797,11 +3052,22 @@ if metal_cpp.exists():
         if (device->residencySet == nullptr && activeRenderEncoder != nullptr) {
             const uint64_t addrGen = g_iosAddressableGen.load(std::memory_order_acquire);
             const uint64_t descGen = g_iosDescriptorGen.load(std::memory_order_acquire);
-            if (g_iosLastRenderEncoder != activeRenderEncoder || addrGen != g_iosLastRenderAddrGen || descGen != g_iosLastRenderDescGen) {
+            if (g_iosLastRenderEncoder != activeRenderEncoder) {
                 bindEncoderResources(activeRenderEncoder, false);
                 g_iosLastRenderEncoder = activeRenderEncoder;
                 g_iosLastRenderAddrGen = addrGen;
                 g_iosLastRenderDescGen = descGen;
+            } else {
+                if (addrGen != g_iosLastRenderAddrGen) {
+                    bindIOSAddressableResources(activeRenderEncoder, false, device);
+                    g_iosLastRenderAddrGen = addrGen;
+                }
+                if (descGen != g_iosLastRenderDescGen) {
+                    for (const auto* descriptorSet : currentEncoderDescriptorSets) {
+                        bindIOSDescriptorSetResources(activeRenderEncoder, false, descriptorSet);
+                    }
+                    g_iosLastRenderDescGen = descGen;
+                }
             }
         }
 #endif'''
@@ -2865,6 +3131,12 @@ if metal_cpp.exists():
             return;
         }
 
+#if !PLUME_MACOS
+        bindIOSAddressableResources(encoder, isCompute, device);
+        for (const auto* descriptorSet : currentEncoderDescriptorSets) {
+            bindIOSDescriptorSetResources(encoder, isCompute, descriptorSet);
+        }
+#else
         if (isCompute) {
             auto* computeEncoder = static_cast<MTL::ComputeCommandEncoder*>(encoder);
             {
@@ -2876,15 +3148,11 @@ if metal_cpp.exists():
                 }
             }
             for (const auto* descriptorSet : currentEncoderDescriptorSets) {
-#if !PLUME_MACOS
-                bindIOSDescriptorSetResources(encoder, true, descriptorSet);
-#else
                 for (const auto& entry : descriptorSet->resourceEntries) {
                     if (entry.resource != nullptr) {
                         computeEncoder->useResource(entry.resource, mapResourceUsage(entry.type));
                     }
                 }
-#endif
             }
         } else {
             auto* renderEncoder = static_cast<MTL::RenderCommandEncoder*>(encoder);
@@ -2897,17 +3165,14 @@ if metal_cpp.exists():
                 }
             }
             for (const auto* descriptorSet : currentEncoderDescriptorSets) {
-#if !PLUME_MACOS
-                bindIOSDescriptorSetResources(encoder, false, descriptorSet);
-#else
                 for (const auto& entry : descriptorSet->resourceEntries) {
                     if (entry.resource != nullptr) {
                         renderEncoder->useResource(entry.resource, mapResourceUsage(entry.type), MTL::RenderStageVertex | MTL::RenderStageFragment);
                     }
                 }
-#endif
             }
         }
+#endif
     }'''
         assert old_bind_enc in msrc, "Failed to locate MetalCommandList::bindEncoderResources in plume_metal.cpp"
         msrc = msrc.replace(old_bind_enc, new_bind_enc, 1)
@@ -2930,7 +3195,7 @@ if metal_cpp.exists():
         assert old_bind_ds_track in msrc, "Failed to locate MetalPipelineLayout::bindDescriptorSets tracking in plume_metal.cpp"
         msrc = msrc.replace(old_bind_ds_track, new_bind_ds_track, 1)
 
-        # 2h. Log Metal command buffer errors & GPU fence stalls >5s on iOS
+        # 2h. Log Metal command buffer errors on signaled fences (zero extra GCD block allocations on fence-less command buffers!)
         old_exec_done = '''        if (signalFence != nullptr) {
             interfaceCommandList->mtl->addCompletedHandler([signalFence](MTL::CommandBuffer* cmdBuffer) {
                 dispatch_semaphore_signal(static_cast<MetalCommandFence *>(signalFence)->semaphore);
@@ -2943,14 +3208,7 @@ if metal_cpp.exists():
 #endif
                 dispatch_semaphore_signal(static_cast<MetalCommandFence *>(signalFence)->semaphore);
             });
-        }
-#if !PLUME_MACOS
-        else {
-            interfaceCommandList->mtl->addCompletedHandler([](MTL::CommandBuffer* cmdBuffer) {
-                logIOSMetalCmdBufferError("exec_nofence", cmdBuffer);
-            });
-        }
-#endif'''
+        }'''
         assert old_exec_done in msrc, "Failed to locate executeCommandLists completed handler in plume_metal.cpp"
         msrc = msrc.replace(old_exec_done, new_exec_done, 1)
 
@@ -3282,8 +3540,11 @@ if vid_cpp.exists():
             "#include <algorithm>\n"
             "#include <chrono>\n"
             "#include <cmath>\n"
+            "#include <pthread/qos.h>\n"
             "#include <ios_virtual_controller.h>\n"
             'extern "C" void MarathonIOS_MapWindowPointToImGui(float winX, float winY, float* outX, float* outY);\n'
+            'extern "C" void* objc_autoreleasePoolPush(void);\n'
+            'extern "C" void objc_autoreleasePoolPop(void*);\n'
             "#endif\n" + vsrc
         )
         vsrc = vsrc.replace(
@@ -3298,6 +3559,19 @@ if vid_cpp.exists():
             "#elif defined(MARATHON_RECOMP_METAL)\n    interfaceFunctions.push_back((g_backend == Backend::VULKAN) ? CreateVulkanInterface : CreateMetalInterface);\n    interfaceFunctions.push_back((g_backend == Backend::VULKAN) ? CreateMetalInterface : CreateVulkanInterface);",
             "#elif defined(MARATHON_IOS_NATIVE_METAL)\n    interfaceFunctions.push_back(CreateMetalInterface);\n#elif defined(MARATHON_RECOMP_METAL)\n    interfaceFunctions.push_back((g_backend == Backend::VULKAN) ? CreateVulkanInterface : CreateMetalInterface);\n    interfaceFunctions.push_back((g_backend == Backend::VULKAN) ? CreateMetalInterface : CreateVulkanInterface);"
         )
+        # Default to triple buffering (3 drawables) on iOS Metal Auto mode to avoid nextDrawable() VBlank stalls at 120Hz
+        old_metal_tb = '''        case Backend::METAL:
+            bufferCount = 2;
+            break;'''
+        new_metal_tb = '''        case Backend::METAL:
+#if defined(MARATHON_IOS_PORT)
+            bufferCount = 3;
+#else
+            bufferCount = 2;
+#endif
+            break;'''
+        assert old_metal_tb in vsrc, "Failed to locate Backend::METAL triple buffering switch in gpu/video.cpp"
+        vsrc = vsrc.replace(old_metal_tb, new_metal_tb, 1)
         # Live SDL_GetWindowSize in DrawImGui() + viewport sync on iOS rotation
         old_mouse_scale = '''    uint32_t width = g_swapChain->getWidth();
     uint32_t height = g_swapChain->getHeight();
@@ -3453,7 +3727,8 @@ static void DrawFPS()
     const ImVec2 maxPos = { posX + boxW, posY + boxH };
     const float rounding = Scale(4.0f, true);
 
-    const double targetFps = static_cast<double>(Config::FPS.Value > 0 ? Config::FPS.Value : 60);
+    const int effectiveTarget = MarathonIOS_GetEffectiveTargetFPS();
+    const double targetFps = static_cast<double>(effectiveTarget > 0 ? effectiveTarget : (Config::FPS.Value > 0 ? Config::FPS.Value : 60));
     const double ratio = (s_displayFps > 0.0) ? (s_displayFps / targetFps) : 1.0;
     ImU32 accentCol = IM_COL32(82, 245, 148, 255);
     if (ratio < 0.70)
@@ -3589,7 +3864,7 @@ static void DrawFPS()
             1
         )
 
-        # Low-power iOS FPS limiter (eliminates desktop 2ms P-core busy-spin heat every frame & syncs ProMotion target FPS)
+        # Zero-busy-spin iOS FPS limiter synced with Thermal Guardian & ProMotion 120Hz hardware VBlank (no 120->60 phase beat drops!)
         old_fps_wait = '''    if (Config::FPS >= FPS_MIN && Config::FPS < FPS_MAX)
     {
         using namespace std::chrono_literals;
@@ -3618,26 +3893,25 @@ static void DrawFPS()
 
         static std::chrono::steady_clock::time_point s_next;
 #if defined(MARATHON_IOS_PORT)
-        const int32_t targetFps = Config::FPS.Value > 0 ? Config::FPS.Value : 60;
-        MarathonIOS_SetTargetFPS(targetFps);
+        const int32_t userTargetFps = Config::FPS.Value > 0 ? Config::FPS.Value : 60;
+        MarathonIOS_SetTargetFPS(userTargetFps);
+        const int32_t effectiveFps = MarathonIOS_GetEffectiveTargetFPS();
+        // When VSync is active at 120Hz ProMotion, pace slightly above 120Hz (121Hz) so hardware VBlank owns exact phase without 120->60 beat drops
+        const int32_t pacingFps = (Config::VSync && effectiveFps >= 120) ? 121 : effectiveFps;
         auto now = std::chrono::steady_clock::now();
         if (now < s_next)
         {
             const auto remaining = s_next - now;
-            if (remaining > 300us)
+            if (remaining > 800us)
             {
-                std::this_thread::sleep_for(remaining - 250us);
-            }
-            while ((now = std::chrono::steady_clock::now()) < s_next)
-            {
-                std::this_thread::yield();
+                std::this_thread::sleep_until(s_next);
             }
         }
         else
         {
             s_next = now;
         }
-        s_next += 1000000000ns / targetFps;
+        s_next += 1000000000ns / pacingFps;
 #else
         auto now = std::chrono::steady_clock::now();
 
@@ -3658,6 +3932,46 @@ static void DrawFPS()
     }'''
         assert old_fps_wait in vsrc, "Failed to locate FPS limiter block in gpu/video.cpp"
         vsrc = vsrc.replace(old_fps_wait, new_fps_wait, 1)
+
+        # Pin g_renderThread to Apple Silicon P-cores (QOS_CLASS_USER_INTERACTIVE) + drain ObjC autorelease pool per batch
+        old_render_thread = '''static HostThread g_renderThread("Render Thread", []
+    {
+        HostThread::SetCurrentThreadPriority(HostThreadPriority::High);
+
+        RenderCommand commands[32];
+
+        while (true)
+        {
+            size_t count = g_renderQueue.wait_dequeue_bulk(commands, std::size(commands));
+
+            for (size_t i = 0; i < count; i++)
+                std::visit([](const auto& cmd) { ProcRenderCommand(cmd); }, commands[i]);
+        }
+    });'''
+        new_render_thread = '''static HostThread g_renderThread("Render Thread", []
+    {
+        HostThread::SetCurrentThreadPriority(HostThreadPriority::High);
+#if defined(MARATHON_IOS_PORT)
+        pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+#endif
+
+        RenderCommand commands[32];
+
+        while (true)
+        {
+            size_t count = g_renderQueue.wait_dequeue_bulk(commands, std::size(commands));
+#if defined(MARATHON_IOS_PORT)
+            void* pool = objc_autoreleasePoolPush();
+#endif
+            for (size_t i = 0; i < count; i++)
+                std::visit([](const auto& cmd) { ProcRenderCommand(cmd); }, commands[i]);
+#if defined(MARATHON_IOS_PORT)
+            objc_autoreleasePoolPop(pool);
+#endif
+        }
+    });'''
+        assert old_render_thread in vsrc, "Failed to locate g_renderThread in gpu/video.cpp"
+        vsrc = vsrc.replace(old_render_thread, new_render_thread, 1)
 
         vsrc = vsrc.replace(
             "    g_renderQueue.enqueue(RenderCommands::BeginCommandList{});",
@@ -3783,6 +4097,9 @@ if sdl_metalview.exists():
         }
         if (viewFrame.size.width <= 0 || viewFrame.size.height <= 0) {
             viewFrame = UIKit_ComputeViewFrame(window, data.uiwindow.screen);
+        }
+        if (scale > 2.0) {
+            scale = 2.0;
         }
 #endif
         metalview = [[SDL_uikitmetalview alloc] initWithFrame:viewFrame
@@ -3913,7 +4230,16 @@ if "marathon_setup_ios_thirdparty" not in tsrc:
 # 3. MarathonRecomp/CMakeLists.txt: SDL_MAIN_HANDLED, iOS OS sources + SKIP_PCH, iOS bundle, CURL stub, iPhoneOS metal SDK
 asrc = app_cm.read_text(encoding="utf-8")
 if "os/ios/ios_platform.mm" not in asrc:
-    # 3a. Let SDL3 drive UIApplicationMain on iOS
+    # 3a. Let SDL3 drive UIApplicationMain on iOS + unlock FMA/NEON vectorization (-ffp-model=precise) for host engine ONLY (recompiled PPC keeps strict FP!)
+    asrc = asrc.replace(
+        "    add_compile_options(-ffp-model=strict)",
+        '    if (CMAKE_SYSTEM_NAME STREQUAL "iOS")\n'
+        '        add_compile_options(-ffp-model=precise)\n'
+        '    else()\n'
+        '        add_compile_options(-ffp-model=strict)\n'
+        '    endif()',
+        1
+    )
     asrc = asrc.replace(
         "add_compile_definitions(\n    SDL_MAIN_HANDLED",
         'if (NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")\n'
@@ -4008,6 +4334,7 @@ if main_cpp.exists():
         msrc = (
             "#if defined(MARATHON_IOS_PORT)\n"
             "#include <SDL3/SDL_main.h>\n"
+            "#include <pthread/qos.h>\n"
             "#include <ios_virtual_controller.h>\n"
             "#endif\n" + msrc
         )
@@ -4059,6 +4386,7 @@ if main_cpp.exists():
         msrc = msrc.replace(
             "    KiSystemStartup();",
             "#if defined(MARATHON_IOS_PORT)\n"
+            "    pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);\n"
             "    MarathonIOS_LogLine(\"BOOT\", \"Starting KiSystemStartup()...\");\n"
             "#endif\n"
             "    KiSystemStartup();",
