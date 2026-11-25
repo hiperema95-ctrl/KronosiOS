@@ -868,7 +868,8 @@ python3 - \\
   "\${UPSTREAM_DIR}/MarathonRecomp/hid/hid.cpp" \\
   "\${UPSTREAM_DIR}/MarathonRecomp/kernel/memory.cpp" \\
   "\${UPSTREAM_DIR}/MarathonRecomp/locale/locale.cpp" \\
-  "\${UPSTREAM_DIR}/MarathonRecomp/ui/imgui_utils.cpp" << 'PY_WIZ'
+  "\${UPSTREAM_DIR}/MarathonRecomp/ui/imgui_utils.cpp" \\
+  "\${UPSTREAM_DIR}/MarathonRecomp/ui/options_menu.cpp" << 'PY_WIZ'
 import sys, pathlib
 
 wiz_p = pathlib.Path(sys.argv[1])
@@ -879,6 +880,7 @@ hid_c = pathlib.Path(sys.argv[5])
 mem_c = pathlib.Path(sys.argv[6])
 loc_c = pathlib.Path(sys.argv[7])
 imu_c = pathlib.Path(sys.argv[8])
+opt_c = pathlib.Path(sys.argv[9])
 
 # 5a. ui/button_window.h & .cpp: hit-test touch + modalità input iOS (Touch senza simboli mouse/tastiera, Keyboard solo su tasto reale, Gamepad su controller)
 if bw_h.exists() and bw_c.exists():
@@ -1473,6 +1475,86 @@ if imu_c.exists():
         isrc = isrc.replace(old_hid_icons, new_hid_icons, 1)
         imu_c.write_text(isrc, encoding="utf-8")
         print("Patched ui/imgui_utils.cpp: disabled mouse icons in iOS installer, keyboard icons only on real keyboard input.")
+
+# 5h. ui/options_menu.cpp: abilita selettore framerate 30 / 60 / 120 FPS nella scheda Video su iOS
+if opt_c.exists():
+    osrc = opt_c.read_text(encoding="utf-8")
+    if "MARATHON_IOS_FPS_SELECTOR" not in osrc:
+        assert '#include "options_menu.h"' in osrc, "Failed to locate #include \\"options_menu.h\\" in ui/options_menu.cpp"
+        osrc = osrc.replace(
+            '#include "options_menu.h"',
+            '#include "options_menu.h"\\n'
+            '#if defined(MARATHON_IOS_PORT)\\n'
+            '#define MARATHON_IOS_FPS_SELECTOR 1\\n'
+            '#include <ios_virtual_controller.h>\\n'
+            '#endif',
+            1
+        )
+        old_fps_row = "            // TODO DrawOption(rowCount++, &Config::FPS, true, nullptr, FPS_MIN, 120, FPS_MAX);"
+        new_fps_row = (
+            "#if defined(MARATHON_IOS_PORT)\\n"
+            "            DrawOption(rowCount++, &Config::FPS, true, nullptr, 30, 60, 120, false);\\n"
+            "#else\\n"
+            "            // TODO DrawOption(rowCount++, &Config::FPS, true, nullptr, FPS_MIN, 120, FPS_MAX);\\n"
+            "#endif"
+        )
+        assert old_fps_row in osrc, "Failed to locate commented FPS DrawOption in ui/options_menu.cpp"
+        osrc = osrc.replace(old_fps_row, new_fps_row, 1)
+
+        old_int_step = '''                        if constexpr (std::is_integral_v<T>)
+                        {
+                            if (decrement)
+                                config->Value -= 1;
+                            else if (increment)
+                                config->Value += 1;
+                        }'''
+        new_int_step = '''                        if constexpr (std::is_integral_v<T>)
+                        {
+#if defined(MARATHON_IOS_PORT)
+                            if (static_cast<const void*>(config) == static_cast<const void*>(&Config::FPS))
+                            {
+                                static constexpr int32_t kIOSFpsPresets[3] = { 30, 60, 120 };
+                                int idx = 1;
+                                if (config->Value <= 35) idx = 0;
+                                else if (config->Value >= 100) idx = 2;
+                                if (decrement) idx = (idx + 2) % 3;
+                                else if (increment) idx = (idx + 1) % 3;
+                                config->Value = kIOSFpsPresets[idx];
+                                MarathonIOS_SetTargetFPS(config->Value);
+                            }
+                            else
+#endif
+                            if (decrement)
+                                config->Value -= 1;
+                            else if (increment)
+                                config->Value += 1;
+                        }'''
+        assert old_int_step in osrc, "Failed to locate integral step block in ui/options_menu.cpp"
+        osrc = osrc.replace(old_int_step, new_int_step, 1)
+
+        old_int_text = '''        else if (config == &Config::Monitor)
+        {
+            valueText = fmt::format("{}", config->Value + 1);
+            isValueCentred = true;
+        }
+        else'''
+        new_int_text = '''        else if (config == &Config::Monitor)
+        {
+            valueText = fmt::format("{}", config->Value + 1);
+            isValueCentred = true;
+        }
+#if defined(MARATHON_IOS_PORT)
+        else if (config == &Config::FPS)
+        {
+            valueText = fmt::format("{} FPS", config->Value);
+            isValueCentred = true;
+        }
+#endif
+        else'''
+        assert old_int_text in osrc, "Failed to locate Monitor/int32 valueText block in ui/options_menu.cpp"
+        osrc = osrc.replace(old_int_text, new_int_text, 1)
+        opt_c.write_text(osrc, encoding="utf-8")
+        print("Patched ui/options_menu.cpp: enabled discrete 30 / 60 / 120 FPS lock selector in Video Options on iOS.")
 PY_WIZ
 
 echo "==> [6/8] Patch paths.cpp, paths.h, config.cpp, file_system.cpp, imports.cpp (FIX FREEZE ARM64!), app.cpp e stdafx.h..."
@@ -1511,6 +1593,111 @@ cfg_p = pathlib.Path(sys.argv[3])
 if cfg_p.exists():
     csrc = cfg_p.read_text(encoding="utf-8")
     if "MARATHON_IOS_SAFE_CONFIG_DIR" not in csrc:
+        assert '#include "config.h"' in csrc, "Failed to locate #include \\"config.h\\" in user/config.cpp"
+        csrc = csrc.replace(
+            '#include "config.h"',
+            '#include "config.h"\\n'
+            '#if defined(MARATHON_IOS_PORT)\\n'
+            '#include <cmath>\\n'
+            '#include <ios_virtual_controller.h>\\n'
+            'static void ApplyIOSHardwareDefaults(bool applyValues)\\n'
+            '{\\n'
+            '    MarathonIOSHardwareProfile prof{};\\n'
+            '    MarathonIOS_GetHardwareProfile(&prof);\\n'
+            '    auto setDef = [applyValues](auto& def, auto val) {\\n'
+            '        def.DefaultValue = val;\\n'
+            '        if (applyValues) def.Value = val;\\n'
+            '    };\\n'
+            '    setDef(Config::FPS, static_cast<int32_t>(prof.recommendedFps));\\n'
+            '    setDef(Config::VSync, true);\\n'
+            '    setDef(Config::ResolutionScale, prof.recommendedResScale);\\n'
+            '    setDef(Config::AntiAliasing, prof.recommendedAA == 1 ? EAntiAliasing::MSAA2x : EAntiAliasing::Off);\\n'
+            '    setDef(Config::TransparencyAntiAliasing, false);\\n'
+            '    setDef(Config::ShadowResolution, prof.recommendedShadowRes == 0 ? EShadowResolution::x512 : EShadowResolution::x1024);\\n'
+            '    setDef(Config::ReflectionResolution, prof.recommendedReflection == 0 ? EReflectionResolution::Eighth : EReflectionResolution::Quarter);\\n'
+            '    setDef(Config::RadialBlur, prof.recommendedRadialBlur == 0 ? ERadialBlur::Off : ERadialBlur::Original);\\n'
+            '    setDef(Config::AnisotropicFiltering, static_cast<uint32_t>(prof.recommendedAF));\\n'
+            '}\\n'
+            '#endif',
+            1
+        )
+        old_cb_end = '''    Config::AlwaysUnlockedDebugSettings.Callback = [](ConfigDef<bool>* def)
+    {
+        if (def->Value)
+            OptionsMenu::s_isDebugUnlocked = true;
+    };'''
+        new_cb_end = '''    Config::AlwaysUnlockedDebugSettings.Callback = [](ConfigDef<bool>* def)
+    {
+        if (def->Value)
+            OptionsMenu::s_isDebugUnlocked = true;
+    };
+#if defined(MARATHON_IOS_PORT)
+    Config::FPS.Callback = [](ConfigDef<int32_t>* def)
+    {
+        if (def) MarathonIOS_SetTargetFPS(def->Value);
+    };
+#endif'''
+        assert old_cb_end in csrc, "Failed to locate AlwaysUnlockedDebugSettings.Callback in user/config.cpp"
+        csrc = csrc.replace(old_cb_end, new_cb_end, 1)
+
+        old_cfg_first = '''    if (!std::filesystem::exists(configPath))
+    {
+        Config::Save();
+        return;
+    }'''
+        new_cfg_first = '''    if (!std::filesystem::exists(configPath))
+    {
+#if defined(MARATHON_IOS_PORT)
+        ApplyIOSHardwareDefaults(true);
+        MarathonIOS_SetTargetFPS(Config::FPS);
+        Config::Save();
+        std::error_code tuneEc;
+        std::ofstream(GetUserPath() / "ios_hw_tuned_v1") << "1";
+#else
+        Config::Save();
+#endif
+        return;
+    }'''
+        assert old_cfg_first in csrc, "Failed to locate first-launch check in user/config.cpp"
+        csrc = csrc.replace(old_cfg_first, new_cfg_first, 1)
+
+        old_cfg_catch = '''    catch (toml::parse_error& err)
+    {
+        LOGFN_ERROR("Failed to parse configuration: {}", err.what());
+    }
+}'''
+        new_cfg_catch = '''    catch (toml::parse_error& err)
+    {
+        LOGFN_ERROR("Failed to parse configuration: {}", err.what());
+    }
+#if defined(MARATHON_IOS_PORT)
+    {
+        std::error_code tuneEc;
+        auto markerPath = GetUserPath() / "ios_hw_tuned_v1";
+        if (!std::filesystem::exists(markerPath, tuneEc))
+        {
+            // One-time thermal migration for configs generated before smart iOS auto-tuning
+            const bool isOldHeavyDefault =
+                std::fabs(Config::ResolutionScale.Value - 1.0f) < 0.01f &&
+                Config::AntiAliasing.Value != EAntiAliasing::Off;
+            ApplyIOSHardwareDefaults(isOldHeavyDefault);
+            if (isOldHeavyDefault)
+            {
+                Config::Save();
+            }
+            std::ofstream(markerPath) << "1";
+        }
+        else
+        {
+            ApplyIOSHardwareDefaults(false);
+        }
+        MarathonIOS_SetTargetFPS(Config::FPS);
+    }
+#endif
+}'''
+        assert old_cfg_catch in csrc, "Failed to locate Config::Load end in user/config.cpp"
+        csrc = csrc.replace(old_cfg_catch, new_cfg_catch, 1)
+
         old_cfg_dir = '''    if (!std::filesystem::exists(userPath))
         std::filesystem::create_directory(userPath);'''
         new_cfg_dir = '''    // MARATHON_IOS_SAFE_CONFIG_DIR: usa create_directories con error_code per evitare eccezioni al primo avvio su LiveContainer
@@ -1520,7 +1707,7 @@ if cfg_p.exists():
         assert old_cfg_dir in csrc, "Failed to locate create_directory in user/config.cpp"
         csrc = csrc.replace(old_cfg_dir, new_cfg_dir, 1)
         cfg_p.write_text(csrc, encoding="utf-8")
-        print("Patched user/config.cpp: non-throwing create_directories in Config::Save().")
+        print("Patched user/config.cpp: non-throwing create_directories + smart first-launch iOS hardware auto-config.")
 
 ph_p = pathlib.Path(sys.argv[4])
 if ph_p.exists():
@@ -1817,15 +2004,44 @@ if app_p.exists():
         )
         old_app_upd = '''void App::Update(double in_deltaTime)
 {
-    if (HostThread::GetCurrentID() == g_mainThreadId)'''
+    if (HostThread::GetCurrentID() == g_mainThreadId)
+    {
+        SDL_PumpEvents();
+        SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
+
+        GameWindow::Update();
+    }'''
         new_app_upd = '''void App::Update(double in_deltaTime)
 {
 #if defined(MARATHON_IOS_PORT)
     MarathonIOS_Heartbeat("App::Update");
 #endif
-    if (HostThread::GetCurrentID() == g_mainThreadId)'''
+    if (HostThread::GetCurrentID() == g_mainThreadId)
+    {
+        SDL_PumpEvents();
+        SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
+#if defined(MARATHON_IOS_PORT)
+        if (MarathonIOS_IsAppSuspended())
+        {
+            MarathonIOS_WaitUntilActive();
+            SDL_PumpEvents();
+            SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_LAST);
+        }
+#endif
+
+        GameWindow::Update();
+    }'''
         assert old_app_upd in asrc, "Failed to locate App::Update in app.cpp"
         asrc = asrc.replace(old_app_upd, new_app_upd, 1)
+
+        old_dt_fix = '''    App::s_deltaTime = ctx.f1.f64;'''
+        new_dt_fix = '''#if defined(MARATHON_IOS_PORT)
+    if (ctx.f1.f64 > 0.1 || ctx.f1.f64 < 0.0)
+        ctx.f1.f64 = 1.0 / static_cast<double>(Config::FPS.Value > 0 ? Config::FPS.Value : 60);
+#endif
+    App::s_deltaTime = ctx.f1.f64;'''
+        assert old_dt_fix in asrc, "Failed to locate App::s_deltaTime assignment in app.cpp"
+        asrc = asrc.replace(old_dt_fix, new_dt_fix, 1)
 
         old_gamemode = '''    if (const auto pGameMode = pDoc->GetDocMode<Sonicteam::GameMode>("GameMode"))
     {
@@ -2068,10 +2284,23 @@ if mm.exists():
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
 #import <QuartzCore/QuartzCore.h>
+#import <Metal/Metal.h>
 #include <cmath>
 #include <atomic>
 
 namespace plume {
+
+void presentIOSDrawable(void *drawablePtr, int targetFps) {
+    id<MTLDrawable> drawable = (__bridge id<MTLDrawable>)drawablePtr;
+    if (!drawable) return;
+    if (targetFps > 0 && targetFps <= 35) {
+        [drawable presentAfterMinimumDuration:(1.0 / 32.0)];
+    } else if (targetFps > 0 && targetFps <= 65) {
+        [drawable presentAfterMinimumDuration:(1.0 / 65.0)];
+    } else {
+        [drawable present];
+    }
+}
 
 RenderDeviceVendor getRenderDeviceVendor(uint64_t) {
     return RenderDeviceVendor::APPLE;
@@ -2322,10 +2551,13 @@ if metal_cpp.exists():
             "#include <atomic>\\n"
             "#include <cstdio>\\n"
             'extern "C" void MarathonIOS_LogLine(const char* tag, const char* msg);\\n'
+            'extern "C" bool MarathonIOS_IsAppSuspended(void);\\n'
+            'extern "C" int MarathonIOS_GetTargetFPS(void);\\n'
             "#endif\\n"
             "namespace plume {\\n"
             "#if !PLUME_MACOS\\n"
             "    void getIOSMetalLayerSize(void *layerPtr, uint32_t &dstWidth, uint32_t &dstHeight);\\n"
+            "    void presentIOSDrawable(void *drawablePtr, int targetFps);\\n"
             "    MTL::ResourceUsage mapResourceUsage(RenderDescriptorRangeType type);\\n"
             "    static std::mutex g_iosDescriptorSetMutex;\\n"
             "    static std::atomic<uint64_t> g_iosAddressableGen{1};\\n"
@@ -2942,6 +3174,19 @@ if metal_cpp.exists():
         assert old_present_drawable in msrc, "Failed to locate drawable retain in MetalSwapChain::present"
         msrc = msrc.replace(old_present_drawable, new_present_drawable, 1)
 
+        old_present_sched = '''        presentBuffer->addScheduledHandler([drawableMtl](MTL::CommandBuffer* cmdBuffer) {
+            drawableMtl->present();
+        });'''
+        new_present_sched = '''        presentBuffer->addScheduledHandler([drawableMtl](MTL::CommandBuffer* cmdBuffer) {
+#if !PLUME_MACOS
+            presentIOSDrawable(drawableMtl, MarathonIOS_GetTargetFPS());
+#else
+            drawableMtl->present();
+#endif
+        });'''
+        assert old_present_sched in msrc, "Failed to locate presentBuffer scheduled handler in plume_metal.cpp"
+        msrc = msrc.replace(old_present_sched, new_present_sched, 1)
+
         old_present_done = '''        presentBuffer->addCompletedHandler([drawableMtl, presentId, this](MTL::CommandBuffer* cmdBuffer) {
             currentAvailableDrawableIndex = (currentAvailableDrawableIndex + 1) % MAX_DRAWABLES;
             drawableMtl->release();'''
@@ -2953,7 +3198,7 @@ if metal_cpp.exists():
         assert old_present_done in msrc, "Failed to locate presentBuffer completed handler in plume_metal.cpp"
         msrc = msrc.replace(old_present_done, new_present_done, 1)
 
-        # 2e. MetalSwapChain::acquireTexture: release stale slot before nextDrawable(), advance index on render thread, RETAINED commandBuffer() on iOS
+        # 2e. MetalSwapChain::acquireTexture: skip while suspended + release stale slot before nextDrawable() + RETAINED commandBuffer() on iOS
         old_acq_full = '''        // Create a command buffer just to encode the signal
         MetalAutoreleasePool releasePool;
         MTL::CommandBuffer *acquireBuffer = commandQueue->mtl->commandBufferWithUnretainedReferences();
@@ -2986,6 +3231,11 @@ if metal_cpp.exists():
 
         return true;'''
         new_acq_full = '''        MetalAutoreleasePool releasePool;
+#if !PLUME_MACOS
+        if (MarathonIOS_IsAppSuspended()) {
+            return false;
+        }
+#endif
         const uint32_t slotIndex = currentAvailableDrawableIndex;
         MetalDrawable &drawable = drawables[slotIndex];
         if (drawable.mtl != nullptr) {
@@ -3289,7 +3539,9 @@ if metal_cpp.exists():
         const MetalCommandFence *metalFence = static_cast<MetalCommandFence *>(fence);
 #if !PLUME_MACOS
         while (dispatch_semaphore_wait(metalFence->semaphore, dispatch_time(DISPATCH_TIME_NOW, 5LL * NSEC_PER_SEC)) != 0) {
-            MarathonIOS_LogLine("METAL_WARN", "waitForCommandFence stalled >5s waiting for GPU completion");
+            if (!MarathonIOS_IsAppSuspended()) {
+                MarathonIOS_LogLine("METAL_WARN", "waitForCommandFence stalled >5s waiting for GPU completion");
+            }
         }
 #else
         dispatch_semaphore_wait(metalFence->semaphore, DISPATCH_TIME_FOREVER);
@@ -3510,10 +3762,15 @@ if cm.exists():
         cm.write_text(csrc, encoding="utf-8")
         print("Patched thirdparty/plume/CMakeLists.txt to use pure Metal 3 on iOS.")
 
-# 4. MarathonRecomp/ui/game_window.cpp: Fullscreen Landscape Metal SDL flags + UIKit window + live window size sync
+# 4. MarathonRecomp/ui/game_window.cpp: Fullscreen Landscape Metal SDL flags + UIKit window + live window size sync + background/foreground lifecycle
 if gw_cpp.exists():
     gsrc = gw_cpp.read_text(encoding="utf-8")
     if "SDL_PROP_WINDOW_UIKIT_WINDOW_POINTER" not in gsrc:
+        gsrc = (
+            "#if defined(MARATHON_IOS_PORT)\\n"
+            "#include <ios_virtual_controller.h>\\n"
+            "#endif\\n" + gsrc
+        )
         # 4a. Set Landscape orientations & touch-to-mouse hints before SDL_InitSubSystem(SDL_INIT_VIDEO)
         gsrc = gsrc.replace(
             "    if (!SDL_InitSubSystem(SDL_INIT_VIDEO) && sdlVideoDriver)",
@@ -3550,14 +3807,46 @@ if gw_cpp.exists():
             "#endif",
             1
         )
-        # 4e. Also handle SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED on iOS rotation
+        # 4e. Also handle SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED on iOS rotation + iOS background/foreground lifecycle events
         gsrc = gsrc.replace(
             "        case SDL_EVENT_WINDOW_RESIZED:\\n            g_isResizing = true;\\n            Config::WindowSize = -1;\\n            GameWindow::s_width = event->window.data1;\\n            GameWindow::s_height = event->window.data2;",
             "        case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:\\n        case SDL_EVENT_WINDOW_RESIZED:\\n            g_isResizing = true;\\n            Config::WindowSize = -1;\\n            SDL_GetWindowSize(GameWindow::s_pWindow, &GameWindow::s_width, &GameWindow::s_height);",
             1
         )
+        old_focus_lost = '''        case SDL_EVENT_WINDOW_FOCUS_LOST:
+            GameWindow::s_isFocused = false;
+            SDL_ShowCursor();
+            break;
+
+        case SDL_EVENT_WINDOW_FOCUS_GAINED:
+            GameWindow::s_isFocused = true;
+            break;'''
+        new_focus_lost = '''        case SDL_EVENT_WINDOW_FOCUS_LOST:
+            GameWindow::s_isFocused = false;
+            SDL_ShowCursor();
+            break;
+
+        case SDL_EVENT_WINDOW_FOCUS_GAINED:
+            GameWindow::s_isFocused = true;
+            break;
+
+#if defined(MARATHON_IOS_PORT)
+        case SDL_EVENT_WILL_ENTER_BACKGROUND:
+        case SDL_EVENT_DID_ENTER_BACKGROUND:
+            GameWindow::s_isFocused = false;
+            MarathonIOS_SetAppSuspended(true);
+            break;
+
+        case SDL_EVENT_WILL_ENTER_FOREGROUND:
+        case SDL_EVENT_DID_ENTER_FOREGROUND:
+            GameWindow::s_isFocused = true;
+            MarathonIOS_SetAppSuspended(false);
+            break;
+#endif'''
+        assert old_focus_lost in gsrc, "Failed to locate SDL_EVENT_WINDOW_FOCUS_LOST in ui/game_window.cpp"
+        gsrc = gsrc.replace(old_focus_lost, new_focus_lost, 1)
         gw_cpp.write_text(gsrc, encoding="utf-8")
-        print("Patched MarathonRecomp/ui/game_window.cpp for iOS Fullscreen Landscape Metal + live resize sync.")
+        print("Patched MarathonRecomp/ui/game_window.cpp for iOS Fullscreen Landscape Metal + live resize sync + background lifecycle.")
 
 # 5. MarathonRecomp/gpu/video.cpp: pure Metal 3 + live ImGui touch coordinate scaling + watchdog heartbeats + MarathonIOS_MapWindowPointToImGui
 if vid_cpp.exists():
@@ -3614,7 +3903,14 @@ if vid_cpp.exists():
         assert old_mouse_scale in vsrc, "Failed to locate DrawImGui mousePosScale in gpu/video.cpp"
         vsrc = vsrc.replace(old_mouse_scale, new_mouse_scale, 1)
 
-        # Freeze watchdog heartbeats in Video::Present() & RenderThread ExecuteCommandList
+        # Skip desktop ApplyLowEndDefaults() on iOS (replaced by smart first-launch iOS hardware auto-config in config.cpp)
+        vsrc = vsrc.replace(
+            "    if (lowEndType || lowEndMemory || lowEndUMA)\\n    {\\n        // Switch to low end defaults if a non-discrete GPU was detected or a low amount of VRAM was detected.\\n        // Checking for UMA on D3D12 seems to be a reliable way to detect integrated GPUs.\\n        ApplyLowEndDefaults();\\n    }",
+            "#if !defined(MARATHON_IOS_PORT)\\n    if (lowEndType || lowEndMemory || lowEndUMA)\\n    {\\n        // Switch to low end defaults if a non-discrete GPU was detected or a low amount of VRAM was detected.\\n        // Checking for UMA on D3D12 seems to be a reliable way to detect integrated GPUs.\\n        ApplyLowEndDefaults();\\n    }\\n#endif",
+            1
+        )
+
+        # Freeze watchdog heartbeats + background pause guard in Video::Present() & RenderThread ExecuteCommandList
         old_vid_present = '''void Video::Present()
 {
     g_readyForCommands = false;
@@ -3630,6 +3926,10 @@ if vid_cpp.exists():
         new_vid_present = '''void Video::Present()
 {
 #if defined(MARATHON_IOS_PORT)
+    if (MarathonIOS_IsAppSuspended())
+    {
+        MarathonIOS_WaitUntilActive();
+    }
     MarathonIOS_Heartbeat("Video::Present:Begin");
 #endif
     g_readyForCommands = false;
@@ -3664,6 +3964,82 @@ if vid_cpp.exists():
         g_queue->waitForCommandFence(g_commandFences[g_frame].get());'''
         assert old_vid_fence in vsrc, "Failed to locate waitForCommandFence in gpu/video.cpp"
         vsrc = vsrc.replace(old_vid_fence, new_vid_fence, 1)
+
+        vsrc = vsrc.replace(
+            "    CheckSwapChain();",
+            "#if defined(MARATHON_IOS_PORT)\\n    if (MarathonIOS_IsAppSuspended())\\n    {\\n        MarathonIOS_WaitUntilActive();\\n    }\\n#endif\\n    CheckSwapChain();",
+            1
+        )
+
+        # Low-power iOS FPS limiter (eliminates desktop 2ms P-core busy-spin heat every frame & syncs ProMotion target FPS)
+        old_fps_wait = '''    if (Config::FPS >= FPS_MIN && Config::FPS < FPS_MAX)
+    {
+        using namespace std::chrono_literals;
+
+        static std::chrono::steady_clock::time_point s_next;
+
+        auto now = std::chrono::steady_clock::now();
+
+        if (now < s_next)
+        {
+            std::this_thread::sleep_for(std::chrono::floor<std::chrono::milliseconds>(s_next - now - 2ms));
+
+            while ((now = std::chrono::steady_clock::now()) < s_next)
+                std::this_thread::yield();
+        }
+        else
+        {
+            s_next = now;
+        }
+
+        s_next += 1000000000ns / Config::FPS;
+    }'''
+        new_fps_wait = '''    if (Config::FPS >= FPS_MIN && Config::FPS < FPS_MAX)
+    {
+        using namespace std::chrono_literals;
+
+        static std::chrono::steady_clock::time_point s_next;
+#if defined(MARATHON_IOS_PORT)
+        const int32_t targetFps = Config::FPS.Value > 0 ? Config::FPS.Value : 60;
+        MarathonIOS_SetTargetFPS(targetFps);
+        auto now = std::chrono::steady_clock::now();
+        if (now < s_next)
+        {
+            const auto remaining = s_next - now;
+            if (remaining > 300us)
+            {
+                std::this_thread::sleep_for(remaining - 250us);
+            }
+            while ((now = std::chrono::steady_clock::now()) < s_next)
+            {
+                std::this_thread::yield();
+            }
+        }
+        else
+        {
+            s_next = now;
+        }
+        s_next += 1000000000ns / targetFps;
+#else
+        auto now = std::chrono::steady_clock::now();
+
+        if (now < s_next)
+        {
+            std::this_thread::sleep_for(std::chrono::floor<std::chrono::milliseconds>(s_next - now - 2ms));
+
+            while ((now = std::chrono::steady_clock::now()) < s_next)
+                std::this_thread::yield();
+        }
+        else
+        {
+            s_next = now;
+        }
+
+        s_next += 1000000000ns / Config::FPS;
+#endif
+    }'''
+        assert old_fps_wait in vsrc, "Failed to locate FPS limiter block in gpu/video.cpp"
+        vsrc = vsrc.replace(old_fps_wait, new_fps_wait, 1)
 
         vsrc = vsrc.replace(
             "    g_renderQueue.enqueue(RenderCommands::BeginCommandList{});",
@@ -4046,6 +4422,19 @@ if main_cpp.exists():
             "    // MARATHON_IOS_SKIP_DESKTOP_UPDATE_CHECK: evita il thread UpdateChecker desktop al primo avvio su LiveContainer\\n"
             "    (void)timeDifferenceSeconds;\\n"
             "    (void)timeNow;\\n"
+            "#endif",
+            1
+        )
+        msrc = msrc.replace(
+            "    // TODO: Remove this when FPS change is supported.\\n    Config::FPS = 60;",
+            "#if defined(MARATHON_IOS_PORT)\\n"
+            "    if (Config::FPS <= 35) Config::FPS = 30;\\n"
+            "    else if (Config::FPS >= 100) Config::FPS = 120;\\n"
+            "    else Config::FPS = 60;\\n"
+            "    MarathonIOS_SetTargetFPS(Config::FPS);\\n"
+            "#else\\n"
+            "    // TODO: Remove this when FPS change is supported.\\n"
+            "    Config::FPS = 60;\\n"
             "#endif",
             1
         )

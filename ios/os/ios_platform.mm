@@ -1,7 +1,10 @@
 // Clean-room iOS OS Platform Implementation for MarathonRecomp v1.0.0
 // Replaces os/macos/* calls that rely on macOS-only APIs or non-writable bundle paths.
-// Includes persistent Documents/MarathonRecomp/ios_debug.log diagnostics, crash backtrace
-// capture, and an ARM64 Mach thread-state freeze watchdog for on-device debugging.
+// Includes:
+// - Persistent Documents/MarathonRecomp/ios_debug.log diagnostics & ARM64 Mach freeze watchdog
+// - Zero-stall UIKit lifecycle pause/resume (prevents Metal 00000006 background GPU faults on screen lock / app switch)
+// - First-launch iOS hardware auto-detection for balanced mobile thermal defaults
+// - Shared ProMotion target FPS state (30 / 60 / 120 FPS)
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
@@ -22,6 +25,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstdio>
 #include <cstring>
 #include <exception>
@@ -31,6 +35,7 @@
 #include <string_view>
 #include <thread>
 
+#include <ios_virtual_controller.h>
 #include <os/locale.h>
 #include <os/logger.h>
 #include <os/media.h>
@@ -53,6 +58,15 @@ static std::atomic<uint64_t> g_lastRenderHbMs{0};
 static std::atomic<const char*> g_lastRenderPhase{"idle"};
 static std::atomic<uint64_t> g_hbFrameCount{0};
 static std::atomic<int> g_stallDumpStage{0};
+
+// App foreground/background lifecycle state (prevents kIOGPUCommandBufferCallbackErrorBackgroundExecutionNotPermitted)
+static std::atomic<bool> g_appSuspended{false};
+static std::atomic<bool> g_lifecycleRegistered{false};
+static std::mutex g_suspendMutex;
+static std::condition_variable g_suspendCv;
+
+// Target FPS shared with Plume ProMotion LTPO presenter (30 / 60 / 120)
+static std::atomic<int> g_targetFps{60};
 
 static uint64_t MonotonicNowMs() {
     struct timespec ts{};
@@ -208,6 +222,39 @@ static void DumpAllThreadsToLog(uint64_t stallMs) {
     if (g_logFd >= 0) fsync(g_logFd);
 }
 
+static void RegisterIOSLifecycleObservers() {
+    bool expected = false;
+    if (!g_lifecycleRegistered.compare_exchange_strong(expected, true)) return;
+
+    auto registerBlock = ^{
+        NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
+        [nc addObserverForName:UIApplicationWillResignActiveNotification
+                        object:nil
+                         queue:[NSOperationQueue mainQueue]
+                    usingBlock:^(__unused NSNotification *note) {
+            MarathonIOS_SetAppSuspended(true);
+        }];
+        [nc addObserverForName:UIApplicationDidEnterBackgroundNotification
+                        object:nil
+                         queue:[NSOperationQueue mainQueue]
+                    usingBlock:^(__unused NSNotification *note) {
+            MarathonIOS_SetAppSuspended(true);
+        }];
+        [nc addObserverForName:UIApplicationDidBecomeActiveNotification
+                        object:nil
+                         queue:[NSOperationQueue mainQueue]
+                    usingBlock:^(__unused NSNotification *note) {
+            MarathonIOS_SetAppSuspended(false);
+        }];
+    };
+
+    if ([NSThread isMainThread]) {
+        registerBlock();
+    } else {
+        dispatch_async(dispatch_get_main_queue(), registerBlock);
+    }
+}
+
 static void StartFreezeWatchdogThread() {
     std::thread([]() {
         pthread_setname_np("MarathonIOSWatchdog");
@@ -215,6 +262,13 @@ static void StartFreezeWatchdogThread() {
         while (true) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
             if (!g_watchdogArmed.load(std::memory_order_acquire)) continue;
+            if (g_appSuspended.load(std::memory_order_acquire)) {
+                uint64_t nowPaused = MonotonicNowMs();
+                g_lastMainHbMs.store(nowPaused, std::memory_order_release);
+                g_lastRenderHbMs.store(nowPaused, std::memory_order_release);
+                g_stallDumpStage.store(0, std::memory_order_relaxed);
+                continue;
+            }
             uint64_t now = MonotonicNowMs();
             uint64_t last = g_lastMainHbMs.load(std::memory_order_acquire);
             if (now <= last) continue;
@@ -300,6 +354,7 @@ static void EnsureDiagnosticsInitialized() {
         if (g_logFd >= 0) fsync(g_logFd);
     });
 
+    RegisterIOSLifecycleObservers();
     StartFreezeWatchdogThread();
 }
 
@@ -334,6 +389,142 @@ void MarathonIOS_RenderHeartbeat(const char* phase) {
     if (phase) {
         g_lastRenderPhase.store(phase, std::memory_order_relaxed);
     }
+}
+
+bool MarathonIOS_IsAppSuspended(void) {
+    return g_appSuspended.load(std::memory_order_acquire);
+}
+
+void MarathonIOS_SetAppSuspended(bool suspended) {
+    EnsureDiagnosticsInitialized();
+    bool prev = g_appSuspended.exchange(suspended, std::memory_order_acq_rel);
+    if (prev == suspended) return;
+
+    if (suspended) {
+        MarathonIOS_ResetVirtualControllerInputs();
+        MarathonIOS_LogLine("LIFECYCLE", "App suspended (lock/background) — pausing Metal submissions cleanly");
+    } else {
+        uint64_t now = MonotonicNowMs();
+        g_lastMainHbMs.store(now, std::memory_order_release);
+        g_lastRenderHbMs.store(now, std::memory_order_release);
+        g_stallDumpStage.store(0, std::memory_order_relaxed);
+        {
+            std::lock_guard<std::mutex> lock(g_suspendMutex);
+        }
+        g_suspendCv.notify_all();
+        MarathonIOS_LogLine("LIFECYCLE", "App active (foreground/unlocked) — resuming Metal rendering immediately");
+    }
+}
+
+void MarathonIOS_WaitUntilActive(void) {
+    if (!g_appSuspended.load(std::memory_order_acquire)) return;
+
+    if ([NSThread isMainThread]) {
+        // Pump CFRunLoop so UIKit's UIApplicationDidBecomeActiveNotification is delivered immediately (zero deadlock!)
+        while (g_appSuspended.load(std::memory_order_acquire)) {
+            CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.025, true);
+            uint64_t now = MonotonicNowMs();
+            g_lastMainHbMs.store(now, std::memory_order_release);
+        }
+        uint64_t now = MonotonicNowMs();
+        g_lastMainHbMs.store(now, std::memory_order_release);
+        g_lastRenderHbMs.store(now, std::memory_order_release);
+    } else {
+        std::unique_lock<std::mutex> lock(g_suspendMutex);
+        g_suspendCv.wait(lock, []() {
+            return !g_appSuspended.load(std::memory_order_acquire);
+        });
+    }
+}
+
+void MarathonIOS_SetTargetFPS(int fps) {
+    int normalized = 60;
+    if (fps <= 35) normalized = 30;
+    else if (fps >= 100) normalized = 120;
+    else normalized = 60;
+    g_targetFps.store(normalized, std::memory_order_release);
+}
+
+int MarathonIOS_GetTargetFPS(void) {
+    return g_targetFps.load(std::memory_order_acquire);
+}
+
+void MarathonIOS_GetHardwareProfile(MarathonIOSHardwareProfile* outProfile) {
+    if (!outProfile) return;
+    EnsureDiagnosticsInitialized();
+
+    const uint64_t ramBytes = [[NSProcessInfo processInfo] physicalMemory];
+    const uint32_t ramMiB = static_cast<uint32_t>(ramBytes / (1024ULL * 1024ULL));
+
+    __block int maxHz = 60;
+    __block float scale = 2.0f;
+    __block bool isPad = false;
+    auto queryUI = ^{
+        UIScreen *screen = [UIScreen mainScreen];
+        if (screen) {
+            maxHz = static_cast<int>([screen maximumFramesPerSecond]);
+            if (maxHz < 60) maxHz = 60;
+            scale = static_cast<float>(screen.nativeScale);
+            if (scale < 1.0f) scale = 2.0f;
+        }
+        isPad = ([UIDevice currentDevice].userInterfaceIdiom == UIUserInterfaceIdiomPad);
+    };
+    if ([NSThread isMainThread]) {
+        queryUI();
+    } else {
+        dispatch_sync(dispatch_get_main_queue(), queryUI);
+    }
+
+    MarathonIOSHardwareProfile p{};
+    p.ramMiB = ramMiB;
+    p.maxRefreshHz = maxHz;
+    p.screenScale = scale;
+    p.isPad = isPad;
+
+    // Smart mobile thermal tiering:
+    // - Avoids desktop 3x Retina (2622x1206) + MSAA4x + 4096 shadows + 16x AF thermal meltdown
+    // - Keeps visuals crisp (>900p on flagship iPhones/iPads, >720p on mid-tier) while running cool & locked
+    if (ramMiB >= 7500) {
+        // Tier 2: Flagship (iPhone 15 Pro / 16 Pro / 16 / M-series iPad, >=8GB RAM)
+        p.tier = 2;
+        p.recommendedFps = 60;
+        p.recommendedResScale = isPad ? 0.85f : (scale >= 2.5f ? 0.75f : 0.90f);
+        p.recommendedAA = 0;         // Off (460 PPI OLED @ >900p looks razor-sharp & cuts TBDR tile heat dramatically)
+        p.recommendedShadowRes = 1;  // x1024
+        p.recommendedReflection = 1; // Quarter
+        p.recommendedRadialBlur = 1; // Original
+        p.recommendedAF = 4;
+    } else if (ramMiB >= 5500) {
+        // Tier 1: Mid-High (iPhone 13 Pro / 14 / 15 / A15-A16 iPad, 6GB RAM)
+        p.tier = 1;
+        p.recommendedFps = 60;
+        p.recommendedResScale = (scale >= 2.5f ? 0.65f : 0.80f);
+        p.recommendedAA = 0;         // Off
+        p.recommendedShadowRes = 1;  // x1024
+        p.recommendedReflection = 1; // Quarter
+        p.recommendedRadialBlur = 1; // Original
+        p.recommendedAF = 4;
+    } else {
+        // Tier 0: Compact / 4GB devices
+        p.tier = 0;
+        p.recommendedFps = 30;
+        p.recommendedResScale = 0.55f;
+        p.recommendedAA = 0;         // Off
+        p.recommendedShadowRes = 0;  // x512
+        p.recommendedReflection = 0; // Eighth
+        p.recommendedRadialBlur = 0; // Off
+        p.recommendedAF = 2;
+    }
+
+    *outProfile = p;
+
+    char buf[256];
+    std::snprintf(buf, sizeof(buf),
+                  "tier=%d ram=%uMiB hz=%d scale=%.1fx pad=%d -> fps=%d resScale=%.2f AA=%d shadow=%d refl=%d blur=%d AF=%d",
+                  p.tier, p.ramMiB, p.maxRefreshHz, p.screenScale, p.isPad ? 1 : 0,
+                  p.recommendedFps, p.recommendedResScale, p.recommendedAA,
+                  p.recommendedShadowRes, p.recommendedReflection, p.recommendedRadialBlur, p.recommendedAF);
+    MarathonIOS_LogLine("AUTOCFG", buf);
 }
 
 } // extern "C"

@@ -310,6 +310,55 @@ test('ARM64 freeze fixes, ios_debug.log watchdog, and Sonic 06 themed virtual co
   assert.doesNotMatch(vcMm, /ios_mod_manager\.h/);
 });
 
+test('iOS lifecycle pause/resume, hardware thermal auto-config, 30/60/120 FPS ProMotion lock, and low-latency direct multi-touch controller are wired', () => {
+  const files = generatePortRepository(DEFAULT_BUILD_CONFIG);
+  const patcher = files.find((f) => f.path === 'scripts/apply_ios_port.sh')!.content;
+  const platformMm = files.find((f) => f.path === 'ios/os/ios_platform.mm')!.content;
+  const vcHeader = files.find((f) => f.path === 'ios/include/ios_virtual_controller.h')!.content;
+  const vcMm = files.find((f) => f.path === 'ios/ios_virtual_controller.mm')!.content;
+  const plist = files.find((f) => f.path === 'ios/Info.plist')!.content;
+
+  // 1. Zero-stall lock-screen / app-switch lifecycle pause & resume
+  assert.match(vcHeader, /bool MarathonIOS_IsAppSuspended\(void\);/);
+  assert.match(vcHeader, /void MarathonIOS_WaitUntilActive\(void\);/);
+  assert.match(vcHeader, /void MarathonIOS_ResetVirtualControllerInputs\(void\);/);
+  assert.match(platformMm, /UIApplicationWillResignActiveNotification/);
+  assert.match(platformMm, /UIApplicationDidEnterBackgroundNotification/);
+  assert.match(platformMm, /UIApplicationDidBecomeActiveNotification/);
+  assert.match(platformMm, /CFRunLoopRunInMode\(kCFRunLoopDefaultMode/);
+  assert.match(patcher, /SDL_EVENT_WILL_ENTER_BACKGROUND/);
+  assert.match(patcher, /SDL_EVENT_DID_ENTER_FOREGROUND/);
+  assert.match(patcher, /if \(MarathonIOS_IsAppSuspended\(\)\)\s*\{\s*MarathonIOS_WaitUntilActive\(\);/);
+  assert.match(patcher, /if \(MarathonIOS_IsAppSuspended\(\)\) \{\s*return false;\s*\}/);
+  assert.match(patcher, /if \(ctx\.f1\.f64 > 0\.1 \|\| ctx\.f1\.f64 < 0\.0\)/);
+
+  // 2. Smart first-launch iOS hardware auto-config & low-heat pacing
+  assert.match(vcHeader, /typedef struct MarathonIOSHardwareProfile/);
+  assert.match(platformMm, /void MarathonIOS_GetHardwareProfile\(MarathonIOSHardwareProfile\* outProfile\)/);
+  assert.match(patcher, /ApplyIOSHardwareDefaults/);
+  assert.match(patcher, /ios_hw_tuned_v1/);
+  assert.match(patcher, /std::this_thread::sleep_for\(remaining - 250us\)/);
+
+  // 3. 30 / 60 / 120 FPS selector in Options Menu & ProMotion LTPO pacing
+  assert.match(plist, /<key>CADisableMinimumFrameDurationOnPhone<\/key>\s*<true\/>/);
+  assert.match(patcher, /MARATHON_IOS_FPS_SELECTOR/);
+  assert.match(patcher, /DrawOption\(rowCount\+\+, &Config::FPS, true, nullptr, 30, 60, 120, false\);/);
+  assert.match(patcher, /kIOSFpsPresets\[3\] = \{ 30, 60, 120 \}/);
+  assert.match(patcher, /valueText = fmt::format\("\{\} FPS", config->Value\);/);
+  assert.match(patcher, /presentIOSDrawable\(drawableMtl, MarathonIOS_GetTargetFPS\(\)\)/);
+  assert.match(patcher, /presentAfterMinimumDuration:\(1\.0 \/ 32\.0\)/);
+  assert.match(patcher, /presentAfterMinimumDuration:\(1\.0 \/ 65\.0\)/);
+  assert.match(patcher, /if \(Config::FPS <= 35\) Config::FPS = 30;/);
+
+  // 4. Ultra-responsive direct multi-touch virtual controller (no UIButton lag, ABXY thumb-slide, pre-warmed UIImpactFeedbackGenerator)
+  assert.match(vcMm, /struct TrackedTouchSlot/);
+  assert.match(vcMm, /hitABXYButtonAtPoint:/);
+  assert.match(vcMm, /UIImpactFeedbackGenerator/);
+  assert.match(vcMm, /\[CATransaction setDisableActions:YES\]/);
+  assert.match(vcMm, /void MarathonIOS_ResetVirtualControllerInputs\(void\)/);
+  assert.doesNotMatch(vcMm, /@interface Sonic06PadButton : UIButton/);
+});
+
 test('inspectXisoCandidate validates extensions and detects real MICROSOFT*XBOX*MEDIA magic', () => {
   const invalid = inspectXisoCandidate({ fileName: 'game.zip', sizeBytes: 1024 });
   assert.equal(invalid.valid, false);

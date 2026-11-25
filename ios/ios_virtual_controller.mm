@@ -1,15 +1,11 @@
 // Clean-room Sonic '06 Action-Gauge Virtual Controller for MarathonRecomp iOS
-// Features:
-// - Responsive landscape layout via layoutSubviews + safeAreaInsets (iPhone, Dynamic Island, iPad, LiveContainer)
-// - Dynamic Sonic '06 character theming with smooth animated transitions:
-//     * Sonic  -> Electric Cobalt Blue & Crisp White
-//     * Shadow -> Chaos Crimson Red & Obsidian Black
-//     * Silver -> Psychokinetic Pure White & Bright Azure/Cyan
-// - Soleanna Action-Gauge concentric analog stick with glowing cardinal notches & floating snap-back knob
-// - Ergonomic 8-way sliding chamfered D-Pad, ABXY diamond cluster, LB/RB/LT/RT shoulders, sleek Back/Start
-// - Open right-side touch camera zone with subtle ghost tracking ring
-// - CoreHaptics Taptic Engine feedback & throttled Xbox 360 rumble forwarding
-// - Automatic hide/show on MFi / Xbox / DualSense physical controller connection
+// Ultra-low-latency direct multi-touch implementation:
+// - Direct UITouch tracking across ALL controls (zero UIButton event delay, expanded hit padding, seamless ABXY thumb-sliding)
+// - Zero-IPC pre-prepared UIImpactFeedbackGenerator for instant button/D-Pad haptics + async CoreHaptics for Xbox rumble
+// - Zero-lag CATransaction visual updates (eliminates CoreAnimation 250ms implicit fade on D-Pad & 80ms press lag on buttons)
+// - Dynamic Sonic '06 character theming (Sonic Cobalt Blue/White, Shadow Crimson/Black, Silver White/Cyan)
+// - Snappy responsive Left Stick (shorter throw, instant directional engagement, clean radial deadzone & boost curve)
+// - Agile Right Camera Swipe Zone & automatic input reset on app suspend / physical controller attach
 
 #import <Foundation/Foundation.h>
 #import <UIKit/UIKit.h>
@@ -48,6 +44,17 @@ static constexpr uint32_t kBtnY         = 0x8000;
 static constexpr NSInteger kTagLT = -1;
 static constexpr NSInteger kTagRT = -2;
 
+static constexpr int kMaxTrackedTouches = 10;
+
+enum TouchRole : int {
+    kRoleNone = 0,
+    kRoleLeftStick,
+    kRoleRightCamera,
+    kRoleDPad,
+    kRoleABXY,
+    kRoleButton
+};
+
 static void GetPaletteForTheme(int theme,
                                UIColor **outPrimary,
                                UIColor **outSecondary,
@@ -63,7 +70,7 @@ static void GetPaletteForTheme(int theme,
             *outFill        = [UIColor colorWithRed:0.05 green:0.04 blue:0.05 alpha:0.74];
             *outKnobFill    = [UIColor colorWithRed:0.14 green:0.03 blue:0.05 alpha:0.94];
             *outLabel       = [UIColor colorWithRed:1.00 green:0.94 blue:0.94 alpha:1.0];
-            *outPressedFill = [UIColor colorWithRed:0.86 green:0.10 blue:0.16 alpha:0.62];
+            *outPressedFill = [UIColor colorWithRed:0.86 green:0.10 blue:0.16 alpha:0.68];
             break;
         case MARATHON_THEME_SILVER:
             // Silver the Hedgehog: Psychokinetic Pure White & Bright Azure/Cyan
@@ -72,7 +79,7 @@ static void GetPaletteForTheme(int theme,
             *outFill        = [UIColor colorWithRed:0.09 green:0.22 blue:0.30 alpha:0.56];
             *outKnobFill    = [UIColor colorWithRed:0.92 green:0.98 blue:1.00 alpha:0.90];
             *outLabel       = [UIColor colorWithRed:0.98 green:1.00 blue:1.00 alpha:1.0];
-            *outPressedFill = [UIColor colorWithRed:0.32 green:0.90 blue:1.00 alpha:0.58];
+            *outPressedFill = [UIColor colorWithRed:0.32 green:0.90 blue:1.00 alpha:0.64];
             break;
         case MARATHON_THEME_SONIC:
         default:
@@ -82,7 +89,7 @@ static void GetPaletteForTheme(int theme,
             *outFill        = [UIColor colorWithRed:0.04 green:0.11 blue:0.26 alpha:0.64];
             *outKnobFill    = [UIColor colorWithRed:0.12 green:0.46 blue:0.98 alpha:0.92];
             *outLabel       = [UIColor colorWithRed:1.00 green:1.00 blue:1.00 alpha:1.0];
-            *outPressedFill = [UIColor colorWithRed:0.16 green:0.58 blue:1.00 alpha:0.62];
+            *outPressedFill = [UIColor colorWithRed:0.16 green:0.58 blue:1.00 alpha:0.68];
             break;
     }
 }
@@ -151,7 +158,6 @@ static void GetPaletteForTheme(int theme,
     self.outerRingLayer.frame = self.bounds;
     self.outerRingLayer.path = [UIBezierPath bezierPathWithArcCenter:c radius:r startAngle:0 endAngle:M_PI * 2.0 clockwise:YES].CGPath;
 
-    // Sonic '06 Action-Gauge twin glowing speed arcs
     UIBezierPath *arcPath = [UIBezierPath bezierPath];
     [arcPath addArcWithCenter:c radius:(r - 6.0) startAngle:(-M_PI * 0.78) endAngle:(-M_PI * 0.22) clockwise:YES];
     [arcPath moveToPoint:CGPointMake(c.x + (r - 6.0) * cos(M_PI * 0.22), c.y + (r - 6.0) * sin(M_PI * 0.22))];
@@ -159,7 +165,6 @@ static void GetPaletteForTheme(int theme,
     self.actionArcLayer.frame = self.bounds;
     self.actionArcLayer.path = arcPath.CGPath;
 
-    // Cardinal directional notches (N/S/E/W)
     UIBezierPath *notches = [UIBezierPath bezierPath];
     CGFloat innerR = r - 13.0;
     CGFloat outerR = r - 5.0;
@@ -198,18 +203,21 @@ static void GetPaletteForTheme(int theme,
     CGFloat travel = MIN(w, h) * 0.31;
     CGPoint target = CGPointMake(w * 0.5 + nx * travel, h * 0.5 - ny * travel);
     if (animated) {
-        [UIView animateWithDuration:0.14 delay:0 options:(UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionCurveEaseOut) animations:^{
+        [UIView animateWithDuration:0.09 delay:0 options:(UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionCurveEaseOut) animations:^{
             self.knobView.center = target;
         } completion:nil];
     } else {
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
         self.knobView.center = target;
+        [CATransaction commit];
     }
 }
 
 @end
 
 // ============================================================================
-// Sonic '06 8-Way Sliding Chamfered D-Pad View
+// Sonic '06 8-Way Chamfered D-Pad Visual View (driven by direct multi-touch)
 // ============================================================================
 @interface Sonic06DPadView : UIView
 @property (nonatomic, strong) CAShapeLayer *crossLayer;
@@ -218,8 +226,9 @@ static void GetPaletteForTheme(int theme,
 @property (nonatomic, strong) CAShapeLayer *leftHighlight;
 @property (nonatomic, strong) CAShapeLayer *rightHighlight;
 @property (nonatomic, assign) uint32_t activeMask;
-@property (nonatomic, copy) void (^onDirectionMaskChanged)(uint32_t newMask);
 - (void)applyThemePrimary:(UIColor *)primary secondary:(UIColor *)secondary fill:(UIColor *)fill;
+- (uint32_t)directionMaskForLocalPoint:(CGPoint)pt;
+- (void)setVisualMask:(uint32_t)mask;
 @end
 
 @implementation Sonic06DPadView
@@ -227,8 +236,8 @@ static void GetPaletteForTheme(int theme,
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
+        self.userInteractionEnabled = NO;
         self.backgroundColor = [UIColor clearColor];
-        self.multipleTouchEnabled = NO;
 
         _crossLayer = [CAShapeLayer layer];
         _crossLayer.lineWidth = 1.8;
@@ -287,73 +296,59 @@ static void GetPaletteForTheme(int theme,
 - (void)applyThemePrimary:(UIColor *)primary secondary:(UIColor *)secondary fill:(UIColor *)fill {
     self.crossLayer.strokeColor = [primary colorWithAlphaComponent:0.90].CGColor;
     self.crossLayer.fillColor = fill.CGColor;
-    CGColorRef hlColor = [secondary colorWithAlphaComponent:0.75].CGColor;
+    CGColorRef hlColor = [secondary colorWithAlphaComponent:0.80].CGColor;
     self.upHighlight.fillColor    = hlColor;
     self.downHighlight.fillColor  = hlColor;
     self.leftHighlight.fillColor  = hlColor;
     self.rightHighlight.fillColor = hlColor;
 }
 
-- (void)updateDirectionForPoint:(CGPoint)pt {
+- (uint32_t)directionMaskForLocalPoint:(CGPoint)pt {
     CGFloat cx = self.bounds.size.width * 0.5;
     CGFloat cy = self.bounds.size.height * 0.5;
     CGFloat dx = pt.x - cx;
     CGFloat dy = pt.y - cy;
-    CGFloat deadzone = MIN(cx, cy) * 0.18;
+    CGFloat deadzone = MIN(cx, cy) * 0.13;
     uint32_t mask = 0;
     if (std::hypot(dx, dy) >= deadzone) {
-        CGFloat angle = std::atan2(dy, dx); // radians, 0 = right, -pi/2 = up
-        // 8-way sectors (67.5 deg half-width allows clean diagonals)
-        if (dx > deadzone * 0.6 && std::fabs(angle) < M_PI * 0.375) mask |= kBtnDPadRight;
-        if (dx < -deadzone * 0.6 && std::fabs(angle) > M_PI * 0.625) mask |= kBtnDPadLeft;
-        if (dy < -deadzone * 0.6 && angle > -M_PI * 0.875 && angle < -M_PI * 0.125) mask |= kBtnDPadUp;
-        if (dy > deadzone * 0.6 && angle > M_PI * 0.125 && angle < M_PI * 0.875) mask |= kBtnDPadDown;
+        CGFloat angle = std::atan2(dy, dx);
+        if (dx > deadzone * 0.5 && std::fabs(angle) < M_PI * 0.375) mask |= kBtnDPadRight;
+        if (dx < -deadzone * 0.5 && std::fabs(angle) > M_PI * 0.625) mask |= kBtnDPadLeft;
+        if (dy < -deadzone * 0.5 && angle > -M_PI * 0.875 && angle < -M_PI * 0.125) mask |= kBtnDPadUp;
+        if (dy > deadzone * 0.5 && angle > M_PI * 0.125 && angle < M_PI * 0.875) mask |= kBtnDPadDown;
     }
-    [self setActiveMask:mask];
+    return mask;
 }
 
-- (void)setActiveMask:(uint32_t)mask {
+- (void)setVisualMask:(uint32_t)mask {
     if (_activeMask == mask) return;
     _activeMask = mask;
+    // Disable implicit 250ms CoreAnimation fade so D-Pad highlights snap instantaneously
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
     self.upHighlight.opacity    = (mask & kBtnDPadUp)    ? 1.0f : 0.0f;
     self.downHighlight.opacity  = (mask & kBtnDPadDown)  ? 1.0f : 0.0f;
     self.leftHighlight.opacity  = (mask & kBtnDPadLeft)  ? 1.0f : 0.0f;
     self.rightHighlight.opacity = (mask & kBtnDPadRight) ? 1.0f : 0.0f;
-    if (self.onDirectionMaskChanged) {
-        self.onDirectionMaskChanged(mask);
-    }
-}
-
-- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    UITouch *t = [touches anyObject];
-    if (t) [self updateDirectionForPoint:[t locationInView:self]];
-}
-
-- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    UITouch *t = [touches anyObject];
-    if (t) [self updateDirectionForPoint:[t locationInView:self]];
-}
-
-- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    [self setActiveMask:0];
-}
-
-- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    [self setActiveMask:0];
+    [CATransaction commit];
 }
 
 @end
 
 // ============================================================================
-// Sonic '06 Bevel Glass Button (ABXY / Shoulders / Start / Back)
+// Sonic '06 Bevel Glass Pad Button (visual-only UIView driven by direct multi-touch)
 // ============================================================================
-@interface Sonic06PadButton : UIButton
+@interface Sonic06PadButton : UIView
+@property (nonatomic, assign) NSInteger padTag;
+@property (nonatomic, strong) UILabel *titleLabel;
 @property (nonatomic, strong) UIColor *xboxDotColor;
 @property (nonatomic, strong) UIColor *normalFillColor;
 @property (nonatomic, strong) UIColor *pressedFillColor;
 @property (nonatomic, strong) CAShapeLayer *innerRingLayer;
 @property (nonatomic, strong) CAShapeLayer *accentDotLayer;
 @property (nonatomic, assign) BOOL isPillStyle;
+@property (nonatomic, assign) BOOL isABXY;
+@property (nonatomic, assign) BOOL pressedState;
 - (void)applyThemePrimary:(UIColor *)primary secondary:(UIColor *)secondary fill:(UIColor *)fill pressedFill:(UIColor *)pressedFill labelColor:(UIColor *)labelColor;
 - (void)setPressedVisual:(BOOL)pressed;
 @end
@@ -363,7 +358,7 @@ static void GetPaletteForTheme(int theme,
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
     if (self) {
-        self.adjustsImageWhenHighlighted = NO;
+        self.userInteractionEnabled = NO;
         self.layer.borderWidth = 2.0;
         self.layer.shadowRadius = 7.0;
         self.layer.shadowOpacity = 0.42;
@@ -376,6 +371,11 @@ static void GetPaletteForTheme(int theme,
 
         _accentDotLayer = [CAShapeLayer layer];
         [self.layer addSublayer:_accentDotLayer];
+
+        _titleLabel = [[UILabel alloc] initWithFrame:CGRectZero];
+        _titleLabel.textAlignment = NSTextAlignmentCenter;
+        _titleLabel.userInteractionEnabled = NO;
+        [self addSubview:_titleLabel];
     }
     return self;
 }
@@ -385,6 +385,7 @@ static void GetPaletteForTheme(int theme,
     CGFloat corner = self.isPillStyle ? (self.bounds.size.height * 0.45) : (self.bounds.size.height * 0.5);
     self.layer.cornerRadius = corner;
 
+    self.titleLabel.frame = self.bounds;
     self.innerRingLayer.frame = self.bounds;
     CGRect inset = CGRectInset(self.bounds, 4.5, 4.5);
     self.innerRingLayer.path = [UIBezierPath bezierPathWithRoundedRect:inset cornerRadius:MAX(2.0, corner - 4.0)].CGPath;
@@ -404,28 +405,52 @@ static void GetPaletteForTheme(int theme,
 - (void)applyThemePrimary:(UIColor *)primary secondary:(UIColor *)secondary fill:(UIColor *)fill pressedFill:(UIColor *)pressedFill labelColor:(UIColor *)labelColor {
     self.normalFillColor = fill;
     self.pressedFillColor = pressedFill;
-    self.backgroundColor = fill;
+    self.backgroundColor = self.pressedState ? pressedFill : fill;
     self.layer.borderColor = [primary colorWithAlphaComponent:0.92].CGColor;
     self.layer.shadowColor = primary.CGColor;
     self.innerRingLayer.strokeColor = [secondary colorWithAlphaComponent:0.42].CGColor;
-    [self setTitleColor:labelColor forState:UIControlStateNormal];
+    self.titleLabel.textColor = labelColor;
 }
 
 - (void)setPressedVisual:(BOOL)pressed {
-    self.backgroundColor = pressed ? (self.pressedFillColor ?: self.normalFillColor) : self.normalFillColor;
-    [UIView animateWithDuration:0.08 delay:0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
-        self.transform = pressed ? CGAffineTransformMakeScale(0.90, 0.90) : CGAffineTransformIdentity;
-    } completion:nil];
+    if (_pressedState == pressed) return;
+    _pressedState = pressed;
+    if (pressed) {
+        // Instant zero-latency press response
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+        self.backgroundColor = self.pressedFillColor ?: self.normalFillColor;
+        self.transform = CGAffineTransformMakeScale(0.91, 0.91);
+        [CATransaction commit];
+    } else {
+        self.backgroundColor = self.normalFillColor;
+        [UIView animateWithDuration:0.055 delay:0 options:UIViewAnimationOptionBeginFromCurrentState animations:^{
+            self.transform = CGAffineTransformIdentity;
+        } completion:nil];
+    }
 }
 
 @end
 
 // ============================================================================
-// Main Virtual Controller Overlay View
+// Direct Multi-Touch Tracking Slot
 // ============================================================================
-@interface MarathonTouchOverlayView : UIView
-@property (nonatomic, strong) CHHapticEngine *hapticEngine;
-@property (nonatomic, assign) BOOL hapticsReady;
+struct TrackedTouchSlot {
+    __unsafe_unretained UITouch *touch;
+    TouchRole role;
+    __unsafe_unretained Sonic06PadButton *activeButton;
+};
+
+// ============================================================================
+// Main Virtual Controller Overlay View (Direct Multi-Touch Engine)
+// ============================================================================
+@interface MarathonTouchOverlayView : UIView {
+    TrackedTouchSlot _slots[kMaxTrackedTouches];
+}
+@property (nonatomic, strong) UIImpactFeedbackGenerator *lightTapHaptic;
+@property (nonatomic, strong) UIImpactFeedbackGenerator *buttonTapHaptic;
+@property (nonatomic, strong) CHHapticEngine *rumbleEngine;
+@property (nonatomic, assign) BOOL rumbleReady;
 
 @property (nonatomic, strong) Sonic06StickView *leftStickView;
 @property (nonatomic, strong) Sonic06DPadView *dpadView;
@@ -441,19 +466,22 @@ static void GetPaletteForTheme(int theme,
 @property (nonatomic, strong) Sonic06PadButton *btnRT;
 @property (nonatomic, strong) Sonic06PadButton *btnBack;
 @property (nonatomic, strong) Sonic06PadButton *btnStart;
+@property (nonatomic, strong) NSArray<Sonic06PadButton *> *abxyButtons;
+@property (nonatomic, strong) NSArray<Sonic06PadButton *> *otherButtons;
 @property (nonatomic, strong) NSArray<Sonic06PadButton *> *allButtons;
 
-@property (nonatomic, strong) UITouch *leftStickTouch;
 @property (nonatomic, assign) CGPoint leftStickOrigin;
-@property (nonatomic, strong) UITouch *rightStickTouch;
 @property (nonatomic, assign) CGPoint rightStickOrigin;
-
 @property (nonatomic, assign) CGRect leftStickZone;
+@property (nonatomic, assign) CGRect dpadHitZone;
+@property (nonatomic, assign) CGRect abxyClusterZone;
 @property (nonatomic, assign) CGRect rightCameraZone;
+@property (nonatomic, assign) BOOL isCompactLayout;
 @property (nonatomic, assign) int activeTheme;
 
 - (void)applyTheme:(int)theme animated:(BOOL)animated;
-- (void)playTapHaptic:(float)intensity sharpness:(float)sharpness;
+- (void)playRumbleHaptic:(float)intensity sharpness:(float)sharpness;
+- (void)resetAllInputs;
 @end
 
 @implementation MarathonTouchOverlayView
@@ -463,8 +491,12 @@ static void GetPaletteForTheme(int theme,
     if (self) {
         self.backgroundColor = [UIColor clearColor];
         self.multipleTouchEnabled = YES;
+        self.exclusiveTouch = NO;
         self.layer.allowsGroupOpacity = NO;
         _activeTheme = g_currentTheme.load(std::memory_order_relaxed);
+        for (int i = 0; i < kMaxTrackedTouches; ++i) {
+            _slots[i] = { nullptr, kRoleNone, nullptr };
+        }
 
         [self setupHaptics];
         [self buildControls];
@@ -476,103 +508,99 @@ static void GetPaletteForTheme(int theme,
 }
 
 - (void)setupHaptics {
+    // Ultra-fast pre-warmed UIImpactFeedbackGenerator (0-allocation, zero XPC stall on button taps!)
+    self.lightTapHaptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleLight];
+    self.buttonTapHaptic = [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleMedium];
+    [self.lightTapHaptic prepare];
+    [self.buttonTapHaptic prepare];
+
+    // CoreHaptics engine reserved asynchronously ONLY for Xbox 360 rumble forwarding
     if (![CHHapticEngine capabilitiesForHardware].supportsHaptics) return;
     NSError *err = nil;
-    self.hapticEngine = [[CHHapticEngine alloc] initAndReturnError:&err];
-    if (err || !self.hapticEngine) return;
+    self.rumbleEngine = [[CHHapticEngine alloc] initAndReturnError:&err];
+    if (err || !self.rumbleEngine) return;
 
     __weak typeof(self) weakSelf = self;
-    self.hapticEngine.stoppedHandler = ^(CHHapticEngineStoppedReason reason) {
+    self.rumbleEngine.stoppedHandler = ^(CHHapticEngineStoppedReason reason) {
         (void)reason;
-        weakSelf.hapticsReady = NO;
+        weakSelf.rumbleReady = NO;
     };
-    self.hapticEngine.resetHandler = ^{
-        NSError *startErr = nil;
-        [weakSelf.hapticEngine startAndReturnError:&startErr];
-        weakSelf.hapticsReady = (startErr == nil);
+    self.rumbleEngine.resetHandler = ^{
+        [weakSelf.rumbleEngine startWithCompletionHandler:^(NSError *startErr) {
+            weakSelf.rumbleReady = (startErr == nil);
+        }];
     };
-
-    NSError *startErr = nil;
-    [self.hapticEngine startAndReturnError:&startErr];
-    self.hapticsReady = (startErr == nil);
+    [self.rumbleEngine startWithCompletionHandler:^(NSError *startErr) {
+        weakSelf.rumbleReady = (startErr == nil);
+    }];
 }
 
-- (void)playTapHaptic:(float)intensity sharpness:(float)sharpness {
-    if (!self.hapticEngine) return;
-    if (!self.hapticsReady) {
-        NSError *startErr = nil;
-        [self.hapticEngine startAndReturnError:&startErr];
-        self.hapticsReady = (startErr == nil);
-        if (!self.hapticsReady) return;
+- (void)triggerFastTapHaptic:(BOOL)isPrimaryFaceButton {
+    if (isPrimaryFaceButton) {
+        [self.buttonTapHaptic impactOccurredWithIntensity:0.55];
+        [self.buttonTapHaptic prepare];
+    } else {
+        [self.lightTapHaptic impactOccurredWithIntensity:0.45];
+        [self.lightTapHaptic prepare];
     }
+}
+
+- (void)playRumbleHaptic:(float)intensity sharpness:(float)sharpness {
+    if (!self.rumbleEngine || !self.rumbleReady) return;
     CHHapticEventParameter *pInt = [[CHHapticEventParameter alloc] initWithParameterID:CHHapticEventParameterIDHapticIntensity value:intensity];
     CHHapticEventParameter *pSharp = [[CHHapticEventParameter alloc] initWithParameterID:CHHapticEventParameterIDHapticSharpness value:sharpness];
     CHHapticEvent *ev = [[CHHapticEvent alloc] initWithEventType:CHHapticEventTypeHapticTransient parameters:@[pInt, pSharp] relativeTime:0];
     NSError *err = nil;
     CHHapticPattern *pat = [[CHHapticPattern alloc] initWithEvents:@[ev] parameters:@[] error:&err];
     if (err || !pat) return;
-    id<CHHapticPatternPlayer> player = [self.hapticEngine createPlayerWithPattern:pat error:&err];
+    id<CHHapticPatternPlayer> player = [self.rumbleEngine createPlayerWithPattern:pat error:&err];
     if (!err && player) {
         [player startAtTime:CHHapticTimeImmediate error:nil];
     }
 }
 
-- (Sonic06PadButton *)makeButton:(NSString *)title tag:(NSInteger)tag fontSize:(CGFloat)fontSize pill:(BOOL)pill xboxDot:(UIColor *)dotColor {
-    Sonic06PadButton *btn = [Sonic06PadButton buttonWithType:UIButtonTypeCustom];
-    btn.tag = tag;
+- (Sonic06PadButton *)makeButton:(NSString *)title tag:(NSInteger)tag fontSize:(CGFloat)fontSize pill:(BOOL)pill abxy:(BOOL)isABXY xboxDot:(UIColor *)dotColor {
+    Sonic06PadButton *btn = [[Sonic06PadButton alloc] initWithFrame:CGRectZero];
+    btn.padTag = tag;
     btn.isPillStyle = pill;
+    btn.isABXY = isABXY;
     btn.xboxDotColor = dotColor;
-    [btn setTitle:title forState:UIControlStateNormal];
+    btn.titleLabel.text = title;
     btn.titleLabel.font = [UIFont systemFontOfSize:fontSize weight:UIFontWeightHeavy];
-    [btn addTarget:self action:@selector(onButtonDown:) forControlEvents:UIControlEventTouchDown];
-    [btn addTarget:self action:@selector(onButtonUp:) forControlEvents:(UIControlEventTouchUpInside | UIControlEventTouchUpOutside | UIControlEventTouchCancel)];
     [self addSubview:btn];
     return btn;
 }
 
 - (void)buildControls {
-    // Left Analog Stick (Sonic '06 Action-Gauge concentric ring)
     self.leftStickView = [[Sonic06StickView alloc] initWithFrame:CGRectZero];
     [self addSubview:self.leftStickView];
 
-    // 8-Way Sliding D-Pad
     self.dpadView = [[Sonic06DPadView alloc] initWithFrame:CGRectZero];
-    __weak typeof(self) weakSelf = self;
-    self.dpadView.onDirectionMaskChanged = ^(uint32_t newMask) {
-        constexpr uint32_t dpadAll = kBtnDPadUp | kBtnDPadDown | kBtnDPadLeft | kBtnDPadRight;
-        uint32_t prev = g_buttons.load(std::memory_order_relaxed);
-        while (!g_buttons.compare_exchange_weak(prev, (prev & ~dpadAll) | (newMask & dpadAll), std::memory_order_relaxed)) {}
-        if (newMask != 0) {
-            [weakSelf playTapHaptic:0.35f sharpness:0.70f];
-        }
-    };
     [self addSubview:self.dpadView];
 
-    // Subtle right camera ghost ring (only visible while dragging camera)
-    self.cameraGhostRing = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 56, 56)];
+    self.cameraGhostRing = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 52, 52)];
     self.cameraGhostRing.userInteractionEnabled = NO;
-    self.cameraGhostRing.layer.cornerRadius = 28;
+    self.cameraGhostRing.layer.cornerRadius = 26;
     self.cameraGhostRing.layer.borderWidth = 1.6;
     self.cameraGhostRing.backgroundColor = [UIColor clearColor];
     self.cameraGhostRing.alpha = 0.0;
     [self addSubview:self.cameraGhostRing];
 
-    // ABXY Diamond (with subtle Xbox 360 accent dot harmonizing with active Sonic/Shadow/Silver theme)
-    self.btnA = [self makeButton:@"A" tag:kBtnA fontSize:18 pill:NO xboxDot:[UIColor colorWithRed:0.22 green:0.88 blue:0.38 alpha:0.95]];
-    self.btnB = [self makeButton:@"B" tag:kBtnB fontSize:18 pill:NO xboxDot:[UIColor colorWithRed:0.98 green:0.26 blue:0.26 alpha:0.95]];
-    self.btnX = [self makeButton:@"X" tag:kBtnX fontSize:18 pill:NO xboxDot:[UIColor colorWithRed:0.22 green:0.62 blue:1.00 alpha:0.95]];
-    self.btnY = [self makeButton:@"Y" tag:kBtnY fontSize:18 pill:NO xboxDot:[UIColor colorWithRed:1.00 green:0.82 blue:0.18 alpha:0.95]];
+    self.btnA = [self makeButton:@"A" tag:kBtnA fontSize:18 pill:NO abxy:YES xboxDot:[UIColor colorWithRed:0.22 green:0.88 blue:0.38 alpha:0.95]];
+    self.btnB = [self makeButton:@"B" tag:kBtnB fontSize:18 pill:NO abxy:YES xboxDot:[UIColor colorWithRed:0.98 green:0.26 blue:0.26 alpha:0.95]];
+    self.btnX = [self makeButton:@"X" tag:kBtnX fontSize:18 pill:NO abxy:YES xboxDot:[UIColor colorWithRed:0.22 green:0.62 blue:1.00 alpha:0.95]];
+    self.btnY = [self makeButton:@"Y" tag:kBtnY fontSize:18 pill:NO abxy:YES xboxDot:[UIColor colorWithRed:1.00 green:0.82 blue:0.18 alpha:0.95]];
 
-    // Shoulders & Analog Triggers
-    self.btnLB = [self makeButton:@"LB" tag:kBtnLB fontSize:13 pill:YES xboxDot:nil];
-    self.btnLT = [self makeButton:@"LT" tag:kTagLT fontSize:13 pill:YES xboxDot:nil];
-    self.btnRB = [self makeButton:@"RB" tag:kBtnRB fontSize:13 pill:YES xboxDot:nil];
-    self.btnRT = [self makeButton:@"RT" tag:kTagRT fontSize:13 pill:YES xboxDot:nil];
+    self.btnLB = [self makeButton:@"LB" tag:kBtnLB fontSize:13 pill:YES abxy:NO xboxDot:nil];
+    self.btnLT = [self makeButton:@"LT" tag:kTagLT fontSize:13 pill:YES abxy:NO xboxDot:nil];
+    self.btnRB = [self makeButton:@"RB" tag:kBtnRB fontSize:13 pill:YES abxy:NO xboxDot:nil];
+    self.btnRT = [self makeButton:@"RT" tag:kTagRT fontSize:13 pill:YES abxy:NO xboxDot:nil];
 
-    // Sleek Start & Back (NO "06" button or Mods menu)
-    self.btnBack  = [self makeButton:@"BACK"  tag:kBtnBack  fontSize:11 pill:YES xboxDot:nil];
-    self.btnStart = [self makeButton:@"START" tag:kBtnStart fontSize:11 pill:YES xboxDot:nil];
+    self.btnBack  = [self makeButton:@"BACK"  tag:kBtnBack  fontSize:11 pill:YES abxy:NO xboxDot:nil];
+    self.btnStart = [self makeButton:@"START" tag:kBtnStart fontSize:11 pill:YES abxy:NO xboxDot:nil];
 
+    self.abxyButtons = @[ self.btnA, self.btnB, self.btnX, self.btnY ];
+    self.otherButtons = @[ self.btnLB, self.btnLT, self.btnRB, self.btnRT, self.btnBack, self.btnStart ];
     self.allButtons = @[
         self.btnA, self.btnB, self.btnX, self.btnY,
         self.btnLB, self.btnLT, self.btnRB, self.btnRT,
@@ -618,32 +646,33 @@ static void GetPaletteForTheme(int theme,
     CGFloat topPad    = MAX(safe.top, 12.0) + 6.0;
     CGFloat bottomPad = MAX(safe.bottom, 12.0) + 8.0;
 
-    BOOL isCompact = (MIN(w, h) < 420.0); // iPhone vs iPad sizing
+    BOOL isCompact = (MIN(w, h) < 420.0);
+    self.isCompactLayout = isCompact;
     CGFloat stickSize = isCompact ? 132.0 : 158.0;
     CGFloat dpadSize  = isCompact ? 86.0  : 102.0;
-    CGFloat abxyBtn   = isCompact ? 54.0  : 62.0;
-    CGFloat abxyStep  = isCompact ? 54.0  : 64.0;
-    CGFloat shW       = isCompact ? 64.0  : 78.0;
-    CGFloat shH       = isCompact ? 34.0  : 40.0;
-    CGFloat menuW     = isCompact ? 62.0  : 74.0;
-    CGFloat menuH     = isCompact ? 28.0  : 32.0;
+    CGFloat abxyBtn   = isCompact ? 56.0  : 64.0;
+    CGFloat abxyStep  = isCompact ? 55.0  : 64.0;
+    CGFloat shW       = isCompact ? 66.0  : 78.0;
+    CGFloat shH       = isCompact ? 36.0  : 42.0;
+    CGFloat menuW     = isCompact ? 64.0  : 74.0;
+    CGFloat menuH     = isCompact ? 30.0  : 34.0;
 
-    // 1. Left Analog Stick (bottom-left ergonomic thumb anchor)
+    // 1. Left Analog Stick
     CGFloat stickX = leftPad + 12.0;
     CGFloat stickY = h - bottomPad - stickSize - 8.0;
     self.leftStickView.frame = CGRectMake(stickX, stickY, stickSize, stickSize);
 
-    // Generous left-stick touch capture area around the base
-    self.leftStickZone = CGRectMake(0, MAX(topPad + shH + 14.0, stickY - 56.0),
-                                    stickX + stickSize + 36.0,
-                                    h - MAX(topPad + shH + 14.0, stickY - 56.0));
-
-    // 2. 8-Way D-Pad (cleanly positioned to the inner-right of the left stick, bottom edge)
+    // 2. 8-Way D-Pad (cleanly positioned to inner-right of left stick)
     CGFloat dpadX = CGRectGetMaxX(self.leftStickView.frame) + (isCompact ? 18.0 : 28.0);
     CGFloat dpadY = h - bottomPad - dpadSize - 4.0;
     self.dpadView.frame = CGRectMake(dpadX, dpadY, dpadSize, dpadSize);
+    self.dpadHitZone = CGRectInset(self.dpadView.frame, -10.0, -10.0);
 
-    // 3. ABXY Diamond Cluster (bottom-right ergonomic thumb arc)
+    // Left stick capture zone stops cleanly before D-Pad hit box
+    CGFloat stickZoneTop = MAX(topPad + shH + 12.0, stickY - 52.0);
+    self.leftStickZone = CGRectMake(0, stickZoneTop, CGRectGetMinX(self.dpadHitZone), h - stickZoneTop);
+
+    // 3. ABXY Diamond Cluster
     CGFloat clusterCX = w - rightPad - abxyStep - abxyBtn * 0.5 - 8.0;
     CGFloat clusterCY = h - bottomPad - abxyStep - abxyBtn * 0.5 - 10.0;
     self.btnA.frame = CGRectMake(clusterCX - abxyBtn * 0.5, clusterCY + abxyStep - abxyBtn * 0.5, abxyBtn, abxyBtn);
@@ -651,22 +680,62 @@ static void GetPaletteForTheme(int theme,
     self.btnX.frame = CGRectMake(clusterCX - abxyStep - abxyBtn * 0.5, clusterCY - abxyBtn * 0.5, abxyBtn, abxyBtn);
     self.btnY.frame = CGRectMake(clusterCX - abxyBtn * 0.5, clusterCY - abxyStep - abxyBtn * 0.5, abxyBtn, abxyBtn);
 
-    // 4. Top-Left Shoulders (LB + LT side-by-side) & Top-Right Shoulders (RT + RB)
+    CGFloat abxyExtent = abxyStep + abxyBtn * 0.5 + 14.0;
+    self.abxyClusterZone = CGRectMake(clusterCX - abxyExtent, clusterCY - abxyExtent, abxyExtent * 2.0, abxyExtent * 2.0);
+
+    // 4. Top-Left & Top-Right Shoulders/Triggers
     self.btnLB.frame = CGRectMake(leftPad, topPad, shW, shH);
     self.btnLT.frame = CGRectMake(leftPad + shW + 10.0, topPad, shW, shH);
-
     self.btnRB.frame = CGRectMake(w - rightPad - shW, topPad, shW, shH);
     self.btnRT.frame = CGRectMake(w - rightPad - shW * 2.0 - 10.0, topPad, shW, shH);
 
-    // 5. Top-Center BACK & START pills (clean pair, no "06" button)
+    // 5. Top-Center BACK & START
     CGFloat centerX = w * 0.5;
     self.btnBack.frame  = CGRectMake(centerX - menuW - 12.0, topPad + 2.0, menuW, menuH);
     self.btnStart.frame = CGRectMake(centerX + 12.0,         topPad + 2.0, menuW, menuH);
 
-    // 6. Right-side camera swipe zone (open right region between shoulders and ABXY)
-    CGFloat camMinX = w * 0.56;
+    // 6. Right-side camera swipe zone
+    CGFloat camMinX = w * 0.54;
     CGFloat camMinY = topPad + shH + 10.0;
     self.rightCameraZone = CGRectMake(camMinX, camMinY, w - camMinX, h - camMinY);
+}
+
+// Find expanded hit on shoulder/menu buttons (+12pt padding)
+- (Sonic06PadButton *)hitOtherButtonAtPoint:(CGPoint)pt {
+    for (Sonic06PadButton *btn in self.otherButtons) {
+        CGRect hitRect = CGRectInset(btn.frame, -12.0, -12.0);
+        if (CGRectContainsPoint(hitRect, pt)) {
+            return btn;
+        }
+    }
+    return nil;
+}
+
+// Find nearest ABXY face button inside the expanded diamond (zero dead gaps + supports thumb-sliding!)
+- (Sonic06PadButton *)hitABXYButtonAtPoint:(CGPoint)pt allowDiamondFallback:(BOOL)allowFallback {
+    Sonic06PadButton *best = nil;
+    CGFloat bestDist = CGFLOAT_MAX;
+    const CGFloat directPad = 14.0;
+    for (Sonic06PadButton *btn in self.abxyButtons) {
+        CGFloat radius = btn.bounds.size.width * 0.5 + directPad;
+        CGFloat d = std::hypot(pt.x - btn.center.x, pt.y - btn.center.y);
+        if (d <= radius && d < bestDist) {
+            bestDist = d;
+            best = btn;
+        }
+    }
+    if (best || !allowFallback) return best;
+
+    if (CGRectContainsPoint(self.abxyClusterZone, pt)) {
+        for (Sonic06PadButton *btn in self.abxyButtons) {
+            CGFloat d = std::hypot(pt.x - btn.center.x, pt.y - btn.center.y);
+            if (d < bestDist) {
+                bestDist = d;
+                best = btn;
+            }
+        }
+    }
+    return best;
 }
 
 // Pass-through touches outside controls/zones so ImGui menus in the center remain tappable
@@ -674,34 +743,332 @@ static void GetPaletteForTheme(int theme,
     if (self.hidden || !self.userInteractionEnabled || self.alpha < 0.01) {
         return nil;
     }
-    // Check explicit subviews (buttons & D-Pad) first
-    for (UIView *sub in [self.subviews reverseObjectEnumerator]) {
-        if (!sub.userInteractionEnabled || sub.hidden || sub.alpha < 0.01) continue;
-        CGPoint local = [sub convertPoint:point fromView:self];
-        UIView *hit = [sub hitTest:local withEvent:event];
-        if (hit) return hit;
-    }
-    // Capture touches in left stick zone or right camera swipe zone
-    if (CGRectContainsPoint(self.leftStickZone, point) ||
+    if ([self hitOtherButtonAtPoint:point] != nil ||
+        [self hitABXYButtonAtPoint:point allowDiamondFallback:NO] != nil ||
+        CGRectContainsPoint(self.dpadHitZone, point) ||
+        CGRectContainsPoint(self.leftStickZone, point) ||
         CGRectContainsPoint(self.rightCameraZone, point)) {
         return self;
     }
     return nil;
 }
 
-- (void)onButtonDown:(Sonic06PadButton *)sender {
-    [sender setPressedVisual:YES];
-    [self playTapHaptic:0.50f sharpness:0.68f];
-    if (sender.tag == kTagLT) { g_lt.store(255, std::memory_order_relaxed); return; }
-    if (sender.tag == kTagRT) { g_rt.store(255, std::memory_order_relaxed); return; }
-    g_buttons.fetch_or(static_cast<uint32_t>(sender.tag), std::memory_order_relaxed);
+- (void)recomputeAtomicButtonState {
+    uint32_t btnMask = self.dpadView.activeMask;
+    uint8_t lt = 0;
+    uint8_t rt = 0;
+
+    for (Sonic06PadButton *btn in self.allButtons) {
+        BOOL pressed = NO;
+        for (int i = 0; i < kMaxTrackedTouches; ++i) {
+            if (_slots[i].touch != nullptr && _slots[i].activeButton == btn) {
+                pressed = YES;
+                break;
+            }
+        }
+        [btn setPressedVisual:pressed];
+        if (pressed) {
+            if (btn.padTag == kTagLT) lt = 255;
+            else if (btn.padTag == kTagRT) rt = 255;
+            else btnMask |= static_cast<uint32_t>(btn.padTag);
+        }
+    }
+
+    g_buttons.store(btnMask, std::memory_order_release);
+    g_lt.store(lt, std::memory_order_release);
+    g_rt.store(rt, std::memory_order_release);
 }
 
-- (void)onButtonUp:(Sonic06PadButton *)sender {
-    [sender setPressedVisual:NO];
-    if (sender.tag == kTagLT) { g_lt.store(0, std::memory_order_relaxed); return; }
-    if (sender.tag == kTagRT) { g_rt.store(0, std::memory_order_relaxed); return; }
-    g_buttons.fetch_and(~static_cast<uint32_t>(sender.tag), std::memory_order_relaxed);
+- (void)updateLeftStickForPoint:(CGPoint)pt {
+    // Tighter throw radius (36pt compact / 44pt iPad) + crisp response curve for instantaneous movement
+    const CGFloat maxR = self.isCompactLayout ? 36.0 : 44.0;
+    CGFloat dx = pt.x - self.leftStickOrigin.x;
+    CGFloat dy = -(pt.y - self.leftStickOrigin.y); // Xbox 360 +Y is Up
+    CGFloat dist = std::hypot(dx, dy);
+
+    CGFloat nx = 0.0;
+    CGFloat ny = 0.0;
+    CGFloat visX = 0.0;
+    CGFloat visY = 0.0;
+
+    if (dist > 0.001) {
+        CGFloat rawMag = std::fmin(1.0, dist / maxR);
+        CGFloat dirX = dx / dist;
+        CGFloat dirY = dy / dist;
+        visX = dirX * rawMag;
+        visY = dirY * rawMag;
+
+        // 7% radial deadzone, saturating to full speed at 90% throw with subtle responsiveness boost
+        constexpr CGFloat kDead = 0.07;
+        constexpr CGFloat kSat  = 0.90;
+        if (rawMag > kDead) {
+            CGFloat remapped = std::fmin(1.0, (rawMag - kDead) / (kSat - kDead));
+            CGFloat curved = std::pow(remapped, 0.85);
+            nx = dirX * curved;
+            ny = dirY * curved;
+        }
+    }
+
+    g_lx.store(static_cast<int16_t>(std::lround(nx * 32767.0)), std::memory_order_release);
+    g_ly.store(static_cast<int16_t>(std::lround(ny * 32767.0)), std::memory_order_release);
+    [self.leftStickView setStickVectorX:visX y:visY animated:NO];
+}
+
+- (void)updateRightCameraForPoint:(CGPoint)pt {
+    constexpr CGFloat kCamRadius = 42.0;
+    CGFloat dx = pt.x - self.rightStickOrigin.x;
+    CGFloat dy = -(pt.y - self.rightStickOrigin.y);
+    CGFloat dist = std::hypot(dx, dy);
+
+    CGFloat nx = 0.0;
+    CGFloat ny = 0.0;
+    CGFloat clampedDx = dx;
+    CGFloat clampedDy = dy;
+    if (dist > 0.001) {
+        if (dist > kCamRadius) {
+            clampedDx = (dx / dist) * kCamRadius;
+            clampedDy = (dy / dist) * kCamRadius;
+        }
+        CGFloat rawMag = std::fmin(1.0, dist / kCamRadius);
+        constexpr CGFloat kCamDead = 0.06;
+        if (rawMag > kCamDead) {
+            CGFloat remapped = (rawMag - kCamDead) / (1.0 - kCamDead);
+            CGFloat curved = std::pow(remapped, 0.85);
+            nx = (dx / dist) * curved;
+            ny = (dy / dist) * curved;
+        }
+    }
+
+    g_rx.store(static_cast<int16_t>(std::lround(nx * 32767.0)), std::memory_order_release);
+    g_ry.store(static_cast<int16_t>(std::lround(ny * 32767.0)), std::memory_order_release);
+
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    self.cameraGhostRing.center = CGPointMake(self.rightStickOrigin.x + clampedDx * 0.40,
+                                              self.rightStickOrigin.y - clampedDy * 0.40);
+    [CATransaction commit];
+}
+
+- (int)findSlotForTouch:(UITouch *)t {
+    for (int i = 0; i < kMaxTrackedTouches; ++i) {
+        if (_slots[i].touch == t) return i;
+    }
+    return -1;
+}
+
+- (int)allocSlotForTouch:(UITouch *)t role:(TouchRole)role button:(Sonic06PadButton *)btn {
+    for (int i = 0; i < kMaxTrackedTouches; ++i) {
+        if (_slots[i].touch == nullptr) {
+            _slots[i].touch = t;
+            _slots[i].role = role;
+            _slots[i].activeButton = btn;
+            return i;
+        }
+    }
+    return -1;
+}
+
+- (BOOL)hasActiveRole:(TouchRole)role {
+    for (int i = 0; i < kMaxTrackedTouches; ++i) {
+        if (_slots[i].touch != nullptr && _slots[i].role == role) return YES;
+    }
+    return NO;
+}
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    BOOL needButtonRecompute = NO;
+    for (UITouch *t in touches) {
+        if ([self findSlotForTouch:t] >= 0) continue;
+        CGPoint pt = [t locationInView:self];
+
+        // 1. Check shoulders / triggers / BACK / START (expanded +12pt hit rect)
+        Sonic06PadButton *otherBtn = [self hitOtherButtonAtPoint:pt];
+        if (otherBtn) {
+            if ([self allocSlotForTouch:t role:kRoleButton button:otherBtn] >= 0) {
+                [self triggerFastTapHaptic:NO];
+                needButtonRecompute = YES;
+            }
+            continue;
+        }
+
+        // 2. Check ABXY face buttons (expanded +14pt circular radius, supports thumb-sliding!)
+        Sonic06PadButton *abxyBtn = [self hitABXYButtonAtPoint:pt allowDiamondFallback:NO];
+        if (abxyBtn) {
+            if ([self allocSlotForTouch:t role:kRoleABXY button:abxyBtn] >= 0) {
+                [self triggerFastTapHaptic:YES];
+                needButtonRecompute = YES;
+            }
+            continue;
+        }
+
+        // 3. Check 8-way D-Pad (expanded +10pt hit zone)
+        if (![self hasActiveRole:kRoleDPad] && CGRectContainsPoint(self.dpadHitZone, pt)) {
+            if ([self allocSlotForTouch:t role:kRoleDPad button:nil] >= 0) {
+                CGPoint localPt = [self convertPoint:pt toView:self.dpadView];
+                uint32_t newMask = [self.dpadView directionMaskForLocalPoint:localPt];
+                [self.dpadView setVisualMask:newMask];
+                if (newMask != 0) [self triggerFastTapHaptic:NO];
+                needButtonRecompute = YES;
+            }
+            continue;
+        }
+
+        // 4. Check Left Analog Stick zone (instant directional response!)
+        if (![self hasActiveRole:kRoleLeftStick] && CGRectContainsPoint(self.leftStickZone, pt)) {
+            if ([self allocSlotForTouch:t role:kRoleLeftStick button:nil] >= 0) {
+                CGPoint center = self.leftStickView.center;
+                CGFloat stickRadius = self.leftStickView.bounds.size.width * 0.5;
+                CGFloat distFromCenter = std::hypot(pt.x - center.x, pt.y - center.y);
+                if (distFromCenter <= stickRadius * 1.15) {
+                    // Direct tap inside/around stick: anchor to ring center for immediate directional throw!
+                    self.leftStickOrigin = center;
+                } else {
+                    // Outer floating tap: bias origin slightly toward center so initial press already nudges cleanly
+                    CGFloat pull = MIN(distFromCenter - stickRadius * 0.5, 28.0);
+                    self.leftStickOrigin = CGPointMake(
+                        pt.x - ((pt.x - center.x) / distFromCenter) * pull,
+                        pt.y - ((pt.y - center.y) / distFromCenter) * pull
+                    );
+                }
+                [self updateLeftStickForPoint:pt];
+            }
+            continue;
+        }
+
+        // 5. Right camera swipe zone
+        if (![self hasActiveRole:kRoleRightCamera] && CGRectContainsPoint(self.rightCameraZone, pt)) {
+            if ([self allocSlotForTouch:t role:kRoleRightCamera button:nil] >= 0) {
+                self.rightStickOrigin = pt;
+                [CATransaction begin];
+                [CATransaction setDisableActions:YES];
+                self.cameraGhostRing.center = pt;
+                self.cameraGhostRing.alpha = 0.55;
+                [CATransaction commit];
+            }
+        }
+    }
+
+    if (needButtonRecompute) {
+        [self recomputeAtomicButtonState];
+    }
+}
+
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    BOOL needButtonRecompute = NO;
+    for (UITouch *t in touches) {
+        int idx = [self findSlotForTouch:t];
+        if (idx < 0) continue;
+        CGPoint pt = [t locationInView:self];
+
+        switch (_slots[idx].role) {
+            case kRoleLeftStick:
+                [self updateLeftStickForPoint:pt];
+                break;
+
+            case kRoleRightCamera:
+                [self updateRightCameraForPoint:pt];
+                break;
+
+            case kRoleDPad: {
+                CGPoint localPt = [self convertPoint:pt toView:self.dpadView];
+                uint32_t prevMask = self.dpadView.activeMask;
+                uint32_t newMask = [self.dpadView directionMaskForLocalPoint:localPt];
+                if (newMask != prevMask) {
+                    [self.dpadView setVisualMask:newMask];
+                    if (newMask != 0) [self triggerFastTapHaptic:NO];
+                    needButtonRecompute = YES;
+                }
+                break;
+            }
+
+            case kRoleABXY: {
+                // Seamless thumb-sliding across A / B / X / Y (essential for Sonic combos!)
+                Sonic06PadButton *nextBtn = [self hitABXYButtonAtPoint:pt allowDiamondFallback:YES];
+                if (nextBtn != _slots[idx].activeButton) {
+                    _slots[idx].activeButton = nextBtn;
+                    if (nextBtn != nil) [self triggerFastTapHaptic:YES];
+                    needButtonRecompute = YES;
+                }
+                break;
+            }
+
+            case kRoleButton:
+            default:
+                break;
+        }
+    }
+
+    if (needButtonRecompute) {
+        [self recomputeAtomicButtonState];
+    }
+}
+
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    BOOL needButtonRecompute = NO;
+    for (UITouch *t in touches) {
+        int idx = [self findSlotForTouch:t];
+        if (idx < 0) continue;
+
+        TouchRole role = _slots[idx].role;
+        _slots[idx] = { nullptr, kRoleNone, nullptr };
+
+        switch (role) {
+            case kRoleLeftStick:
+                g_lx.store(0, std::memory_order_release);
+                g_ly.store(0, std::memory_order_release);
+                [self.leftStickView setStickVectorX:0 y:0 animated:YES];
+                break;
+
+            case kRoleRightCamera:
+                g_rx.store(0, std::memory_order_release);
+                g_ry.store(0, std::memory_order_release);
+                [UIView animateWithDuration:0.12 animations:^{
+                    self.cameraGhostRing.alpha = 0.0;
+                }];
+                break;
+
+            case kRoleDPad:
+                [self.dpadView setVisualMask:0];
+                needButtonRecompute = YES;
+                break;
+
+            case kRoleABXY:
+            case kRoleButton:
+                needButtonRecompute = YES;
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    if (needButtonRecompute) {
+        [self recomputeAtomicButtonState];
+    }
+}
+
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    [self touchesEnded:touches withEvent:event];
+}
+
+- (void)resetAllInputs {
+    for (int i = 0; i < kMaxTrackedTouches; ++i) {
+        _slots[i] = { nullptr, kRoleNone, nullptr };
+    }
+    g_buttons.store(0, std::memory_order_release);
+    g_lt.store(0, std::memory_order_release);
+    g_rt.store(0, std::memory_order_release);
+    g_lx.store(0, std::memory_order_release);
+    g_ly.store(0, std::memory_order_release);
+    g_rx.store(0, std::memory_order_release);
+    g_ry.store(0, std::memory_order_release);
+
+    [self.leftStickView setStickVectorX:0 y:0 animated:NO];
+    [self.dpadView setVisualMask:0];
+    self.cameraGhostRing.alpha = 0.0;
+    for (Sonic06PadButton *btn in self.allButtons) {
+        [btn setPressedVisual:NO];
+    }
 }
 
 - (void)observePhysicalControllers {
@@ -710,7 +1077,9 @@ static void GetPaletteForTheme(int theme,
                     object:nil
                      queue:[NSOperationQueue mainQueue]
                 usingBlock:^(__unused NSNotification *note) {
-        self.hidden = ([GCController controllers].count > 0);
+        BOOL hasPhysical = ([GCController controllers].count > 0);
+        if (hasPhysical) [self resetAllInputs];
+        self.hidden = hasPhysical;
     }];
     [nc addObserverForName:GCControllerDidDisconnectNotification
                     object:nil
@@ -718,91 +1087,6 @@ static void GetPaletteForTheme(int theme,
                 usingBlock:^(__unused NSNotification *note) {
         self.hidden = ([GCController controllers].count > 0);
     }];
-}
-
-- (void)updateLeftStickForPoint:(CGPoint)pt {
-    CGFloat maxR = MAX(42.0, self.leftStickView.bounds.size.width * 0.36);
-    CGFloat dx = pt.x - self.leftStickOrigin.x;
-    CGFloat dy = -(pt.y - self.leftStickOrigin.y); // Xbox 360 +Y is Up
-    CGFloat dist = std::hypot(dx, dy);
-    if (dist > maxR) {
-        dx = (dx / dist) * maxR;
-        dy = (dy / dist) * maxR;
-    }
-    CGFloat nx = dx / maxR;
-    CGFloat ny = dy / maxR;
-    g_lx.store(static_cast<int16_t>(std::lround(nx * 32767.0)), std::memory_order_relaxed);
-    g_ly.store(static_cast<int16_t>(std::lround(ny * 32767.0)), std::memory_order_relaxed);
-    [self.leftStickView setStickVectorX:nx y:ny animated:NO];
-}
-
-- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    for (UITouch *t in touches) {
-        CGPoint pt = [t locationInView:self];
-        if (!self.leftStickTouch && CGRectContainsPoint(self.leftStickZone, pt)) {
-            self.leftStickTouch = t;
-            // Anchor to visible stick center if tapped near it; otherwise smooth floating origin
-            CGPoint center = self.leftStickView.center;
-            CGFloat distFromCenter = std::hypot(pt.x - center.x, pt.y - center.y);
-            if (distFromCenter <= self.leftStickView.bounds.size.width * 0.58) {
-                self.leftStickOrigin = center;
-                [self updateLeftStickForPoint:pt];
-            } else {
-                self.leftStickOrigin = pt;
-            }
-        } else if (!self.rightStickTouch && CGRectContainsPoint(self.rightCameraZone, pt)) {
-            self.rightStickTouch = t;
-            self.rightStickOrigin = pt;
-            self.cameraGhostRing.center = pt;
-            [UIView animateWithDuration:0.12 animations:^{
-                self.cameraGhostRing.alpha = 0.55;
-            }];
-        }
-    }
-}
-
-- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    constexpr CGFloat kCamRadius = 62.0;
-    for (UITouch *t in touches) {
-        CGPoint pt = [t locationInView:self];
-        if (t == self.leftStickTouch) {
-            [self updateLeftStickForPoint:pt];
-        } else if (t == self.rightStickTouch) {
-            CGFloat dx = pt.x - self.rightStickOrigin.x;
-            CGFloat dy = -(pt.y - self.rightStickOrigin.y);
-            CGFloat dist = std::hypot(dx, dy);
-            if (dist > kCamRadius) {
-                dx = (dx / dist) * kCamRadius;
-                dy = (dy / dist) * kCamRadius;
-            }
-            g_rx.store(static_cast<int16_t>(std::lround((dx / kCamRadius) * 32767.0)), std::memory_order_relaxed);
-            g_ry.store(static_cast<int16_t>(std::lround((dy / kCamRadius) * 32767.0)), std::memory_order_relaxed);
-            self.cameraGhostRing.center = CGPointMake(self.rightStickOrigin.x + dx * 0.35,
-                                                      self.rightStickOrigin.y - dy * 0.35);
-        }
-    }
-}
-
-- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    for (UITouch *t in touches) {
-        if (t == self.leftStickTouch) {
-            self.leftStickTouch = nil;
-            g_lx.store(0, std::memory_order_relaxed);
-            g_ly.store(0, std::memory_order_relaxed);
-            [self.leftStickView setStickVectorX:0 y:0 animated:YES];
-        } else if (t == self.rightStickTouch) {
-            self.rightStickTouch = nil;
-            g_rx.store(0, std::memory_order_relaxed);
-            g_ry.store(0, std::memory_order_relaxed);
-            [UIView animateWithDuration:0.16 animations:^{
-                self.cameraGhostRing.alpha = 0.0;
-            }];
-        }
-    }
-}
-
-- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    [self touchesEnded:touches withEvent:event];
 }
 
 @end
@@ -864,6 +1148,7 @@ void MarathonIOS_AttachVirtualController(void*) {
 void MarathonIOS_SetVirtualControllerVisible(bool visible) {
     dispatch_async(dispatch_get_main_queue(), ^{
         if (g_overlayView) {
+            if (!visible) [g_overlayView resetAllInputs];
             g_overlayView.hidden = !visible || ([GCController controllers].count > 0);
         }
     });
@@ -884,20 +1169,37 @@ void MarathonIOS_SetCharacterTheme(int theme) {
 
 void MarathonIOS_GetVirtualControllerState(MarathonTouchGamepadState* outState) {
     if (!outState) return;
-    outState->buttons      = g_buttons.load(std::memory_order_relaxed);
-    outState->leftTrigger  = g_lt.load(std::memory_order_relaxed);
-    outState->rightTrigger = g_rt.load(std::memory_order_relaxed);
-    outState->thumbLX      = g_lx.load(std::memory_order_relaxed);
-    outState->thumbLY      = g_ly.load(std::memory_order_relaxed);
-    outState->thumbRX      = g_rx.load(std::memory_order_relaxed);
-    outState->thumbRY      = g_ry.load(std::memory_order_relaxed);
+    outState->buttons      = g_buttons.load(std::memory_order_acquire);
+    outState->leftTrigger  = g_lt.load(std::memory_order_acquire);
+    outState->rightTrigger = g_rt.load(std::memory_order_acquire);
+    outState->thumbLX      = g_lx.load(std::memory_order_acquire);
+    outState->thumbLY      = g_ly.load(std::memory_order_acquire);
+    outState->thumbRX      = g_rx.load(std::memory_order_acquire);
+    outState->thumbRY      = g_ry.load(std::memory_order_acquire);
+}
+
+void MarathonIOS_ResetVirtualControllerInputs(void) {
+    g_buttons.store(0, std::memory_order_release);
+    g_lt.store(0, std::memory_order_release);
+    g_rt.store(0, std::memory_order_release);
+    g_lx.store(0, std::memory_order_release);
+    g_ly.store(0, std::memory_order_release);
+    g_rx.store(0, std::memory_order_release);
+    g_ry.store(0, std::memory_order_release);
+
+    if ([NSThread isMainThread]) {
+        if (g_overlayView) [g_overlayView resetAllInputs];
+    } else {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (g_overlayView) [g_overlayView resetAllInputs];
+        });
+    }
 }
 
 void MarathonIOS_TriggerHapticRumble(uint16_t lowFreqMotor, uint16_t highFreqMotor) {
     float intensity = std::fmin(1.0f, (static_cast<float>(lowFreqMotor) + static_cast<float>(highFreqMotor)) / 65535.0f);
     if (intensity < 0.12f) return;
 
-    // Throttle continuous Xbox 360 rumble updates to ~16 Hz so we never flood the main queue
     struct timespec ts{};
     clock_gettime(CLOCK_MONOTONIC, &ts);
     uint64_t nowMs = static_cast<uint64_t>(ts.tv_sec) * 1000ULL + static_cast<uint64_t>(ts.tv_nsec) / 1000000ULL;
@@ -908,7 +1210,7 @@ void MarathonIOS_TriggerHapticRumble(uint16_t lowFreqMotor, uint16_t highFreqMot
     float sharpness = (highFreqMotor > lowFreqMotor) ? 0.78f : 0.35f;
     dispatch_async(dispatch_get_main_queue(), ^{
         if (g_overlayView && !g_overlayView.hidden) {
-            [g_overlayView playTapHaptic:intensity sharpness:sharpness];
+            [g_overlayView playRumbleHaptic:intensity sharpness:sharpness];
         }
     });
 }
