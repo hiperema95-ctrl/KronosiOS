@@ -2319,11 +2319,57 @@ if metal_cpp.exists():
             "namespace plume {",
             "// MARATHON_PLUME_IOS_METAL_PATCH\\n"
             "#if !PLUME_MACOS\\n"
+            "#include <atomic>\\n"
+            "#include <cstdio>\\n"
             'extern "C" void MarathonIOS_LogLine(const char* tag, const char* msg);\\n'
             "#endif\\n"
             "namespace plume {\\n"
             "#if !PLUME_MACOS\\n"
             "    void getIOSMetalLayerSize(void *layerPtr, uint32_t &dstWidth, uint32_t &dstHeight);\\n"
+            "    MTL::ResourceUsage mapResourceUsage(RenderDescriptorRangeType type);\\n"
+            "    static std::mutex g_iosDescriptorSetMutex;\\n"
+            "    static std::atomic<uint64_t> g_iosAddressableGen{1};\\n"
+            "    static std::atomic<uint64_t> g_iosDescriptorGen{1};\\n"
+            "    static thread_local const MTL::CommandEncoder* g_iosLastRenderEncoder = nullptr;\\n"
+            "    static thread_local uint64_t g_iosLastRenderAddrGen = 0;\\n"
+            "    static thread_local uint64_t g_iosLastRenderDescGen = 0;\\n"
+            "    static thread_local const MTL::CommandEncoder* g_iosLastComputeEncoder = nullptr;\\n"
+            "    static thread_local uint64_t g_iosLastComputeAddrGen = 0;\\n"
+            "    static thread_local uint64_t g_iosLastComputeDescGen = 0;\\n"
+            "    static std::atomic<uint32_t> g_iosMetalCmdErrCount{0};\\n"
+            "    static void logIOSMetalCmdBufferError(const char* stage, MTL::CommandBuffer* cmdBuffer) {\\n"
+            "        if (!cmdBuffer || cmdBuffer->status() != MTL::CommandBufferStatusError) return;\\n"
+            "        const uint32_t n = g_iosMetalCmdErrCount.fetch_add(1, std::memory_order_relaxed);\\n"
+            "        if (n >= 24) return;\\n"
+            "        const char* lbl = (cmdBuffer->label() && cmdBuffer->label()->utf8String()) ? cmdBuffer->label()->utf8String() : \\"(unlabeled)\\";\\n"
+            "        const char* errDesc = (cmdBuffer->error() && cmdBuffer->error()->localizedDescription())\\n"
+            "            ? cmdBuffer->error()->localizedDescription()->utf8String() : \\"unknown GPU command buffer error\\";\\n"
+            "        char buf[512];\\n"
+            "        std::snprintf(buf, sizeof(buf), \\"[%s:%s #%u] %s\\", stage, lbl, n + 1, errDesc);\\n"
+            "        MarathonIOS_LogLine(\\"METAL_ERR\\", buf);\\n"
+            "        if (n == 23) {\\n"
+            "            MarathonIOS_LogLine(\\"METAL_ERR\\", \\"Further GPU command buffer errors suppressed (limit 24 reached)\\");\\n"
+            "        }\\n"
+            "    }\\n"
+            "    static inline void bindIOSDescriptorSetResources(MTL::CommandEncoder* encoder, bool isCompute, const MetalDescriptorSet* descriptorSet) {\\n"
+            "        if (encoder == nullptr || descriptorSet == nullptr) return;\\n"
+            "        std::lock_guard<std::mutex> lock(g_iosDescriptorSetMutex);\\n"
+            "        if (isCompute) {\\n"
+            "            auto* computeEncoder = static_cast<MTL::ComputeCommandEncoder*>(encoder);\\n"
+            "            for (const auto& entry : descriptorSet->resourceEntries) {\\n"
+            "                if (entry.resource != nullptr) {\\n"
+            "                    computeEncoder->useResource(entry.resource, mapResourceUsage(entry.type));\\n"
+            "                }\\n"
+            "            }\\n"
+            "        } else {\\n"
+            "            auto* renderEncoder = static_cast<MTL::RenderCommandEncoder*>(encoder);\\n"
+            "            for (const auto& entry : descriptorSet->resourceEntries) {\\n"
+            "                if (entry.resource != nullptr) {\\n"
+            "                    renderEncoder->useResource(entry.resource, mapResourceUsage(entry.type), MTL::RenderStageVertex | MTL::RenderStageFragment);\\n"
+            "                }\\n"
+            "            }\\n"
+            "        }\\n"
+            "    }\\n"
             "#endif",
             1
         )
@@ -2389,15 +2435,232 @@ if metal_cpp.exists():
         assert old_needs_resize in msrc, "Failed to locate MetalSwapChain::needsResize in plume_metal.cpp"
         msrc = msrc.replace(old_needs_resize, new_needs_resize, 1)
 
-        # 2a. MetalShader: avoid dispatch_get_main_queue() destructor & dispatch_data_t leak during parallel PSO compilation
+        # 2a. MetalBuffer / MetalBufferFormattedView / MetalTexture / MetalTextureView:
+        #     - Fix Depth32Float_Stencil8 illegally receiving MTL::TextureUsageShaderWrite on iOS (root cause of Invalid Resource 00000009!)
+        #     - Add MTL::TextureUsagePixelFormatView on iOS for swizzled/reinterpreted views (D3DFMT_L8 YUV movies, sRGB, depth/stencil)
+        #     - Log any null Metal allocation directly to ios_debug.log & add null guards
+        old_buf_ctor = '''        this->mtl = device->mtl->newBuffer(desc.size, mapResourceOption(desc.heapType));
+
+        addressable = desc.flags & RenderBufferFlag::DEVICE_ADDRESSABLE;
+        device->addResource(mtl, addressable);
+    }
+
+    MetalBuffer::~MetalBuffer() {
+        MetalAutoreleasePool releasePool;
+        device->removeResource(mtl, addressable);
+        mtl->release();
+    }'''
+        new_buf_ctor = '''        this->mtl = device->mtl->newBuffer(desc.size, mapResourceOption(desc.heapType));
+#if !PLUME_MACOS
+        if (this->mtl == nullptr) {
+            char errBuf[192];
+            std::snprintf(errBuf, sizeof(errBuf), "newBuffer FAILED: size=%llu heap=%d flags=0x%x",
+                static_cast<unsigned long long>(desc.size), static_cast<int>(desc.heapType), static_cast<unsigned>(desc.flags));
+            MarathonIOS_LogLine("METAL_ERR", errBuf);
+        }
+#endif
+
+        addressable = desc.flags & RenderBufferFlag::DEVICE_ADDRESSABLE;
+        device->addResource(mtl, addressable);
+    }
+
+    MetalBuffer::~MetalBuffer() {
+        MetalAutoreleasePool releasePool;
+        device->removeResource(mtl, addressable);
+        if (mtl != nullptr) {
+            mtl->release();
+        }
+    }'''
+        assert old_buf_ctor in msrc, "Failed to locate MetalBuffer ctor/dtor in plume_metal.cpp"
+        msrc = msrc.replace(old_buf_ctor, new_buf_ctor, 1)
+
+        old_bfv = '''        // Create texture with configured descriptor and alignment
+        MTL::TextureDescriptor *descriptor = MTL::TextureDescriptor::textureBufferDescriptor(pixelFormat, width, options, usage);
+        this->texture = buffer->mtl->newTexture(descriptor, 0, bytesPerRow);
+    }
+
+    MetalBufferFormattedView::~MetalBufferFormattedView() {
+        MetalAutoreleasePool releasePool;
+        texture->release();
+    }'''
+        new_bfv = '''        // Create texture with configured descriptor and alignment
+        MTL::TextureDescriptor *descriptor = MTL::TextureDescriptor::textureBufferDescriptor(pixelFormat, width, options, usage);
+        this->texture = (buffer->mtl != nullptr) ? buffer->mtl->newTexture(descriptor, 0, bytesPerRow) : nullptr;
+#if !PLUME_MACOS
+        if (this->texture == nullptr) {
+            char errBuf[192];
+            std::snprintf(errBuf, sizeof(errBuf), "MetalBufferFormattedView newTexture FAILED: fmt=%d w=%u bpr=%llu",
+                static_cast<int>(format), width, static_cast<unsigned long long>(bytesPerRow));
+            MarathonIOS_LogLine("METAL_ERR", errBuf);
+        }
+#endif
+    }
+
+    MetalBufferFormattedView::~MetalBufferFormattedView() {
+        MetalAutoreleasePool releasePool;
+        if (texture != nullptr) {
+            texture->release();
+        }
+    }'''
+        assert old_bfv in msrc, "Failed to locate MetalBufferFormattedView in plume_metal.cpp"
+        msrc = msrc.replace(old_bfv, new_bfv, 1)
+
+        old_tex_ctor = '''        descriptor->setTextureType(textureType);
+        descriptor->setStorageMode(MTL::StorageModePrivate);
+        descriptor->setPixelFormat(mapPixelFormat(desc.format));
+        descriptor->setWidth(desc.width);
+        descriptor->setHeight(desc.height);
+        descriptor->setDepth(desc.depth);
+        descriptor->setMipmapLevelCount(desc.mipLevels);
+        descriptor->setArrayLength(desc.arraySize);
+        descriptor->setSampleCount(desc.multisampling.sampleCount);
+
+        MTL::TextureUsage usage = mapTextureUsage(desc.flags);
+        // Add shader write usage if this texture might be used as a resolve target
+        if (desc.multisampling.sampleCount == 1 && (usage & MTL::TextureUsageRenderTarget)) {
+            usage |= MTL::TextureUsageShaderWrite;
+        }
+        descriptor->setUsage(usage);
+
+        this->mtl = device->mtl->newTexture(descriptor);
+        device->addResource(mtl);
+
+        // Release resources
+        descriptor->release();
+    }
+
+    MetalTexture::~MetalTexture() {
+        MetalAutoreleasePool releasePool;
+        device->removeResource(mtl);
+        mtl->release();
+    }'''
+        new_tex_ctor = '''        const MTL::PixelFormat pixelFormat = mapPixelFormat(desc.format);
+        descriptor->setTextureType(textureType);
+        descriptor->setStorageMode(MTL::StorageModePrivate);
+        descriptor->setPixelFormat(pixelFormat);
+        descriptor->setWidth(desc.width);
+        descriptor->setHeight(desc.height);
+        descriptor->setDepth(desc.depth);
+        descriptor->setMipmapLevelCount(desc.mipLevels);
+        descriptor->setArrayLength(desc.arraySize);
+        descriptor->setSampleCount(desc.multisampling.sampleCount);
+
+        MTL::TextureUsage usage = mapTextureUsage(desc.flags);
+        const bool isDepthPixelFormat =
+            (pixelFormat == MTL::PixelFormatDepth16Unorm) ||
+            (pixelFormat == MTL::PixelFormatDepth32Float) ||
+            (pixelFormat == MTL::PixelFormatDepth32Float_Stencil8);
+        // Add shader write usage ONLY for single-sample color render targets (depth/stencil formats forbid ShaderWrite on iOS Metal!)
+        if (desc.multisampling.sampleCount == 1 && (desc.flags & RenderTextureFlag::RENDER_TARGET) && !isDepthPixelFormat) {
+            usage |= MTL::TextureUsageShaderWrite;
+        }
+        if (isDepthPixelFormat) {
+            usage &= ~MTL::TextureUsageShaderWrite;
+        }
+#if !PLUME_MACOS
+        // Enable swizzled & pixel-format-reinterpreted views (D3DFMT_L8 YUV planes, sRGB views, depth/stencil views)
+        usage |= MTL::TextureUsagePixelFormatView;
+#endif
+        descriptor->setUsage(usage);
+
+        this->mtl = device->mtl->newTexture(descriptor);
+#if !PLUME_MACOS
+        if (this->mtl == nullptr) {
+            char errBuf[256];
+            std::snprintf(errBuf, sizeof(errBuf),
+                "newTexture FAILED: fmt=%d mtlFmt=%lu %ux%ux%u mips=%u arr=%u samples=%u flags=0x%x usage=0x%lx",
+                static_cast<int>(desc.format), static_cast<unsigned long>(pixelFormat),
+                desc.width, desc.height, desc.depth, desc.mipLevels, desc.arraySize,
+                desc.multisampling.sampleCount, static_cast<unsigned>(desc.flags), static_cast<unsigned long>(usage));
+            MarathonIOS_LogLine("METAL_ERR", errBuf);
+        }
+#endif
+        device->addResource(mtl);
+
+        // Release resources
+        descriptor->release();
+    }
+
+    MetalTexture::~MetalTexture() {
+        MetalAutoreleasePool releasePool;
+        device->removeResource(mtl);
+        if (mtl != nullptr) {
+            mtl->release();
+        }
+    }'''
+        assert old_tex_ctor in msrc, "Failed to locate MetalTexture ctor/dtor in plume_metal.cpp"
+        msrc = msrc.replace(old_tex_ctor, new_tex_ctor, 1)
+
+        msrc = msrc.replace(
+            "    void MetalTexture::setName(const std::string &name) {\\n        MetalAutoreleasePool releasePool;\\n        mtl->setLabel(NS::String::string(name.c_str(), NS::UTF8StringEncoding));\\n    }",
+            "    void MetalTexture::setName(const std::string &name) {\\n        if (mtl == nullptr) return;\\n        MetalAutoreleasePool releasePool;\\n        mtl->setLabel(NS::String::string(name.c_str(), NS::UTF8StringEncoding));\\n    }",
+            1
+        )
+
+        old_tex_view = '''        this->texture = texture->mtl->newTextureView(
+            mapPixelFormat(desc.format),
+            mapTextureViewType(desc.dimension, texture->desc.multisampling.sampleCount, arraySize),
+            { desc.mipSlice, mipLevels },
+            { desc.arrayIndex, arraySize },
+            mapTextureSwizzleChannels(desc.componentMapping)
+        );
+    }
+
+    MetalTextureView::~MetalTextureView() {
+        MetalAutoreleasePool releasePool;
+        texture->release();
+    }'''
+        new_tex_view = '''        this->texture = (texture->mtl != nullptr) ? texture->mtl->newTextureView(
+            mapPixelFormat(desc.format),
+            mapTextureViewType(desc.dimension, texture->desc.multisampling.sampleCount, arraySize),
+            { desc.mipSlice, mipLevels },
+            { desc.arrayIndex, arraySize },
+            mapTextureSwizzleChannels(desc.componentMapping)
+        ) : nullptr;
+#if !PLUME_MACOS
+        if (this->texture == nullptr) {
+            char errBuf[256];
+            std::snprintf(errBuf, sizeof(errBuf),
+                "newTextureView FAILED: parentNull=%d viewFmt=%d parentFmt=%d dim=%d mips=%u/%u arr=%u/%u",
+                texture->mtl == nullptr ? 1 : 0, static_cast<int>(desc.format), static_cast<int>(texture->desc.format),
+                static_cast<int>(desc.dimension), desc.mipSlice, mipLevels, desc.arrayIndex, arraySize);
+            MarathonIOS_LogLine("METAL_ERR", errBuf);
+        }
+#endif
+    }
+
+    MetalTextureView::~MetalTextureView() {
+        MetalAutoreleasePool releasePool;
+        if (texture != nullptr) {
+            texture->release();
+        }
+    }'''
+        assert old_tex_view in msrc, "Failed to locate MetalTextureView ctor/dtor in plume_metal.cpp"
+        msrc = msrc.replace(old_tex_view, new_tex_view, 1)
+
+        # 2b. MetalShader / MetalComputePipeline / MetalGraphicsPipeline: avoid dispatch_get_main_queue() leak & log shader/PSO errors to ios_debug.log
         old_shader_dispatch = '''        NS::Error *error = nullptr;
         const dispatch_data_t dispatchData = dispatch_data_create(data, size, dispatch_get_main_queue(), ^{});
-        library = device->mtl->newLibrary(dispatchData, &error);'''
+        library = device->mtl->newLibrary(dispatchData, &error);
+
+        if (error != nullptr) {
+            fprintf(stderr, "MTLDevice newLibraryWithSource: failed with error %s.\\\\n", error->localizedDescription()->utf8String());
+            return;
+        }'''
         new_shader_dispatch = '''        NS::Error *error = nullptr;
         const dispatch_data_t dispatchData = dispatch_data_create(data, size, nullptr, DISPATCH_DATA_DESTRUCTOR_DEFAULT);
         library = device->mtl->newLibrary(dispatchData, &error);
         if (dispatchData != nullptr) {
             dispatch_release(dispatchData);
+        }
+
+        if (error != nullptr || library == nullptr) {
+            const char* errStr = (error && error->localizedDescription()) ? error->localizedDescription()->utf8String() : "null MTLLibrary";
+            fprintf(stderr, "MTLDevice newLibraryWithSource: failed with error %s.\\\\n", errStr);
+#if !PLUME_MACOS
+            MarathonIOS_LogLine("METAL_ERR", errStr);
+#endif
+            return;
         }'''
         assert old_shader_dispatch in msrc, "Failed to locate dispatch_data_create in MetalShader"
         msrc = msrc.replace(old_shader_dispatch, new_shader_dispatch, 1)
@@ -2408,7 +2671,234 @@ if metal_cpp.exists():
             1
         )
 
-        # 2b. MetalSwapChain::present: transfer drawable ownership, remove cross-thread currentAvailableDrawableIndex race, log Metal errors
+        old_create_fn = '''        NS::Error *error = nullptr;
+        MTL::Function *function = library->newFunction(functionName, values, &error);
+        values->release();
+
+        if (error != nullptr) {
+            fprintf(stderr, "MTLLibrary newFunction: failed with error: %s.\\\\n", error->localizedDescription()->utf8String());
+            return nullptr;
+        }'''
+        new_create_fn = '''        if (library == nullptr) {
+            values->release();
+            return nullptr;
+        }
+        NS::Error *error = nullptr;
+        MTL::Function *function = library->newFunction(functionName, values, &error);
+        values->release();
+
+        if (error != nullptr || function == nullptr) {
+            const char* errStr = (error && error->localizedDescription()) ? error->localizedDescription()->utf8String() : "null MTLFunction";
+            fprintf(stderr, "MTLLibrary newFunction: failed with error: %s.\\\\n", errStr);
+#if !PLUME_MACOS
+            MarathonIOS_LogLine("METAL_ERR", errStr);
+#endif
+            return nullptr;
+        }'''
+        assert old_create_fn in msrc, "Failed to locate MetalShader::createFunction in plume_metal.cpp"
+        msrc = msrc.replace(old_create_fn, new_create_fn, 1)
+
+        old_cpso_err = '''        if (error != nullptr) {
+            fprintf(stderr, "MTLDevice newComputePipelineStateWithDescriptor: failed with error %s.\\\\n", error->localizedDescription()->utf8String());
+            return;
+        }'''
+        new_cpso_err = '''        if (error != nullptr || state.pipelineState == nullptr) {
+            const char* errStr = (error && error->localizedDescription()) ? error->localizedDescription()->utf8String() : "null ComputePipelineState";
+            fprintf(stderr, "MTLDevice newComputePipelineStateWithDescriptor: failed with error %s.\\\\n", errStr);
+#if !PLUME_MACOS
+            MarathonIOS_LogLine("METAL_ERR", errStr);
+#endif
+            return;
+        }'''
+        assert old_cpso_err in msrc, "Failed to locate MetalComputePipeline error check in plume_metal.cpp"
+        msrc = msrc.replace(old_cpso_err, new_cpso_err, 1)
+
+        old_gpso_err = '''        if (error != nullptr) {
+            fprintf(stderr, "MTLDevice newRenderPipelineState: failed with error %s.\\\\n", error->localizedDescription()->utf8String());
+            return;
+        }'''
+        new_gpso_err = '''        if (error != nullptr || state.renderPipelineState == nullptr) {
+            const char* errStr = (error && error->localizedDescription()) ? error->localizedDescription()->utf8String() : "null RenderPipelineState";
+            fprintf(stderr, "MTLDevice newRenderPipelineState: failed with error %s.\\\\n", errStr);
+#if !PLUME_MACOS
+            MarathonIOS_LogLine("METAL_ERR", errStr);
+#endif
+            return;
+        }'''
+        assert old_gpso_err in msrc, "Failed to locate MetalGraphicsPipeline error check in plume_metal.cpp"
+        msrc = msrc.replace(old_gpso_err, new_gpso_err, 1)
+
+        # 2c. MetalDescriptorSet: thread-safe resourceEntries mutex + null guards + generation counter for pre-draw useResource()
+        old_ds_dtor = '''    MetalDescriptorSet::~MetalDescriptorSet() {
+        MetalAutoreleasePool releasePool;
+        for (const auto &entry : resourceEntries) {
+            if (entry.resource != nullptr) {
+                entry.resource->release();
+            }
+        }
+
+        if (argumentBuffer.mtl != nullptr) {
+            argumentBuffer.mtl->release();
+        }
+    }'''
+        new_ds_dtor = '''    MetalDescriptorSet::~MetalDescriptorSet() {
+        MetalAutoreleasePool releasePool;
+        std::vector<MTL::Resource*> toRelease;
+        {
+#if !PLUME_MACOS
+            std::lock_guard<std::mutex> lock(g_iosDescriptorSetMutex);
+#endif
+            toRelease.reserve(resourceEntries.size());
+            for (auto &entry : resourceEntries) {
+                if (entry.resource != nullptr) {
+                    toRelease.push_back(entry.resource);
+                    entry.resource = nullptr;
+                }
+            }
+        }
+        for (MTL::Resource* res : toRelease) {
+            res->release();
+        }
+
+        if (argumentBuffer.mtl != nullptr) {
+            argumentBuffer.mtl->release();
+        }
+    }'''
+        assert old_ds_dtor in msrc, "Failed to locate MetalDescriptorSet::~MetalDescriptorSet in plume_metal.cpp"
+        msrc = msrc.replace(old_ds_dtor, new_ds_dtor, 1)
+
+        old_ds_set = '''            switch (dtype) {
+                case MTL::DataTypeTexture: {
+                    const TextureDescriptor *textureDescriptor = static_cast<const TextureDescriptor *>(descriptor);
+                    nativeResource = textureDescriptor->texture;
+                    MTL::Texture *nativeTexture = static_cast<MTL::Texture *>(nativeResource);
+                    if (device->useArgumentBuffersTier2) {
+                        *reinterpret_cast<MTL::ResourceID*>(bufferPtr + argumentOffset) = nativeTexture->gpuResourceID();
+                    } else {
+                        argumentBuffer.argumentEncoder->setTexture(nativeTexture, argumentIndex);
+                    }
+                    nativeTexture->retain();
+                    break;
+                }
+                case MTL::DataTypePointer: {
+                    const BufferDescriptor *bufferDescriptor = static_cast<const BufferDescriptor *>(descriptor);
+                    nativeResource = bufferDescriptor->buffer;
+                    MTL::Buffer *nativeBuffer = static_cast<MTL::Buffer *>(nativeResource);
+                    if (device->useDirectBufferAddresses) {
+                        uint64_t gpuAddress = nativeBuffer->gpuAddress() + bufferDescriptor->offset;
+                        *reinterpret_cast<uint64_t*>(bufferPtr + argumentOffset) = gpuAddress;
+                    } else {
+                        argumentBuffer.argumentEncoder->setBuffer(nativeBuffer, bufferDescriptor->offset, argumentIndex);
+                    }
+                    nativeBuffer->retain();
+                    break;
+                }
+                case MTL::DataTypeSampler: {
+                    const SamplerDescriptor *samplerDescriptor = static_cast<const SamplerDescriptor *>(descriptor);
+                    if (device->useArgumentBuffersTier2) {
+                        *reinterpret_cast<MTL::ResourceID*>(bufferPtr + argumentOffset) = samplerDescriptor->state->gpuResourceID();
+                    } else {
+                        argumentBuffer.argumentEncoder->setSamplerState(samplerDescriptor->state, argumentIndex);
+                    }
+                    break;
+                }
+
+                default:
+                    assert(false && "Unsupported descriptor type.");
+            }
+        }
+
+        if (argumentBuffer.mtl->storageMode() == MTL::StorageModeManaged) {
+            argumentBuffer.mtl->didModifyRange(NS::Range(argumentBuffer.offset, argumentBuffer.mtl->length() - argumentBuffer.offset));
+        }
+
+        MTL::Resource *oldResource = resourceEntries[descriptorIndex].resource;
+        if (oldResource != nullptr) {
+            oldResource->release();
+        }
+
+        resourceEntries[descriptorIndex].resource = nativeResource;
+        resourceEntries[descriptorIndex].type = descriptorType;'''
+        new_ds_set = '''            switch (dtype) {
+                case MTL::DataTypeTexture: {
+                    const TextureDescriptor *textureDescriptor = static_cast<const TextureDescriptor *>(descriptor);
+                    nativeResource = textureDescriptor->texture;
+                    MTL::Texture *nativeTexture = static_cast<MTL::Texture *>(nativeResource);
+                    if (nativeTexture != nullptr) {
+                        if (device->useArgumentBuffersTier2) {
+                            *reinterpret_cast<MTL::ResourceID*>(bufferPtr + argumentOffset) = nativeTexture->gpuResourceID();
+                        } else {
+                            argumentBuffer.argumentEncoder->setTexture(nativeTexture, argumentIndex);
+                        }
+                        nativeTexture->retain();
+                    } else {
+#if !PLUME_MACOS
+                        MarathonIOS_LogLine("METAL_ERR", "setDescriptor received null MTL::Texture");
+#endif
+                    }
+                    break;
+                }
+                case MTL::DataTypePointer: {
+                    const BufferDescriptor *bufferDescriptor = static_cast<const BufferDescriptor *>(descriptor);
+                    nativeResource = bufferDescriptor->buffer;
+                    MTL::Buffer *nativeBuffer = static_cast<MTL::Buffer *>(nativeResource);
+                    if (nativeBuffer != nullptr) {
+                        if (device->useDirectBufferAddresses) {
+                            uint64_t gpuAddress = nativeBuffer->gpuAddress() + bufferDescriptor->offset;
+                            *reinterpret_cast<uint64_t*>(bufferPtr + argumentOffset) = gpuAddress;
+                        } else {
+                            argumentBuffer.argumentEncoder->setBuffer(nativeBuffer, bufferDescriptor->offset, argumentIndex);
+                        }
+                        nativeBuffer->retain();
+                    } else {
+#if !PLUME_MACOS
+                        MarathonIOS_LogLine("METAL_ERR", "setDescriptor received null MTL::Buffer");
+#endif
+                    }
+                    break;
+                }
+                case MTL::DataTypeSampler: {
+                    const SamplerDescriptor *samplerDescriptor = static_cast<const SamplerDescriptor *>(descriptor);
+                    if (samplerDescriptor->state != nullptr) {
+                        if (device->useArgumentBuffersTier2) {
+                            *reinterpret_cast<MTL::ResourceID*>(bufferPtr + argumentOffset) = samplerDescriptor->state->gpuResourceID();
+                        } else {
+                            argumentBuffer.argumentEncoder->setSamplerState(samplerDescriptor->state, argumentIndex);
+                        }
+                    }
+                    break;
+                }
+
+                default:
+                    assert(false && "Unsupported descriptor type.");
+            }
+        }
+
+        if (argumentBuffer.mtl->storageMode() == MTL::StorageModeManaged) {
+            argumentBuffer.mtl->didModifyRange(NS::Range(argumentBuffer.offset, argumentBuffer.mtl->length() - argumentBuffer.offset));
+        }
+
+        MTL::Resource *oldResource = nullptr;
+        {
+#if !PLUME_MACOS
+            std::lock_guard<std::mutex> lock(g_iosDescriptorSetMutex);
+#endif
+            oldResource = resourceEntries[descriptorIndex].resource;
+            resourceEntries[descriptorIndex].resource = nativeResource;
+            resourceEntries[descriptorIndex].type = descriptorType;
+        }
+#if !PLUME_MACOS
+        if (nativeResource != nullptr) {
+            g_iosDescriptorGen.fetch_add(1, std::memory_order_release);
+        }
+#endif
+        if (oldResource != nullptr) {
+            oldResource->release();
+        }'''
+        assert old_ds_set in msrc, "Failed to locate MetalDescriptorSet::setDescriptor in plume_metal.cpp"
+        msrc = msrc.replace(old_ds_set, new_ds_set, 1)
+
+        # 2d. MetalSwapChain::present: transfer drawable ownership, RETAINED commandBuffer() on iOS, log Metal errors
         old_present_drawable = '''        const MetalDrawable &drawable = drawables[textureIndex];
         assert(drawable.mtl != nullptr && "Cannot present without a valid drawable.");
 
@@ -2434,8 +2924,12 @@ if metal_cpp.exists():
             return false;
         }
 
-        // Create a new command buffer just for presenting
+        // Create a new command buffer just for presenting (RETAINED references on iOS to prevent InvalidResource faults!)
+#if !PLUME_MACOS
+        MTL::CommandBuffer *presentBuffer = commandQueue->mtl->commandBuffer();
+#else
         MTL::CommandBuffer *presentBuffer = commandQueue->mtl->commandBufferWithUnretainedReferences();
+#endif
         presentBuffer->setLabel(MTLSTR("Present Command Buffer"));
         presentBuffer->enqueue();
 
@@ -2453,17 +2947,13 @@ if metal_cpp.exists():
             drawableMtl->release();'''
         new_present_done = '''        presentBuffer->addCompletedHandler([drawableMtl, presentId, this](MTL::CommandBuffer* cmdBuffer) {
 #if !PLUME_MACOS
-            if (cmdBuffer && cmdBuffer->status() == MTL::CommandBufferStatusError) {
-                const char* errDesc = (cmdBuffer->error() && cmdBuffer->error()->localizedDescription())
-                    ? cmdBuffer->error()->localizedDescription()->utf8String() : "unknown present error";
-                MarathonIOS_LogLine("METAL_ERR", errDesc);
-            }
+            logIOSMetalCmdBufferError("present", cmdBuffer);
 #endif
             drawableMtl->release();'''
         assert old_present_done in msrc, "Failed to locate presentBuffer completed handler in plume_metal.cpp"
         msrc = msrc.replace(old_present_done, new_present_done, 1)
 
-        # 2c. MetalSwapChain::acquireTexture: release stale slot before nextDrawable(), advance index cleanly on render thread, validate dimensions
+        # 2e. MetalSwapChain::acquireTexture: release stale slot before nextDrawable(), advance index on render thread, RETAINED commandBuffer() on iOS
         old_acq_full = '''        // Create a command buffer just to encode the signal
         MetalAutoreleasePool releasePool;
         MTL::CommandBuffer *acquireBuffer = commandQueue->mtl->commandBufferWithUnretainedReferences();
@@ -2519,7 +3009,11 @@ if metal_cpp.exists():
         }
 #endif
         // Signal acquire semaphore only once a valid drawable has been obtained.
+#if !PLUME_MACOS
+        MTL::CommandBuffer *acquireBuffer = commandQueue->mtl->commandBuffer();
+#else
         MTL::CommandBuffer *acquireBuffer = commandQueue->mtl->commandBufferWithUnretainedReferences();
+#endif
         acquireBuffer->setLabel(MTLSTR("Acquire Drawable Command Buffer"));
         const MetalCommandSemaphore *interfaceSemaphore = static_cast<MetalCommandSemaphore *>(signalSemaphore);
         acquireBuffer->enqueue();
@@ -2540,7 +3034,228 @@ if metal_cpp.exists():
         assert old_acq_full in msrc, "Failed to locate acquireTexture body in plume_metal.cpp"
         msrc = msrc.replace(old_acq_full, new_acq_full, 1)
 
-        # 2d. Log Metal command buffer errors & GPU fence stalls >5s on iOS
+        # 2f. MetalCommandList::begin & MetalCommandQueue::executeCommandLists: RETAINED commandBuffer() on iOS!
+        old_cl_begin = '''        startedEncoding = false;
+        mtl = queue->mtl->commandBufferWithUnretainedReferences();'''
+        new_cl_begin = '''        startedEncoding = false;
+#if !PLUME_MACOS
+        mtl = queue->mtl->commandBuffer();
+#else
+        mtl = queue->mtl->commandBufferWithUnretainedReferences();
+#endif'''
+        assert old_cl_begin in msrc, "Failed to locate MetalCommandList::begin commandBuffer in plume_metal.cpp"
+        msrc = msrc.replace(old_cl_begin, new_cl_begin, 1)
+
+        old_wait_cb = '''        // Create a new command buffer to encode the wait semaphores into
+        MetalAutoreleasePool releasePool;
+        MTL::CommandBuffer* cmdBuffer = mtl->commandBufferWithUnretainedReferences();'''
+        new_wait_cb = '''        // Create a new command buffer to encode the wait semaphores into
+        MetalAutoreleasePool releasePool;
+#if !PLUME_MACOS
+        MTL::CommandBuffer* cmdBuffer = mtl->commandBuffer();
+#else
+        MTL::CommandBuffer* cmdBuffer = mtl->commandBufferWithUnretainedReferences();
+#endif'''
+        assert old_wait_cb in msrc, "Failed to locate MetalCommandQueue::executeCommandLists wait cmdBuffer in plume_metal.cpp"
+        msrc = msrc.replace(old_wait_cb, new_wait_cb, 1)
+
+        # 2g. CRITICAL FIX: Declare useResource() BEFORE draw/dispatch calls (NOT after draws inside endActive*Encoder!)
+        #     + Fix deprecated 2-arg renderEncoder->useResource() to 3-arg with RenderStageVertex | RenderStageFragment
+        #     + Lock g_iosDescriptorSetMutex around resourceEntries iteration
+        old_compute_enc = '''        // Descriptor sets
+        if (dirtyComputeState.descriptorSets) {
+            activeComputePipelineLayout->bindDescriptorSets(activeComputeEncoder, computeDescriptorSets, MAX_DESCRIPTOR_SET_BINDINGS, true, dirtyComputeState.descriptorSetDirtyIndex, currentEncoderDescriptorSets, device->residencySet != nullptr);
+            dirtyComputeState.descriptorSets = 0;
+            dirtyComputeState.descriptorSetDirtyIndex = MAX_DESCRIPTOR_SET_BINDINGS;
+        }'''
+        new_compute_enc = '''        // Descriptor sets
+        if (dirtyComputeState.descriptorSets) {
+            activeComputePipelineLayout->bindDescriptorSets(activeComputeEncoder, computeDescriptorSets, MAX_DESCRIPTOR_SET_BINDINGS, true, dirtyComputeState.descriptorSetDirtyIndex, currentEncoderDescriptorSets, device->residencySet != nullptr);
+            dirtyComputeState.descriptorSets = 0;
+            dirtyComputeState.descriptorSetDirtyIndex = MAX_DESCRIPTOR_SET_BINDINGS;
+        }
+#if !PLUME_MACOS
+        if (device->residencySet == nullptr && activeComputeEncoder != nullptr) {
+            const uint64_t addrGen = g_iosAddressableGen.load(std::memory_order_acquire);
+            const uint64_t descGen = g_iosDescriptorGen.load(std::memory_order_acquire);
+            if (g_iosLastComputeEncoder != activeComputeEncoder || addrGen != g_iosLastComputeAddrGen || descGen != g_iosLastComputeDescGen) {
+                bindEncoderResources(activeComputeEncoder, true);
+                g_iosLastComputeEncoder = activeComputeEncoder;
+                g_iosLastComputeAddrGen = addrGen;
+                g_iosLastComputeDescGen = descGen;
+            }
+        }
+#endif'''
+        assert old_compute_enc in msrc, "Failed to locate compute descriptorSets block in plume_metal.cpp"
+        msrc = msrc.replace(old_compute_enc, new_compute_enc, 1)
+
+        old_end_compute = '''    void MetalCommandList::endActiveComputeEncoder() {
+        if (activeComputeEncoder != nullptr) {
+            bindEncoderResources(activeComputeEncoder, true);'''
+        new_end_compute = '''    void MetalCommandList::endActiveComputeEncoder() {
+        if (activeComputeEncoder != nullptr) {
+#if PLUME_MACOS
+            bindEncoderResources(activeComputeEncoder, true);
+#else
+            g_iosLastComputeEncoder = nullptr;
+#endif'''
+        assert old_end_compute in msrc, "Failed to locate endActiveComputeEncoder in plume_metal.cpp"
+        msrc = msrc.replace(old_end_compute, new_end_compute, 1)
+
+        old_render_ds = '''        // Descriptor sets
+        if (dirtyGraphicsState.descriptorSets) {
+            if (activeGraphicsPipelineLayout) {
+                activeGraphicsPipelineLayout->bindDescriptorSets(activeRenderEncoder, renderDescriptorSets, MAX_DESCRIPTOR_SET_BINDINGS, false, dirtyGraphicsState.descriptorSetDirtyIndex, currentEncoderDescriptorSets, device->residencySet != nullptr);
+            }
+            dirtyGraphicsState.descriptorSets = 0;
+            dirtyGraphicsState.descriptorSetDirtyIndex = MAX_DESCRIPTOR_SET_BINDINGS;
+        }'''
+        new_render_ds = '''        // Descriptor sets
+        if (dirtyGraphicsState.descriptorSets) {
+            if (activeGraphicsPipelineLayout) {
+                activeGraphicsPipelineLayout->bindDescriptorSets(activeRenderEncoder, renderDescriptorSets, MAX_DESCRIPTOR_SET_BINDINGS, false, dirtyGraphicsState.descriptorSetDirtyIndex, currentEncoderDescriptorSets, device->residencySet != nullptr);
+            }
+            dirtyGraphicsState.descriptorSets = 0;
+            dirtyGraphicsState.descriptorSetDirtyIndex = MAX_DESCRIPTOR_SET_BINDINGS;
+        }
+#if !PLUME_MACOS
+        if (device->residencySet == nullptr && activeRenderEncoder != nullptr) {
+            const uint64_t addrGen = g_iosAddressableGen.load(std::memory_order_acquire);
+            const uint64_t descGen = g_iosDescriptorGen.load(std::memory_order_acquire);
+            if (g_iosLastRenderEncoder != activeRenderEncoder || addrGen != g_iosLastRenderAddrGen || descGen != g_iosLastRenderDescGen) {
+                bindEncoderResources(activeRenderEncoder, false);
+                g_iosLastRenderEncoder = activeRenderEncoder;
+                g_iosLastRenderAddrGen = addrGen;
+                g_iosLastRenderDescGen = descGen;
+            }
+        }
+#endif'''
+        assert old_render_ds in msrc, "Failed to locate graphics descriptorSets block in plume_metal.cpp"
+        msrc = msrc.replace(old_render_ds, new_render_ds, 1)
+
+        old_end_render = '''    void MetalCommandList::endActiveRenderEncoder() {
+        if (activeRenderEncoder != nullptr) {
+            bindEncoderResources(activeRenderEncoder, false);'''
+        new_end_render = '''    void MetalCommandList::endActiveRenderEncoder() {
+        if (activeRenderEncoder != nullptr) {
+#if PLUME_MACOS
+            bindEncoderResources(activeRenderEncoder, false);
+#else
+            g_iosLastRenderEncoder = nullptr;
+#endif'''
+        assert old_end_render in msrc, "Failed to locate endActiveRenderEncoder in plume_metal.cpp"
+        msrc = msrc.replace(old_end_render, new_end_render, 1)
+
+        old_bind_enc = '''    void MetalCommandList::bindEncoderResources(MTL::CommandEncoder* encoder, bool isCompute) {
+        if (device->residencySet != nullptr) {
+            // No need to do anything if residency sets are in use.
+            return;
+        }
+
+        if (isCompute) {
+            auto* computeEncoder = static_cast<MTL::ComputeCommandEncoder*>(encoder);
+            {
+                std::lock_guard lock(device->resourcesMutex);
+                for (const auto* resource : device->gpuAddressableResources) {
+                    computeEncoder->useResource(resource, MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
+                }
+            }
+            for (const auto* descriptorSet : currentEncoderDescriptorSets) {
+                for (const auto& entry : descriptorSet->resourceEntries) {
+                    if (entry.resource != nullptr) {
+                        computeEncoder->useResource(entry.resource, mapResourceUsage(entry.type));
+                    }
+                }
+            }
+        } else {
+            auto* renderEncoder = static_cast<MTL::RenderCommandEncoder*>(encoder);
+            {
+                std::lock_guard lock(device->resourcesMutex);
+                for (const auto* resource : device->gpuAddressableResources) {
+                    renderEncoder->useResource(resource, MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
+                }
+            }
+            for (const auto* descriptorSet : currentEncoderDescriptorSets) {
+                for (const auto& entry : descriptorSet->resourceEntries) {
+                    if (entry.resource != nullptr) {
+                        renderEncoder->useResource(entry.resource, mapResourceUsage(entry.type), MTL::RenderStageVertex | MTL::RenderStageFragment);
+                    }
+                }
+            }
+        }
+    }'''
+        new_bind_enc = '''    void MetalCommandList::bindEncoderResources(MTL::CommandEncoder* encoder, bool isCompute) {
+        if (device->residencySet != nullptr || encoder == nullptr) {
+            // No need to do anything if residency sets are in use.
+            return;
+        }
+
+        if (isCompute) {
+            auto* computeEncoder = static_cast<MTL::ComputeCommandEncoder*>(encoder);
+            {
+                std::lock_guard lock(device->resourcesMutex);
+                for (const auto* resource : device->gpuAddressableResources) {
+                    if (resource != nullptr) {
+                        computeEncoder->useResource(resource, MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
+                    }
+                }
+            }
+            for (const auto* descriptorSet : currentEncoderDescriptorSets) {
+#if !PLUME_MACOS
+                bindIOSDescriptorSetResources(encoder, true, descriptorSet);
+#else
+                for (const auto& entry : descriptorSet->resourceEntries) {
+                    if (entry.resource != nullptr) {
+                        computeEncoder->useResource(entry.resource, mapResourceUsage(entry.type));
+                    }
+                }
+#endif
+            }
+        } else {
+            auto* renderEncoder = static_cast<MTL::RenderCommandEncoder*>(encoder);
+            {
+                std::lock_guard lock(device->resourcesMutex);
+                for (const auto* resource : device->gpuAddressableResources) {
+                    if (resource != nullptr) {
+                        renderEncoder->useResource(resource, MTL::ResourceUsageRead | MTL::ResourceUsageWrite, MTL::RenderStageVertex | MTL::RenderStageFragment);
+                    }
+                }
+            }
+            for (const auto* descriptorSet : currentEncoderDescriptorSets) {
+#if !PLUME_MACOS
+                bindIOSDescriptorSetResources(encoder, false, descriptorSet);
+#else
+                for (const auto& entry : descriptorSet->resourceEntries) {
+                    if (entry.resource != nullptr) {
+                        renderEncoder->useResource(entry.resource, mapResourceUsage(entry.type), MTL::RenderStageVertex | MTL::RenderStageFragment);
+                    }
+                }
+#endif
+            }
+        }
+    }'''
+        assert old_bind_enc in msrc, "Failed to locate MetalCommandList::bindEncoderResources in plume_metal.cpp"
+        msrc = msrc.replace(old_bind_enc, new_bind_enc, 1)
+
+        old_bind_ds_track = '''            if (!usingResidencySets) {
+                // Track descriptor set for later resource binding
+                encoderDescriptorSets.insert(const_cast<MetalDescriptorSet*>(descriptorSet));
+            }'''
+        new_bind_ds_track = '''            if (!usingResidencySets) {
+                // Track descriptor set and IMMEDIATELY declare its resources BEFORE draw/dispatch on iOS!
+                const bool inserted = encoderDescriptorSets.insert(const_cast<MetalDescriptorSet*>(descriptorSet)).second;
+#if !PLUME_MACOS
+                if (inserted) {
+                    bindIOSDescriptorSetResources(encoder, isCompute, descriptorSet);
+                }
+#else
+                (void)inserted;
+#endif
+            }'''
+        assert old_bind_ds_track in msrc, "Failed to locate MetalPipelineLayout::bindDescriptorSets tracking in plume_metal.cpp"
+        msrc = msrc.replace(old_bind_ds_track, new_bind_ds_track, 1)
+
+        # 2h. Log Metal command buffer errors & GPU fence stalls >5s on iOS
         old_exec_done = '''        if (signalFence != nullptr) {
             interfaceCommandList->mtl->addCompletedHandler([signalFence](MTL::CommandBuffer* cmdBuffer) {
                 dispatch_semaphore_signal(static_cast<MetalCommandFence *>(signalFence)->semaphore);
@@ -2549,15 +3264,18 @@ if metal_cpp.exists():
         new_exec_done = '''        if (signalFence != nullptr) {
             interfaceCommandList->mtl->addCompletedHandler([signalFence](MTL::CommandBuffer* cmdBuffer) {
 #if !PLUME_MACOS
-                if (cmdBuffer && cmdBuffer->status() == MTL::CommandBufferStatusError) {
-                    const char* errDesc = (cmdBuffer->error() && cmdBuffer->error()->localizedDescription())
-                        ? cmdBuffer->error()->localizedDescription()->utf8String() : "unknown GPU command buffer error";
-                    MarathonIOS_LogLine("METAL_ERR", errDesc);
-                }
+                logIOSMetalCmdBufferError("exec", cmdBuffer);
 #endif
                 dispatch_semaphore_signal(static_cast<MetalCommandFence *>(signalFence)->semaphore);
             });
-        }'''
+        }
+#if !PLUME_MACOS
+        else {
+            interfaceCommandList->mtl->addCompletedHandler([](MTL::CommandBuffer* cmdBuffer) {
+                logIOSMetalCmdBufferError("exec_nofence", cmdBuffer);
+            });
+        }
+#endif'''
         assert old_exec_done in msrc, "Failed to locate executeCommandLists completed handler in plume_metal.cpp"
         msrc = msrc.replace(old_exec_done, new_exec_done, 1)
 
@@ -2580,13 +3298,32 @@ if metal_cpp.exists():
         assert old_wait_fence in msrc, "Failed to locate MetalCommandQueue::waitForCommandFence in plume_metal.cpp"
         msrc = msrc.replace(old_wait_fence, new_wait_fence, 1)
 
-        # 2e. Disable unguarded cross-thread MTLResidencySet on iOS 18+ so Plume uses its thread-safe per-encoder useResource() path
+        # 2i. Disable unguarded cross-thread MTLResidencySet on iOS 18+ so Plume uses retained commandBuffer() + pre-draw useResource()
         old_ios_residency = "        const bool supportsResidencySets = osVersion.majorVersion >= 18 && mtl->supportsFamily(MTL::GPUFamilyApple6);"
-        new_ios_residency = "        const bool supportsResidencySets = false; // MARATHON_IOS_DISABLE_RESIDENCY_SET: evita commit() non protetti tra thread su iOS 18+"
+        new_ios_residency = "        const bool supportsResidencySets = false; // MARATHON_IOS_DISABLE_RESIDENCY_SET: usa commandBuffer() retained + pre-draw useResource() su iOS"
         assert old_ios_residency in msrc, "Failed to locate iOS supportsResidencySets in plume_metal.cpp"
         msrc = msrc.replace(old_ios_residency, new_ios_residency, 1)
 
-        # 2f. Defensive null-guards for MetalQueryPool, timestampCounterSet, and residencySet on iOS GPUs
+        # Log Metal GPU capabilities once on iOS device creation
+        old_null_buf = "        nullBuffer = createBuffer(RenderBufferDesc::DefaultBuffer(16, RenderBufferFlag::VERTEX));"
+        new_null_buf = '''        nullBuffer = createBuffer(RenderBufferDesc::DefaultBuffer(16, RenderBufferFlag::VERTEX));
+#if !PLUME_MACOS
+        {
+            char gpuBuf[256];
+            std::snprintf(gpuBuf, sizeof(gpuBuf),
+                "GPU=%s argTier2=%d directAddr=%d bda=%d metal3=%d apple6=%d uma=%d",
+                description.name.c_str(), useArgumentBuffersTier2 ? 1 : 0, useDirectBufferAddresses ? 1 : 0,
+                capabilities.bufferDeviceAddress ? 1 : 0,
+                mtl->supportsFamily(MTL::GPUFamilyMetal3) ? 1 : 0,
+                mtl->supportsFamily(MTL::GPUFamilyApple6) ? 1 : 0,
+                capabilities.uma ? 1 : 0);
+            MarathonIOS_LogLine("METAL_INFO", gpuBuf);
+        }
+#endif'''
+        assert old_null_buf in msrc, "Failed to locate nullBuffer creation in MetalDevice::MetalDevice"
+        msrc = msrc.replace(old_null_buf, new_null_buf, 1)
+
+        # 2j. Defensive null-guards for MetalQueryPool, timestampCounterSet, and addResource/removeResource (+ addressable generation counter)
         old_qp = '''        MTL::CounterSampleBufferDescriptor *sampleBufferDesc = MTL::CounterSampleBufferDescriptor::alloc()->init();
         sampleBufferDesc->setCounterSet(device->timestampCounterSet);
         sampleBufferDesc->setStorageMode(MTL::StorageModeShared);
@@ -2658,11 +3395,37 @@ if metal_cpp.exists():
             "    MTL::CounterSet* MetalDevice::findTimestampCounterSet() const {\\n        if (mtl->counterSets() == nullptr) return nullptr;\\n        for (uint32_t setIndex = 0; setIndex < mtl->counterSets()->count(); setIndex++){",
             1
         )
-        msrc = msrc.replace(
-            "    void MetalDevice::addResource(MTL::Resource *resource, bool addressable) {\\n        if (residencySet != nullptr || addressable) {",
-            "    void MetalDevice::addResource(MTL::Resource *resource, bool addressable) {\\n        if (resource == nullptr) return;\\n        if (residencySet != nullptr || addressable) {",
-            1
-        )
+        old_add_res = '''    void MetalDevice::addResource(MTL::Resource *resource, bool addressable) {
+        if (residencySet != nullptr || addressable) {
+            std::lock_guard lock(resourcesMutex);
+            if (residencySet != nullptr) {
+                residencySet->addAllocation(resource);
+                residencySet->commit();
+            }
+            if (addressable) {
+                gpuAddressableResources.push_back(resource);
+            }
+        }
+    }'''
+        new_add_res = '''    void MetalDevice::addResource(MTL::Resource *resource, bool addressable) {
+        if (resource == nullptr) return;
+        if (residencySet != nullptr || addressable) {
+            std::lock_guard lock(resourcesMutex);
+            if (residencySet != nullptr) {
+                residencySet->addAllocation(resource);
+                residencySet->commit();
+            }
+            if (addressable) {
+                gpuAddressableResources.push_back(resource);
+#if !PLUME_MACOS
+                g_iosAddressableGen.fetch_add(1, std::memory_order_release);
+#endif
+            }
+        }
+    }'''
+        assert old_add_res in msrc, "Failed to locate MetalDevice::addResource in plume_metal.cpp"
+        msrc = msrc.replace(old_add_res, new_add_res, 1)
+
         msrc = msrc.replace(
             "    void MetalDevice::removeResource(MTL::Resource *resource, bool addressable) {\\n        if (residencySet != nullptr || addressable) {",
             "    void MetalDevice::removeResource(MTL::Resource *resource, bool addressable) {\\n        if (resource == nullptr) return;\\n        if (residencySet != nullptr || addressable) {",
@@ -2734,7 +3497,7 @@ if metal_cpp.exists():
             msrc = msrc.replace(old_iface_devs, new_iface_devs, 1)
 
         metal_cpp.write_text(msrc, encoding="utf-8")
-        print("Patched thirdparty/plume/plume_metal.cpp for iOS Metal (disabled unguarded residencySet, race-free drawables, GPU error logging, queryPool safety).")
+        print("Patched thirdparty/plume/plume_metal.cpp for iOS Metal (depth ShaderWrite fix, PixelFormatView, retained commandBuffer, pre-draw 3-arg useResource + mutex, full Metal error logging).")
 
 # 3. thirdparty/plume/CMakeLists.txt: skip plume_vulkan.cpp on iOS when building pure Metal 3
 if cm.exists():

@@ -258,10 +258,23 @@ test('ARM64 freeze fixes, ios_debug.log watchdog, and Sonic 06 themed virtual co
   assert.match(patcher, /if \(owningThread\.compare_exchange_strong\(previousOwner, thisThread\) \|\| previousOwner == thisThread\)/);
   assert.match(patcher, /if \(previousOwner != 0\)\s+owningThread\.wait\(previousOwner\);/);
 
-  // Metal iOS stability & error logging
+  // Metal iOS stability & Invalid Resource (00000009) root-cause fixes
   assert.match(patcher, /MARATHON_IOS_DISABLE_RESIDENCY_SET/);
   assert.match(patcher, /const bool supportsResidencySets = false;/);
-  assert.match(patcher, /MarathonIOS_LogLine\("METAL_ERR", errDesc\)/);
+  assert.match(patcher, /isDepthPixelFormat/);
+  assert.match(patcher, /usage &= ~MTL::TextureUsageShaderWrite;/);
+  assert.match(patcher, /usage \|= MTL::TextureUsagePixelFormatView;/);
+  assert.match(patcher, /commandQueue->mtl->commandBuffer\(\)/);
+  assert.match(patcher, /queue->mtl->commandBuffer\(\)/);
+  assert.match(patcher, /mtl->commandBuffer\(\)/);
+  assert.match(patcher, /g_iosDescriptorSetMutex/);
+  assert.match(patcher, /g_iosAddressableGen/);
+  assert.match(patcher, /g_iosDescriptorGen/);
+  assert.match(patcher, /bindIOSDescriptorSetResources/);
+  assert.match(patcher, /renderEncoder->useResource\(resource, MTL::ResourceUsageRead \| MTL::ResourceUsageWrite, MTL::RenderStageVertex \| MTL::RenderStageFragment\)/);
+  assert.match(patcher, /logIOSMetalCmdBufferError\("exec", cmdBuffer\)/);
+  assert.match(patcher, /newTexture FAILED:/);
+  assert.match(patcher, /newTextureView FAILED:/);
   assert.match(patcher, /waitForCommandFence stalled >5s/);
   assert.match(patcher, /Video::Present:WaitFence/);
 
