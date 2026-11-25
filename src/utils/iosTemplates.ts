@@ -2418,24 +2418,27 @@ struct TrackedTouchSlot {
         _slots[idx] = { nullptr, kRoleNone, nullptr };
 
         switch (role) {
-            case kRoleLeftStick:
+            case kRoleLeftStick: {
                 g_lx.store(0, std::memory_order_release);
                 g_ly.store(0, std::memory_order_release);
                 [self.leftStickView setStickVectorX:0 y:0 animated:YES];
                 break;
+            }
 
-            case kRoleRightCamera:
+            case kRoleRightCamera: {
                 g_rx.store(0, std::memory_order_release);
                 g_ry.store(0, std::memory_order_release);
                 [UIView animateWithDuration:0.12 animations:^{
                     self.cameraGhostRing.alpha = 0.0;
                 }];
                 break;
+            }
 
-            case kRoleDPad:
+            case kRoleDPad: {
                 [self.dpadView setVisualMask:0];
                 needButtonRecompute = YES;
                 break;
+            }
 
             case kRoleABXY:
             case kRoleButton:

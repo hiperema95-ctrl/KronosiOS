@@ -1,0 +1,1161 @@
+2026-11-25T12:04:35.0793760Z ##[group]Run CONFIG="Release"
+2026-11-25T12:04:35.0794000Z [36;1mCONFIG="Release"[0m
+2026-11-25T12:04:35.0794220Z [36;1mIOS_SDK="$(xcrun --sdk iphoneos --show-sdk-path)"[0m
+2026-11-25T12:04:35.0794540Z [36;1mFREETYPE_ROOT="${GITHUB_WORKSPACE}/ios-deps/freetype-install"[0m
+2026-11-25T12:04:35.0794870Z [36;1mFFMPEG_ROOT="${GITHUB_WORKSPACE}/ios-deps/ffmpeg-install"[0m
+2026-11-25T12:04:35.0795120Z [36;1m[0m
+2026-11-25T12:04:35.0795390Z [36;1m# Localizza dinamicamente i 4 host tool nativi macOS compilati allo Step 7[0m
+2026-11-25T12:04:35.0795870Z [36;1mHOST_XENON="$(find "${GITHUB_WORKSPACE}/build-host" -type f -name "XenonRecomp" -perm +111 | head -n 1)"[0m
+2026-11-25T12:04:35.0796410Z [36;1mHOST_XENOS="$(find "${GITHUB_WORKSPACE}/build-host" -type f -name "XenosRecomp" -perm +111 | head -n 1)"[0m
+2026-11-25T12:04:35.0796930Z [36;1mHOST_U8="$(find "${GITHUB_WORKSPACE}/build-host" -type f -name "u8extract" -perm +111 | head -n 1)"[0m
+2026-11-25T12:04:35.0797430Z [36;1mHOST_F2C="$(find "${GITHUB_WORKSPACE}/build-host" -type f -name "file_to_c" -perm +111 | head -n 1)"[0m
+2026-11-25T12:04:35.0797890Z [36;1mfor BIN in "${HOST_XENON}" "${HOST_XENOS}" "${HOST_U8}" "${HOST_F2C}"; do[0m
+2026-11-25T12:04:35.0798200Z [36;1m  if [ -z "${BIN}" ] || [ ! -x "${BIN}" ]; then[0m
+2026-11-25T12:04:35.0798510Z [36;1m    echo "::error::Host tool macOS mancante in build-host! Verifica lo Step 7."[0m
+2026-11-25T12:04:35.0798800Z [36;1m    exit 1[0m
+2026-11-25T12:04:35.0798940Z [36;1m  fi[0m
+2026-11-25T12:04:35.0799060Z [36;1mdone[0m
+2026-11-25T12:04:35.0799210Z [36;1mecho "==> Host tools rilevati:"[0m
+2026-11-25T12:04:35.0799540Z [36;1mecho "    XenonRecomp: ${HOST_XENON}"[0m
+2026-11-25T12:04:35.0799770Z [36;1mecho "    XenosRecomp: ${HOST_XENOS}"[0m
+2026-11-25T12:04:35.0799980Z [36;1mecho "    u8extract:   ${HOST_U8}"[0m
+2026-11-25T12:04:35.0800220Z [36;1mecho "    file_to_c:   ${HOST_F2C}"[0m
+2026-11-25T12:04:35.0800440Z [36;1m[0m
+2026-11-25T12:04:35.0800640Z [36;1mcmake -S . -B "${GITHUB_WORKSPACE}/build-ios" -G Ninja \[0m
+2026-11-25T12:04:35.0800900Z [36;1m  -DCMAKE_SYSTEM_NAME=iOS \[0m
+2026-11-25T12:04:35.0801100Z [36;1m  -DCMAKE_OSX_SYSROOT="${IOS_SDK}" \[0m
+2026-11-25T12:04:35.0801360Z [36;1m  -DCMAKE_OSX_ARCHITECTURES=arm64 \[0m
+2026-11-25T12:04:35.0801660Z [36;1m  -DCMAKE_OSX_DEPLOYMENT_TARGET="${IOS_DEPLOYMENT_TARGET}" \[0m
+2026-11-25T12:04:35.0801940Z [36;1m  -DCMAKE_BUILD_TYPE="${CONFIG}" \[0m
+2026-11-25T12:04:35.0802260Z [36;1m  -DCMAKE_FIND_ROOT_PATH="${IOS_SDK};${FREETYPE_ROOT};${FFMPEG_ROOT}" \[0m
+2026-11-25T12:04:35.0802600Z [36;1m  -DCMAKE_FIND_ROOT_PATH_MODE_PACKAGE=BOTH \[0m
+2026-11-25T12:04:35.0802860Z [36;1m  -DCMAKE_FIND_ROOT_PATH_MODE_LIBRARY=BOTH \[0m
+2026-11-25T12:04:35.0803140Z [36;1m  -DCMAKE_FIND_ROOT_PATH_MODE_INCLUDE=BOTH \[0m
+2026-11-25T12:04:35.0803390Z [36;1m  -DCMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \[0m
+2026-11-25T12:04:35.0803710Z [36;1m  -DFREETYPE_LIBRARY="${FREETYPE_ROOT}/lib/libfreetype.a" \[0m
+2026-11-25T12:04:35.0804070Z [36;1m  -DFREETYPE_INCLUDE_DIRS="${FREETYPE_ROOT}/include/freetype2" \[0m
+2026-11-25T12:04:35.0804450Z [36;1m  -DFREETYPE_INCLUDE_DIR_ft2build="${FREETYPE_ROOT}/include/freetype2" \[0m
+2026-11-25T12:04:35.0804870Z [36;1m  -DFREETYPE_INCLUDE_DIR_freetype2="${FREETYPE_ROOT}/include/freetype2" \[0m
+2026-11-25T12:04:35.0805210Z [36;1m  -DMARATHON_IOS_PORT=ON \[0m
+2026-11-25T12:04:35.0805410Z [36;1m  -DMARATHON_RECOMP_METAL=ON \[0m
+2026-11-25T12:04:35.0805600Z [36;1m  -DSDL_HIDAPI_LIBUSB=OFF \[0m
+2026-11-25T12:04:35.0805790Z [36;1m  -DSDL_HIDAPI_LIBUSB_SHARED=OFF \[0m
+2026-11-25T12:04:35.0805990Z [36;1m  -DSDL_VULKAN=OFF \[0m
+2026-11-25T12:04:35.0806170Z [36;1m  -DSDL_RENDER_VULKAN=OFF \[0m
+2026-11-25T12:04:35.0806380Z [36;1m  -DMARATHON_HOST_XENON_RECOMP="${HOST_XENON}" \[0m
+2026-11-25T12:04:35.0806650Z [36;1m  -DMARATHON_HOST_XENOS_RECOMP="${HOST_XENOS}" \[0m
+2026-11-25T12:04:35.0806900Z [36;1m  -DMARATHON_HOST_U8EXTRACT="${HOST_U8}" \[0m
+2026-11-25T12:04:35.0807130Z [36;1m  -DMARATHON_HOST_FILE_TO_C="${HOST_F2C}" \[0m
+2026-11-25T12:04:35.0807580Z [36;1m  -DMARATHON_IOS_FFMPEG_ROOT="${FFMPEG_ROOT}" \[0m
+2026-11-25T12:04:35.0807840Z [36;1m  -DMARATHON_IOS_FREETYPE_ROOT="${FREETYPE_ROOT}" \[0m
+2026-11-25T12:04:35.0808130Z [36;1m  -DCMAKE_PREFIX_PATH="${FREETYPE_ROOT};${FFMPEG_ROOT}"[0m
+2026-11-25T12:04:35.0808360Z [36;1m[0m
+2026-11-25T12:04:35.0808620Z [36;1mcmake --build "${GITHUB_WORKSPACE}/build-ios" --target MarathonRecomp --parallel[0m
+2026-11-25T12:04:35.0950180Z shell: /bin/bash -e {0}
+2026-11-25T12:04:35.0950380Z env:
+2026-11-25T12:04:35.0950530Z   IOS_DEPLOYMENT_TARGET: 17.0
+2026-11-25T12:04:35.0950940Z   FREETYPE_VERSION: 2.13.3
+2026-11-25T12:04:35.0951100Z   FFMPEG_VERSION: 7.1
+2026-11-25T12:04:35.0951260Z   APP_DISPLAY_NAME: Marathon06iOS
+2026-11-25T12:04:35.0951460Z   APP_BUNDLE_ID: com.hiperema.kronos06.ios
+2026-11-25T12:04:35.0951660Z   APP_VERSION: 1.0.0
+2026-11-25T12:04:35.0951910Z   VCPKG_ROOT: /Users/runner/work/KronosiOS/KronosiOS/ios-deps/vcpkg-ios-stub
+2026-11-25T12:04:35.0952210Z ##[endgroup]
+2026-11-25T12:04:35.1690880Z ==> Host tools rilevati:
+2026-11-25T12:04:35.1691500Z     XenonRecomp: /Users/runner/work/KronosiOS/KronosiOS/build-host/tools/XenonRecomp/XenonRecomp/XenonRecomp
+2026-11-25T12:04:35.1692120Z     XenosRecomp: /Users/runner/work/KronosiOS/KronosiOS/build-host/tools/XenosRecomp/XenosRecomp/XenosRecomp
+2026-11-25T12:04:35.1692690Z     u8extract:   /Users/runner/work/KronosiOS/KronosiOS/build-host/tools/u8extract/u8extract
+2026-11-25T12:04:35.1693210Z     file_to_c:   /Users/runner/work/KronosiOS/KronosiOS/build-host/tools/file_to_c/file_to_c
+2026-11-25T12:04:35.3511030Z -- The C compiler identification is AppleClang 16.0.0.16000026
+2026-11-25T12:04:35.4640990Z -- The CXX compiler identification is AppleClang 16.0.0.16000026
+2026-11-25T12:04:35.4818300Z -- Detecting C compiler ABI info
+2026-11-25T12:04:35.6010550Z -- Detecting C compiler ABI info - done
+2026-11-25T12:04:35.6422240Z -- Check for working C compiler: /usr/bin/cc - skipped
+2026-11-25T12:04:35.6428490Z -- Detecting C compile features
+2026-11-25T12:04:35.6432680Z -- Detecting C compile features - done
+2026-11-25T12:04:35.6501670Z -- Detecting CXX compiler ABI info
+2026-11-25T12:04:35.7490680Z -- Detecting CXX compiler ABI info - done
+2026-11-25T12:04:35.7860270Z -- Check for working CXX compiler: /usr/bin/c++ - skipped
+2026-11-25T12:04:35.7862910Z -- Detecting CXX compile features
+2026-11-25T12:04:35.7867660Z -- Detecting CXX compile features - done
+2026-11-25T12:04:35.8836620Z -- The OBJC compiler identification is AppleClang 16.0.0.16000026
+2026-11-25T12:04:35.9748130Z -- The OBJCXX compiler identification is AppleClang 16.0.0.16000026
+2026-11-25T12:04:35.9810610Z -- Detecting OBJC compiler ABI info
+2026-11-25T12:04:36.0959230Z -- Detecting OBJC compiler ABI info - done
+2026-11-25T12:04:36.1327400Z -- Check for working OBJC compiler: /usr/bin/cc - skipped
+2026-11-25T12:04:36.1388830Z -- Detecting OBJCXX compiler ABI info
+2026-11-25T12:04:36.2342360Z -- Detecting OBJCXX compiler ABI info - done
+2026-11-25T12:04:36.2746080Z -- Check for working OBJCXX compiler: /usr/bin/c++ - skipped
+2026-11-25T12:04:36.2767550Z -- Detected architecture: arm64
+2026-11-25T12:04:36.2773360Z -- Configuring MarathonRecomp v1.0.0 for iOS arm64 (Deployment Target: 17.0)
+2026-11-25T12:04:36.2774650Z -- Using static iOS FreeType: /Users/runner/work/KronosiOS/KronosiOS/ios-deps/freetype-install/lib/libfreetype.a
+2026-11-25T12:04:36.2775310Z -- Using static iOS FFmpeg (XMA decoder): /Users/runner/work/KronosiOS/KronosiOS/ios-deps/ffmpeg-install
+2026-11-25T12:04:36.2897790Z -- Found Freetype: /Users/runner/work/KronosiOS/KronosiOS/ios-deps/freetype-install/lib/libfreetype.a (found version "2.13.3")
+2026-11-25T12:04:36.2920390Z -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+2026-11-25T12:04:36.3930590Z -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+2026-11-25T12:04:36.3937730Z -- Found Threads: TRUE
+2026-11-25T12:04:36.4362980Z -- Found PkgConfig: /opt/homebrew/bin/pkg-config (found version "3.0.11")
+2026-11-25T12:04:36.4514880Z -- Performing Test HAVE_GCC_WALL
+2026-11-25T12:04:36.5519170Z -- Performing Test HAVE_GCC_WALL - Success
+2026-11-25T12:04:36.5524280Z -- Performing Test HAVE_GCC_WUNDEF
+2026-11-25T12:04:36.6698530Z -- Performing Test HAVE_GCC_WUNDEF - Success
+2026-11-25T12:04:36.6709170Z -- Performing Test HAVE_GCC_WFLOAT_CONVERSION
+2026-11-25T12:04:36.7833800Z -- Performing Test HAVE_GCC_WFLOAT_CONVERSION - Success
+2026-11-25T12:04:36.7838900Z -- Performing Test HAVE_GCC_NO_STRICT_ALIASING
+2026-11-25T12:04:36.8911310Z -- Performing Test HAVE_GCC_NO_STRICT_ALIASING - Success
+2026-11-25T12:04:36.8925220Z -- Performing Test HAVE_GCC_WDOCUMENTATION
+2026-11-25T12:04:37.0051600Z -- Performing Test HAVE_GCC_WDOCUMENTATION - Success
+2026-11-25T12:04:37.0056800Z -- Performing Test HAVE_GCC_WDOCUMENTATION_UNKNOWN_COMMAND
+2026-11-25T12:04:37.1738350Z -- Performing Test HAVE_GCC_WDOCUMENTATION_UNKNOWN_COMMAND - Success
+2026-11-25T12:04:37.1743340Z -- Performing Test HAVE_GCC_COMMENT_BLOCK_COMMANDS
+2026-11-25T12:04:37.2839630Z -- Performing Test HAVE_GCC_COMMENT_BLOCK_COMMANDS - Success
+2026-11-25T12:04:37.2844820Z -- Performing Test HAVE_GCC_WSHADOW
+2026-11-25T12:04:37.3958430Z -- Performing Test HAVE_GCC_WSHADOW - Success
+2026-11-25T12:04:37.3963550Z -- Performing Test HAVE_GCC_WUNUSED_LOCAL_TYPEDEFS
+2026-11-25T12:04:37.5074010Z -- Performing Test HAVE_GCC_WUNUSED_LOCAL_TYPEDEFS - Success
+2026-11-25T12:04:37.5078920Z -- Performing Test HAVE_GCC_WIMPLICIT_FALLTHROUGH
+2026-11-25T12:04:37.6296790Z -- Performing Test HAVE_GCC_WIMPLICIT_FALLTHROUGH - Success
+2026-11-25T12:04:37.6301760Z -- Performing Test COMPILER_SUPPORTS_FCOLOR_DIAGNOSTICS
+2026-11-25T12:04:37.7419900Z -- Performing Test COMPILER_SUPPORTS_FCOLOR_DIAGNOSTICS - Success
+2026-11-25T12:04:37.7435860Z -- Looking for __GLIBC__
+2026-11-25T12:04:37.8208780Z -- Looking for __GLIBC__ - not found
+2026-11-25T12:04:37.8212130Z -- Performing Test HAVE_WL_VERSION_SCRIPT
+2026-11-25T12:04:37.9301970Z -- Performing Test HAVE_WL_VERSION_SCRIPT - Failed
+2026-11-25T12:04:37.9304910Z -- Performing Test COMPILER_SUPPORTS_GCC_ATOMICS
+2026-11-25T12:04:38.0454830Z -- Performing Test COMPILER_SUPPORTS_GCC_ATOMICS - Success
+2026-11-25T12:04:38.0455660Z -- Performing Test HAVE_GCC_FVISIBILITY
+2026-11-25T12:04:38.1643980Z -- Performing Test HAVE_GCC_FVISIBILITY - Success
+2026-11-25T12:04:38.1649170Z -- Performing Test COMPILER_SUPPORTS_WNO_ERROR_DEPRECATED_DECLARATIONS
+2026-11-25T12:04:38.2728240Z -- Performing Test COMPILER_SUPPORTS_WNO_ERROR_DEPRECATED_DECLARATIONS - Success
+2026-11-25T12:04:38.2733160Z -- Performing Test COMPILER_SUPPORTS_WNO_DEPRECATED_DECLARATIONS
+2026-11-25T12:04:38.3951460Z -- Performing Test COMPILER_SUPPORTS_WNO_DEPRECATED_DECLARATIONS - Success
+2026-11-25T12:04:38.3957300Z -- Performing Test LINKER_SUPPORTS_WL_NO_UNDEFINED
+2026-11-25T12:04:38.4954450Z -- Performing Test LINKER_SUPPORTS_WL_NO_UNDEFINED - Failed
+2026-11-25T12:04:38.4955520Z -- Performing Test COMPILER_SUPPORTS_ARMNEON
+2026-11-25T12:04:38.6409730Z -- Performing Test COMPILER_SUPPORTS_ARMNEON - Success
+2026-11-25T12:04:38.6430740Z -- Looking for alloca.h
+2026-11-25T12:04:38.7540270Z -- Looking for alloca.h - found
+2026-11-25T12:04:38.7540670Z -- Looking for float.h
+2026-11-25T12:04:38.8717520Z -- Looking for float.h - found
+2026-11-25T12:04:38.8717900Z -- Looking for iconv.h
+2026-11-25T12:04:38.9895550Z -- Looking for iconv.h - found
+2026-11-25T12:04:38.9895940Z -- Looking for inttypes.h
+2026-11-25T12:04:39.1099060Z -- Looking for inttypes.h - found
+2026-11-25T12:04:39.1099530Z -- Looking for limits.h
+2026-11-25T12:04:39.2281030Z -- Looking for limits.h - found
+2026-11-25T12:04:39.2281350Z -- Looking for malloc.h
+2026-11-25T12:04:39.2966520Z -- Looking for malloc.h - not found
+2026-11-25T12:04:39.2967050Z -- Looking for math.h
+2026-11-25T12:04:39.4019930Z -- Looking for math.h - found
+2026-11-25T12:04:39.4020340Z -- Looking for memory.h
+2026-11-25T12:04:39.5343190Z -- Looking for memory.h - found
+2026-11-25T12:04:39.5343740Z -- Looking for signal.h
+2026-11-25T12:04:39.7278090Z -- Looking for signal.h - found
+2026-11-25T12:04:39.7279100Z -- Looking for stdarg.h
+2026-11-25T12:04:39.8382100Z -- Looking for stdarg.h - found
+2026-11-25T12:04:39.8382470Z -- Looking for stdbool.h
+2026-11-25T12:04:39.9627780Z -- Looking for stdbool.h - found
+2026-11-25T12:04:39.9628280Z -- Looking for stddef.h
+2026-11-25T12:04:40.0790360Z -- Looking for stddef.h - found
+2026-11-25T12:04:40.0790940Z -- Looking for stdint.h
+2026-11-25T12:04:40.1881930Z -- Looking for stdint.h - found
+2026-11-25T12:04:40.1883210Z -- Looking for stdio.h
+2026-11-25T12:04:40.3094270Z -- Looking for stdio.h - found
+2026-11-25T12:04:40.3094910Z -- Looking for stdlib.h
+2026-11-25T12:04:40.4287870Z -- Looking for stdlib.h - found
+2026-11-25T12:04:40.4288260Z -- Looking for string.h
+2026-11-25T12:04:40.5527680Z -- Looking for string.h - found
+2026-11-25T12:04:40.5530120Z -- Looking for strings.h
+2026-11-25T12:04:40.6940680Z -- Looking for strings.h - found
+2026-11-25T12:04:40.6941570Z -- Looking for sys/types.h
+2026-11-25T12:04:40.8226190Z -- Looking for sys/types.h - found
+2026-11-25T12:04:40.8237280Z -- Looking for time.h
+2026-11-25T12:04:40.9427750Z -- Looking for time.h - found
+2026-11-25T12:04:40.9428400Z -- Looking for wchar.h
+2026-11-25T12:04:41.0618680Z -- Looking for wchar.h - found
+2026-11-25T12:04:41.0619140Z -- Looking for pow in m
+2026-11-25T12:04:41.1748030Z -- Looking for pow in m - found
+2026-11-25T12:04:41.1750890Z -- Looking for abs
+2026-11-25T12:04:41.3081400Z -- Looking for abs - found
+2026-11-25T12:04:41.3082930Z -- Looking for acos
+2026-11-25T12:04:41.4425170Z -- Looking for acos - found
+2026-11-25T12:04:41.4426570Z -- Looking for acosf
+2026-11-25T12:04:41.5795820Z -- Looking for acosf - found
+2026-11-25T12:04:41.5800070Z -- Looking for asin
+2026-11-25T12:04:41.7106010Z -- Looking for asin - found
+2026-11-25T12:04:41.7111480Z -- Looking for asinf
+2026-11-25T12:04:41.8442330Z -- Looking for asinf - found
+2026-11-25T12:04:41.8443730Z -- Looking for atan
+2026-11-25T12:04:41.9717030Z -- Looking for atan - found
+2026-11-25T12:04:41.9718280Z -- Looking for atan2
+2026-11-25T12:04:42.1037560Z -- Looking for atan2 - found
+2026-11-25T12:04:42.1038870Z -- Looking for atan2f
+2026-11-25T12:04:42.2324140Z -- Looking for atan2f - found
+2026-11-25T12:04:42.2325510Z -- Looking for atanf
+2026-11-25T12:04:42.3627400Z -- Looking for atanf - found
+2026-11-25T12:04:42.3628870Z -- Looking for atof
+2026-11-25T12:04:42.4897620Z -- Looking for atof - found
+2026-11-25T12:04:42.4898850Z -- Looking for atoi
+2026-11-25T12:04:42.6171300Z -- Looking for atoi - found
+2026-11-25T12:04:42.6172760Z -- Looking for bcopy
+2026-11-25T12:04:42.7479860Z -- Looking for bcopy - found
+2026-11-25T12:04:42.7481080Z -- Looking for ceil
+2026-11-25T12:04:42.8817280Z -- Looking for ceil - found
+2026-11-25T12:04:42.8818790Z -- Looking for ceilf
+2026-11-25T12:04:43.0069010Z -- Looking for ceilf - found
+2026-11-25T12:04:43.0070390Z -- Looking for copysign
+2026-11-25T12:04:43.1375270Z -- Looking for copysign - found
+2026-11-25T12:04:43.1376750Z -- Looking for copysignf
+2026-11-25T12:04:43.2600220Z -- Looking for copysignf - found
+2026-11-25T12:04:43.2601710Z -- Looking for cos
+2026-11-25T12:04:43.3808180Z -- Looking for cos - found
+2026-11-25T12:04:43.3809570Z -- Looking for cosf
+2026-11-25T12:04:43.5081040Z -- Looking for cosf - found
+2026-11-25T12:04:43.5082320Z -- Looking for _Exit
+2026-11-25T12:04:43.6387700Z -- Looking for _Exit - found
+2026-11-25T12:04:43.6389120Z -- Looking for exp
+2026-11-25T12:04:43.7750980Z -- Looking for exp - found
+2026-11-25T12:04:43.7753560Z -- Looking for expf
+2026-11-25T12:04:43.9093770Z -- Looking for expf - found
+2026-11-25T12:04:43.9095090Z -- Looking for fabs
+2026-11-25T12:04:44.0422940Z -- Looking for fabs - found
+2026-11-25T12:04:44.0424090Z -- Looking for fabsf
+2026-11-25T12:04:44.1701580Z -- Looking for fabsf - found
+2026-11-25T12:04:44.1703020Z -- Looking for floor
+2026-11-25T12:04:44.3300250Z -- Looking for floor - found
+2026-11-25T12:04:44.3302930Z -- Looking for floorf
+2026-11-25T12:04:44.4822810Z -- Looking for floorf - found
+2026-11-25T12:04:44.4824320Z -- Looking for fmod
+2026-11-25T12:04:44.6359280Z -- Looking for fmod - found
+2026-11-25T12:04:44.6361630Z -- Looking for fmodf
+2026-11-25T12:04:44.7749600Z -- Looking for fmodf - found
+2026-11-25T12:04:44.7751110Z -- Looking for fopen64
+2026-11-25T12:04:44.8647880Z -- Looking for fopen64 - not found
+2026-11-25T12:04:44.8649420Z -- Looking for fseeko
+2026-11-25T12:04:44.9740120Z -- Looking for fseeko - found
+2026-11-25T12:04:44.9741680Z -- Looking for fseeko64
+2026-11-25T12:04:45.0596640Z -- Looking for fseeko64 - not found
+2026-11-25T12:04:45.0597560Z -- Looking for getenv
+2026-11-25T12:04:45.1664210Z -- Looking for getenv - found
+2026-11-25T12:04:45.1665670Z -- Looking for _i64toa
+2026-11-25T12:04:45.2517540Z -- Looking for _i64toa - not found
+2026-11-25T12:04:45.2519020Z -- Looking for index
+2026-11-25T12:04:45.3593190Z -- Looking for index - found
+2026-11-25T12:04:45.3594840Z -- Looking for itoa
+2026-11-25T12:04:45.4425100Z -- Looking for itoa - not found
+2026-11-25T12:04:45.4426700Z -- Looking for log
+2026-11-25T12:04:45.5504100Z -- Looking for log - found
+2026-11-25T12:04:45.5505750Z -- Looking for log10
+2026-11-25T12:04:45.6781990Z -- Looking for log10 - found
+2026-11-25T12:04:45.6783620Z -- Looking for log10f
+2026-11-25T12:04:45.8047060Z -- Looking for log10f - found
+2026-11-25T12:04:45.8048760Z -- Looking for logf
+2026-11-25T12:04:45.9305080Z -- Looking for logf - found
+2026-11-25T12:04:45.9306370Z -- Looking for lround
+2026-11-25T12:04:46.0555530Z -- Looking for lround - found
+2026-11-25T12:04:46.0557090Z -- Looking for lroundf
+2026-11-25T12:04:46.1798610Z -- Looking for lroundf - found
+2026-11-25T12:04:46.1799760Z -- Looking for _ltoa
+2026-11-25T12:04:46.2695070Z -- Looking for _ltoa - not found
+2026-11-25T12:04:46.2696540Z -- Looking for malloc
+2026-11-25T12:04:46.3786280Z -- Looking for malloc - found
+2026-11-25T12:04:46.3787830Z -- Looking for memcmp
+2026-11-25T12:04:46.5045700Z -- Looking for memcmp - found
+2026-11-25T12:04:46.5047430Z -- Looking for memcpy
+2026-11-25T12:04:46.6318490Z -- Looking for memcpy - found
+2026-11-25T12:04:46.6320090Z -- Looking for memmove
+2026-11-25T12:04:46.7589530Z -- Looking for memmove - found
+2026-11-25T12:04:46.7591080Z -- Looking for memset
+2026-11-25T12:04:46.8926290Z -- Looking for memset - found
+2026-11-25T12:04:46.8927860Z -- Looking for modf
+2026-11-25T12:04:47.0252420Z -- Looking for modf - found
+2026-11-25T12:04:47.0254030Z -- Looking for modff
+2026-11-25T12:04:47.1598720Z -- Looking for modff - found
+2026-11-25T12:04:47.1600370Z -- Looking for pow
+2026-11-25T12:04:47.2910190Z -- Looking for pow - found
+2026-11-25T12:04:47.2911750Z -- Looking for powf
+2026-11-25T12:04:47.4261530Z -- Looking for powf - found
+2026-11-25T12:04:47.4263130Z -- Looking for putenv
+2026-11-25T12:04:47.5579970Z -- Looking for putenv - found
+2026-11-25T12:04:47.5581620Z -- Looking for rindex
+2026-11-25T12:04:47.6957780Z -- Looking for rindex - found
+2026-11-25T12:04:47.6962190Z -- Looking for round
+2026-11-25T12:04:47.8331950Z -- Looking for round - found
+2026-11-25T12:04:47.8333710Z -- Looking for roundf
+2026-11-25T12:04:47.9642150Z -- Looking for roundf - found
+2026-11-25T12:04:47.9643840Z -- Looking for scalbn
+2026-11-25T12:04:48.0962760Z -- Looking for scalbn - found
+2026-11-25T12:04:48.0964400Z -- Looking for scalbnf
+2026-11-25T12:04:48.2227970Z -- Looking for scalbnf - found
+2026-11-25T12:04:48.2229630Z -- Looking for setenv
+2026-11-25T12:04:48.3488390Z -- Looking for setenv - found
+2026-11-25T12:04:48.3490110Z -- Looking for sin
+2026-11-25T12:04:48.4842390Z -- Looking for sin - found
+2026-11-25T12:04:48.4843360Z -- Looking for sinf
+2026-11-25T12:04:48.6198870Z -- Looking for sinf - found
+2026-11-25T12:04:48.6200440Z -- Looking for sqr
+2026-11-25T12:04:48.7123730Z -- Looking for sqr - not found
+2026-11-25T12:04:48.7125420Z -- Looking for sqrt
+2026-11-25T12:04:48.8222770Z -- Looking for sqrt - found
+2026-11-25T12:04:48.8224600Z -- Looking for sqrtf
+2026-11-25T12:04:48.9540130Z -- Looking for sqrtf - found
+2026-11-25T12:04:48.9541700Z -- Looking for sscanf
+2026-11-25T12:04:49.0846800Z -- Looking for sscanf - found
+2026-11-25T12:04:49.0848770Z -- Looking for strchr
+2026-11-25T12:04:49.2169650Z -- Looking for strchr - found
+2026-11-25T12:04:49.2173500Z -- Looking for strcmp
+2026-11-25T12:04:49.3488360Z -- Looking for strcmp - found
+2026-11-25T12:04:49.3490010Z -- Looking for strlcat
+2026-11-25T12:04:49.4765190Z -- Looking for strlcat - found
+2026-11-25T12:04:49.4767230Z -- Looking for strlcpy
+2026-11-25T12:04:49.6097770Z -- Looking for strlcpy - found
+2026-11-25T12:04:49.6099230Z -- Looking for strlen
+2026-11-25T12:04:49.7463160Z -- Looking for strlen - found
+2026-11-25T12:04:49.7464580Z -- Looking for strncmp
+2026-11-25T12:04:49.8795140Z -- Looking for strncmp - found
+2026-11-25T12:04:49.8796560Z -- Looking for strnlen
+2026-11-25T12:04:50.0094910Z -- Looking for strnlen - found
+2026-11-25T12:04:50.0105490Z -- Looking for strpbrk
+2026-11-25T12:04:50.1380590Z -- Looking for strpbrk - found
+2026-11-25T12:04:50.1382190Z -- Looking for strrchr
+2026-11-25T12:04:50.2621330Z -- Looking for strrchr - found
+2026-11-25T12:04:50.2622970Z -- Looking for strstr
+2026-11-25T12:04:50.3867870Z -- Looking for strstr - found
+2026-11-25T12:04:50.3869150Z -- Looking for strnstr
+2026-11-25T12:04:50.5134370Z -- Looking for strnstr - found
+2026-11-25T12:04:50.5137430Z -- Looking for strtod
+2026-11-25T12:04:50.6480550Z -- Looking for strtod - found
+2026-11-25T12:04:50.6482140Z -- Looking for strtok_r
+2026-11-25T12:04:50.7809960Z -- Looking for strtok_r - found
+2026-11-25T12:04:50.7811610Z -- Looking for strtol
+2026-11-25T12:04:50.9139000Z -- Looking for strtol - found
+2026-11-25T12:04:50.9140420Z -- Looking for strtoll
+2026-11-25T12:04:51.0385140Z -- Looking for strtoll - found
+2026-11-25T12:04:51.0386810Z -- Looking for strtoul
+2026-11-25T12:04:51.1660460Z -- Looking for strtoul - found
+2026-11-25T12:04:51.1663740Z -- Looking for strtoull
+2026-11-25T12:04:51.2992840Z -- Looking for strtoull - found
+2026-11-25T12:04:51.2994700Z -- Looking for tan
+2026-11-25T12:04:51.4316130Z -- Looking for tan - found
+2026-11-25T12:04:51.4317820Z -- Looking for tanf
+2026-11-25T12:04:51.5662760Z -- Looking for tanf - found
+2026-11-25T12:04:51.5663120Z -- Looking for trunc
+2026-11-25T12:04:51.6932620Z -- Looking for trunc - found
+2026-11-25T12:04:51.6934190Z -- Looking for truncf
+2026-11-25T12:04:51.8140130Z -- Looking for truncf - found
+2026-11-25T12:04:51.8141930Z -- Looking for unsetenv
+2026-11-25T12:04:51.9470690Z -- Looking for unsetenv - found
+2026-11-25T12:04:51.9476170Z -- Looking for vsnprintf
+2026-11-25T12:04:52.0785630Z -- Looking for vsnprintf - found
+2026-11-25T12:04:52.0787420Z -- Looking for vsscanf
+2026-11-25T12:04:52.2169240Z -- Looking for vsscanf - found
+2026-11-25T12:04:52.2170620Z -- Looking for wcsnlen
+2026-11-25T12:04:52.3443600Z -- Looking for wcsnlen - found
+2026-11-25T12:04:52.3445220Z -- Looking for wcscmp
+2026-11-25T12:04:52.4809100Z -- Looking for wcscmp - found
+2026-11-25T12:04:52.4810740Z -- Looking for wcsdup
+2026-11-25T12:04:52.6162330Z -- Looking for wcsdup - found
+2026-11-25T12:04:52.6163900Z -- Looking for wcslcat
+2026-11-25T12:04:52.7594530Z -- Looking for wcslcat - found
+2026-11-25T12:04:52.7596410Z -- Looking for wcslcpy
+2026-11-25T12:04:52.9380530Z -- Looking for wcslcpy - found
+2026-11-25T12:04:52.9386300Z -- Looking for wcslen
+2026-11-25T12:04:53.0742490Z -- Looking for wcslen - found
+2026-11-25T12:04:53.0744540Z -- Looking for wcsncmp
+2026-11-25T12:04:53.2211460Z -- Looking for wcsncmp - found
+2026-11-25T12:04:53.2213000Z -- Looking for wcsstr
+2026-11-25T12:04:53.3619910Z -- Looking for wcsstr - found
+2026-11-25T12:04:53.3621480Z -- Looking for wcstol
+2026-11-25T12:04:53.5038240Z -- Looking for wcstol - found
+2026-11-25T12:04:53.5039480Z -- Looking for strcasestr
+2026-11-25T12:04:53.6377410Z -- Looking for strcasestr - found
+2026-11-25T12:04:53.6379510Z -- Performing Test LIBC_HAS_ISINF
+2026-11-25T12:04:53.7679360Z -- Performing Test LIBC_HAS_ISINF - Success
+2026-11-25T12:04:53.7679970Z -- Performing Test LIBC_ISINF_HANDLES_FLOAT
+2026-11-25T12:04:53.8852080Z -- Performing Test LIBC_ISINF_HANDLES_FLOAT - Success
+2026-11-25T12:04:53.8852910Z -- Performing Test LIBC_HAS_ISINFF
+2026-11-25T12:04:53.9674880Z -- Performing Test LIBC_HAS_ISINFF - Failed
+2026-11-25T12:04:53.9675390Z -- Performing Test LIBC_HAS_ISNAN
+2026-11-25T12:04:54.0657590Z -- Performing Test LIBC_HAS_ISNAN - Success
+2026-11-25T12:04:54.0658180Z -- Performing Test LIBC_ISNAN_HANDLES_FLOAT
+2026-11-25T12:04:54.1822440Z -- Performing Test LIBC_ISNAN_HANDLES_FLOAT - Success
+2026-11-25T12:04:54.1822890Z -- Performing Test LIBC_HAS_ISNANF
+2026-11-25T12:04:54.2673380Z -- Performing Test LIBC_HAS_ISNANF - Failed
+2026-11-25T12:04:54.2674770Z -- Looking for fdatasync
+2026-11-25T12:04:54.3310310Z -- Looking for fdatasync - not found
+2026-11-25T12:04:54.3311380Z -- Looking for gethostname
+2026-11-25T12:04:54.4433170Z -- Looking for gethostname - found
+2026-11-25T12:04:54.4434630Z -- Looking for getpagesize
+2026-11-25T12:04:54.5793530Z -- Looking for getpagesize - found
+2026-11-25T12:04:54.5794610Z -- Looking for getresgid
+2026-11-25T12:04:54.6633100Z -- Looking for getresgid - not found
+2026-11-25T12:04:54.6634380Z -- Looking for getresuid
+2026-11-25T12:04:54.7216460Z -- Looking for getresuid - not found
+2026-11-25T12:04:54.7217470Z -- Looking for sigaction
+2026-11-25T12:04:54.8270950Z -- Looking for sigaction - found
+2026-11-25T12:04:54.8273390Z -- Looking for sigtimedwait
+2026-11-25T12:04:54.9072480Z -- Looking for sigtimedwait - not found
+2026-11-25T12:04:54.9073630Z -- Looking for setjmp
+2026-11-25T12:04:55.0200360Z -- Looking for setjmp - found
+2026-11-25T12:04:55.0202090Z -- Looking for nanosleep
+2026-11-25T12:04:55.1572320Z -- Looking for nanosleep - found
+2026-11-25T12:04:55.1574120Z -- Looking for gmtime_r
+2026-11-25T12:04:55.2885250Z -- Looking for gmtime_r - found
+2026-11-25T12:04:55.2885780Z -- Looking for localtime_r
+2026-11-25T12:04:55.4121890Z -- Looking for localtime_r - found
+2026-11-25T12:04:55.4122910Z -- Looking for nl_langinfo
+2026-11-25T12:04:55.5240280Z -- Looking for nl_langinfo - found
+2026-11-25T12:04:55.5241570Z -- Looking for sysconf
+2026-11-25T12:04:55.6501310Z -- Looking for sysconf - found
+2026-11-25T12:04:55.6506580Z -- Looking for sysctlbyname
+2026-11-25T12:04:55.7673690Z -- Looking for sysctlbyname - found
+2026-11-25T12:04:55.7675550Z -- Looking for getauxval
+2026-11-25T12:04:55.8468000Z -- Looking for getauxval - not found
+2026-11-25T12:04:55.8469260Z -- Looking for elf_aux_info
+2026-11-25T12:04:55.8992690Z -- Looking for elf_aux_info - not found
+2026-11-25T12:04:55.8993920Z -- Looking for ppoll
+2026-11-25T12:04:55.9528480Z -- Looking for ppoll - not found
+2026-11-25T12:04:55.9529790Z -- Looking for memfd_create
+2026-11-25T12:04:56.0082030Z -- Looking for memfd_create - not found
+2026-11-25T12:04:56.0083500Z -- Looking for posix_fallocate
+2026-11-25T12:04:56.0656470Z -- Looking for posix_fallocate - not found
+2026-11-25T12:04:56.0657870Z -- Looking for posix_spawn_file_actions_addchdir
+2026-11-25T12:04:56.1669290Z -- Looking for posix_spawn_file_actions_addchdir - not found
+2026-11-25T12:04:56.1670800Z -- Looking for posix_spawn_file_actions_addchdir_np
+2026-11-25T12:04:56.2245850Z -- Looking for posix_spawn_file_actions_addchdir_np - not found
+2026-11-25T12:04:56.2387030Z -- Looking for dlopen
+2026-11-25T12:04:56.3368170Z -- Looking for dlopen - found
+2026-11-25T12:04:56.3370720Z -- Performing Test HAVE_O_CLOEXEC
+2026-11-25T12:04:56.4570650Z -- Performing Test HAVE_O_CLOEXEC - Success
+2026-11-25T12:04:56.4901210Z -- Performing Test HAVE_FRAMEWORK_METAL
+2026-11-25T12:04:56.7589450Z -- Performing Test HAVE_FRAMEWORK_METAL - Success
+2026-11-25T12:04:56.7992890Z -- Performing Test HAVE_PTHREADS
+2026-11-25T12:04:56.9012660Z -- Performing Test HAVE_PTHREADS - Success
+2026-11-25T12:04:56.9014530Z -- Performing Test HAVE_RECURSIVE_MUTEXES
+2026-11-25T12:04:57.0191350Z -- Performing Test HAVE_RECURSIVE_MUTEXES - Success
+2026-11-25T12:04:57.0191830Z -- Performing Test HAVE_PTHREADS_SEM
+2026-11-25T12:04:57.1411740Z -- Performing Test HAVE_PTHREADS_SEM - Success
+2026-11-25T12:04:57.1412170Z -- Performing Test COMPILER_HAS_SEM_TIMEDWAIT
+2026-11-25T12:04:57.2207340Z -- Performing Test COMPILER_HAS_SEM_TIMEDWAIT - Failed
+2026-11-25T12:04:57.2208060Z -- Looking for pthread.h
+2026-11-25T12:04:57.3199670Z -- Looking for pthread.h - found
+2026-11-25T12:04:57.3199960Z -- Looking for pthread_np.h
+2026-11-25T12:04:57.3949260Z -- Looking for pthread_np.h - not found
+2026-11-25T12:04:57.3949740Z -- Performing Test HAVE_PTHREAD_SETNAME_NP
+2026-11-25T12:04:57.4954600Z -- Performing Test HAVE_PTHREAD_SETNAME_NP - Success
+2026-11-25T12:04:57.4959900Z -- Performing Test HAVE_POSIX_SPAWN
+2026-11-25T12:04:57.6176120Z -- Performing Test HAVE_POSIX_SPAWN - Success
+2026-11-25T12:04:57.6915700Z -- Performing Test COMPILER_SUPPORTS_FOBJC_ARC
+2026-11-25T12:04:57.7853520Z -- Performing Test COMPILER_SUPPORTS_FOBJC_ARC - Success
+2026-11-25T12:04:57.8129940Z -- 
+2026-11-25T12:04:57.8130280Z -- SDL3 was configured with the following options:
+2026-11-25T12:04:57.8130570Z -- 
+2026-11-25T12:04:57.8130690Z -- Platform: iOS
+2026-11-25T12:04:57.8130840Z -- 64-bit:   TRUE
+2026-11-25T12:04:57.8130990Z -- Compiler: /usr/bin/cc
+2026-11-25T12:04:57.8131180Z -- Revision: SDL-3.4.16-fa2c02b
+2026-11-25T12:04:57.8131380Z -- Vendor:   
+2026-11-25T12:04:57.8131570Z -- 
+2026-11-25T12:04:57.8131690Z -- Subsystems:
+2026-11-25T12:04:57.8131860Z --   Audio:    ON
+2026-11-25T12:04:57.8132010Z --   Video:    ON
+2026-11-25T12:04:57.8132300Z --   GPU:      ON
+2026-11-25T12:04:57.8132460Z --   Render:   ON
+2026-11-25T12:04:57.8132610Z --   Camera:   ON
+2026-11-25T12:04:57.8132740Z --   Joystick: ON
+2026-11-25T12:04:57.8132890Z --   Haptic:   ON
+2026-11-25T12:04:57.8133090Z --   Hidapi:   ON
+2026-11-25T12:04:57.8133410Z --   Power:    ON
+2026-11-25T12:04:57.8133760Z --   Sensor:   ON
+2026-11-25T12:04:57.8134030Z --   Dialog:   ON
+2026-11-25T12:04:57.8134320Z --   Tray:     ON
+2026-11-25T12:04:57.8134450Z -- 
+2026-11-25T12:04:57.8134570Z -- Options:
+2026-11-25T12:04:57.8137870Z --   SDL_ALSA                    (Wanted: OFF): OFF
+2026-11-25T12:04:57.8138320Z --   SDL_ALSA_SHARED             (Wanted: OFF): OFF
+2026-11-25T12:04:57.8138720Z --   SDL_ALTIVEC                 (Wanted: OFF): OFF
+2026-11-25T12:04:57.8139180Z --   SDL_ARMNEON                 (Wanted: ON): ON
+2026-11-25T12:04:57.8139570Z --   SDL_ASAN                    (Wanted: OFF): OFF
+2026-11-25T12:04:57.8140010Z --   SDL_ASSEMBLY                (Wanted: ON): ON
+2026-11-25T12:04:57.8140430Z --   SDL_ASSERTIONS              (Wanted: auto): auto
+2026-11-25T12:04:57.8140820Z --   SDL_AVX                     (Wanted: OFF): OFF
+2026-11-25T12:04:57.8141200Z --   SDL_AVX2                    (Wanted: OFF): OFF
+2026-11-25T12:04:57.8141590Z --   SDL_AVX512F                 (Wanted: OFF): OFF
+2026-11-25T12:04:57.8142020Z --   SDL_BACKGROUNDING_SIGNAL    (Wanted: OFF): OFF
+2026-11-25T12:04:57.8142410Z --   SDL_CCACHE                  (Wanted: OFF): OFF
+2026-11-25T12:04:57.8142800Z --   SDL_CLANG_TIDY              (Wanted: OFF): OFF
+2026-11-25T12:04:57.8143200Z --   SDL_CLOCK_GETTIME           (Wanted: OFF): OFF
+2026-11-25T12:04:57.8143610Z --   SDL_COCOA                   (Wanted: ON): OFF
+2026-11-25T12:04:57.8143990Z --   SDL_DBUS                    (Wanted: OFF): OFF
+2026-11-25T12:04:57.8144390Z --   SDL_DEPS_SHARED             (Wanted: ON): OFF
+2026-11-25T12:04:57.8144760Z --   SDL_DIRECTX                 (Wanted: OFF): OFF
+2026-11-25T12:04:57.8145180Z --   SDL_DISKAUDIO               (Wanted: ON): ON
+2026-11-25T12:04:57.8145580Z --   SDL_DLOPEN_NOTES            (Wanted: OFF): OFF
+2026-11-25T12:04:57.8146000Z --   SDL_DUMMYAUDIO              (Wanted: ON): ON
+2026-11-25T12:04:57.8146400Z --   SDL_DUMMYCAMERA             (Wanted: ON): ON
+2026-11-25T12:04:57.8146810Z --   SDL_DUMMYVIDEO              (Wanted: ON): ON
+2026-11-25T12:04:57.8147210Z --   SDL_EXAMPLES                (Wanted: OFF): OFF
+2026-11-25T12:04:57.8147620Z --   SDL_EXAMPLES_LINK_SHARED    (Wanted: OFF): OFF
+2026-11-25T12:04:57.8148020Z --   SDL_FOREGROUNDING_SIGNAL    (Wanted: OFF): OFF
+2026-11-25T12:04:57.8148400Z --   SDL_FRIBIDI                 (Wanted: OFF): OFF
+2026-11-25T12:04:57.8148810Z --   SDL_FRIBIDI_SHARED          (Wanted: OFF): OFF
+2026-11-25T12:04:57.8149280Z --   SDL_GCC_ATOMICS             (Wanted: ON): ON
+2026-11-25T12:04:57.8149630Z --   SDL_HIDAPI                  (Wanted: ON): ON
+2026-11-25T12:04:57.8150050Z --   SDL_HIDAPI_JOYSTICK         (Wanted: ON): ON
+2026-11-25T12:04:57.8150460Z --   SDL_HIDAPI_LIBUSB           (Wanted: OFF): OFF
+2026-11-25T12:04:57.8150850Z --   SDL_HIDAPI_LIBUSB_SHARED    (Wanted: OFF): OFF
+2026-11-25T12:04:57.8151230Z --   SDL_IBUS                    (Wanted: OFF): OFF
+2026-11-25T12:04:57.8151620Z --   SDL_INSTALL                 (Wanted: OFF): OFF
+2026-11-25T12:04:57.8152010Z --   SDL_INSTALL_TESTS           (Wanted: OFF): OFF
+2026-11-25T12:04:57.8152390Z --   SDL_JACK                    (Wanted: OFF): OFF
+2026-11-25T12:04:57.8152780Z --   SDL_JACK_SHARED             (Wanted: OFF): OFF
+2026-11-25T12:04:57.8153150Z --   SDL_KMSDRM                  (Wanted: OFF): OFF
+2026-11-25T12:04:57.8153550Z --   SDL_KMSDRM_SHARED           (Wanted: OFF): OFF
+2026-11-25T12:04:57.8153900Z --   SDL_LASX                    (Wanted: OFF): OFF
+2026-11-25T12:04:57.8154340Z --   SDL_LIBC                    (Wanted: ON): ON
+2026-11-25T12:04:57.8154720Z --   SDL_LIBICONV                (Wanted: OFF): OFF
+2026-11-25T12:04:57.8155110Z --   SDL_LIBTHAI                 (Wanted: OFF): OFF
+2026-11-25T12:04:57.8155500Z --   SDL_LIBTHAI_SHARED          (Wanted: OFF): OFF
+2026-11-25T12:04:57.8155880Z --   SDL_LIBUDEV                 (Wanted: ON): OFF
+2026-11-25T12:04:57.8156260Z --   SDL_LIBURING                (Wanted: OFF): OFF
+2026-11-25T12:04:57.8156640Z --   SDL_LSX                     (Wanted: OFF): OFF
+2026-11-25T12:04:57.8157060Z --   SDL_METAL                   (Wanted: ON): ON
+2026-11-25T12:04:57.8157440Z --   SDL_MMX                     (Wanted: OFF): OFF
+2026-11-25T12:04:57.8157860Z --   SDL_OFFSCREEN               (Wanted: ON): ON
+2026-11-25T12:04:57.8158240Z --   SDL_OPENGL                  (Wanted: OFF): OFF
+2026-11-25T12:04:57.8158640Z --   SDL_OPENGLES                (Wanted: ON): ON
+2026-11-25T12:04:57.8159030Z --   SDL_OPENVR                  (Wanted: OFF): OFF
+2026-11-25T12:04:57.8159400Z --   SDL_OSS                     (Wanted: OFF): OFF
+2026-11-25T12:04:57.8159790Z --   SDL_PIPEWIRE                (Wanted: OFF): OFF
+2026-11-25T12:04:57.8160170Z --   SDL_PIPEWIRE_SHARED         (Wanted: OFF): OFF
+2026-11-25T12:04:57.8160580Z --   SDL_PTHREADS                (Wanted: ON): ON
+2026-11-25T12:04:57.8161000Z --   SDL_PTHREADS_SEM            (Wanted: ON): ON
+2026-11-25T12:04:57.8161390Z --   SDL_PULSEAUDIO              (Wanted: OFF): OFF
+2026-11-25T12:04:57.8161770Z --   SDL_PULSEAUDIO_SHARED       (Wanted: OFF): OFF
+2026-11-25T12:04:57.8162160Z --   SDL_RENDER_D3D              (Wanted: OFF): OFF
+2026-11-25T12:04:57.8168610Z --   SDL_RENDER_D3D11            (Wanted: OFF): OFF
+2026-11-25T12:04:57.8168900Z --   SDL_RENDER_D3D12            (Wanted: OFF): OFF
+2026-11-25T12:04:57.8169390Z --   SDL_RENDER_GPU              (Wanted: ON): ON
+2026-11-25T12:04:57.8169750Z --   SDL_RENDER_METAL            (Wanted: ON): ON
+2026-11-25T12:04:57.8170110Z --   SDL_RENDER_VULKAN           (Wanted: OFF): OFF
+2026-11-25T12:04:57.8170470Z --   SDL_ROCKCHIP                (Wanted: OFF): OFF
+2026-11-25T12:04:57.8170820Z --   SDL_RPATH                   (Wanted: ON): OFF
+2026-11-25T12:04:57.8171170Z --   SDL_RPI                     (Wanted: OFF): OFF
+2026-11-25T12:04:57.8171560Z --   SDL_SNDIO                   (Wanted: OFF): OFF
+2026-11-25T12:04:57.8171910Z --   SDL_SNDIO_SHARED            (Wanted: OFF): OFF
+2026-11-25T12:04:57.8172160Z --   SDL_SSE                     (Wanted: OFF): OFF
+2026-11-25T12:04:57.8172390Z --   SDL_SSE2                    (Wanted: OFF): OFF
+2026-11-25T12:04:57.8172630Z --   SDL_SSE3                    (Wanted: OFF): OFF
+2026-11-25T12:04:57.8172870Z --   SDL_SSE4_1                  (Wanted: OFF): OFF
+2026-11-25T12:04:57.8173100Z --   SDL_SSE4_2                  (Wanted: OFF): OFF
+2026-11-25T12:04:57.8173340Z --   SDL_SYSTEM_ICONV            (Wanted: OFF): OFF
+2026-11-25T12:04:57.8173570Z --   SDL_TESTS                   (Wanted: OFF): OFF
+2026-11-25T12:04:57.8174010Z --   SDL_TESTS_LINK_SHARED       (Wanted: OFF): OFF
+2026-11-25T12:04:57.8174260Z --   SDL_UNINSTALL               (Wanted: OFF): OFF
+2026-11-25T12:04:57.8174500Z --   SDL_VIRTUAL_JOYSTICK        (Wanted: ON): ON
+2026-11-25T12:04:57.8174740Z --   SDL_VIVANTE                 (Wanted: OFF): OFF
+2026-11-25T12:04:57.8174980Z --   SDL_VULKAN                  (Wanted: OFF): OFF
+2026-11-25T12:04:57.8175210Z --   SDL_WASAPI                  (Wanted: OFF): OFF
+2026-11-25T12:04:57.8175450Z --   SDL_WAYLAND                 (Wanted: OFF): OFF
+2026-11-25T12:04:57.8175690Z --   SDL_WAYLAND_LIBDECOR        (Wanted: OFF): OFF
+2026-11-25T12:04:57.8175940Z --   SDL_WAYLAND_LIBDECOR_SHARED (Wanted: OFF): OFF
+2026-11-25T12:04:57.8176190Z --   SDL_WAYLAND_SHARED          (Wanted: OFF): OFF
+2026-11-25T12:04:57.8176430Z --   SDL_X11                     (Wanted: OFF): OFF
+2026-11-25T12:04:57.8176660Z --   SDL_X11_SHARED              (Wanted: OFF): OFF
+2026-11-25T12:04:57.8176890Z --   SDL_X11_XCURSOR             (Wanted: OFF): OFF
+2026-11-25T12:04:57.8177130Z --   SDL_X11_XDBE                (Wanted: OFF): OFF
+2026-11-25T12:04:57.8177360Z --   SDL_X11_XFIXES              (Wanted: OFF): OFF
+2026-11-25T12:04:57.8177600Z --   SDL_X11_XINPUT              (Wanted: OFF): OFF
+2026-11-25T12:04:57.8177860Z --   SDL_X11_XRANDR              (Wanted: OFF): OFF
+2026-11-25T12:04:57.8178130Z --   SDL_X11_XSCRNSAVER          (Wanted: OFF): OFF
+2026-11-25T12:04:57.8178380Z --   SDL_X11_XSHAPE              (Wanted: OFF): OFF
+2026-11-25T12:04:57.8178620Z --   SDL_X11_XSYNC               (Wanted: OFF): OFF
+2026-11-25T12:04:57.8178970Z --   SDL_X11_XTEST               (Wanted: OFF): OFF
+2026-11-25T12:04:57.8179240Z --   SDL_XINPUT                  (Wanted: OFF): OFF
+2026-11-25T12:04:57.8179440Z -- 
+2026-11-25T12:04:57.8179590Z --  Build Shared Library: OFF
+2026-11-25T12:04:57.8179770Z --  Build Static Library: ON
+2026-11-25T12:04:57.8179980Z --  Build libraries as Apple Framework: OFF
+2026-11-25T12:04:57.8180190Z -- 
+2026-11-25T12:04:57.8180310Z -- Enabled backends:
+2026-11-25T12:04:57.8238390Z --   Video drivers: dummy offscreen uikit
+2026-11-25T12:04:57.8296120Z --   Render drivers: gpu metal ogl_es2
+2026-11-25T12:04:57.8353820Z --   GPU drivers: metal
+2026-11-25T12:04:57.8411460Z --   Audio drivers: coreaudio disk dummy
+2026-11-25T12:04:57.8468960Z --   Joystick drivers: hidapi mfi virtual
+2026-11-25T12:04:57.8526500Z --   Camera drivers: coremedia dummy
+2026-11-25T12:04:57.8526820Z -- 
+2026-11-25T12:04:57.8527110Z -- If something was not detected, although the libraries
+2026-11-25T12:04:57.8527390Z -- were installed, then make sure you have set the
+2026-11-25T12:04:57.8527710Z -- CMAKE_C_FLAGS and CMAKE_PREFIX_PATH CMake variables correctly.
+2026-11-25T12:04:57.8527960Z -- 
+2026-11-25T12:04:57.8595880Z -- Configuring SDL3_mixer 3.2.4
+2026-11-25T12:04:57.8645130Z -- Performing Test LINKER_SUPPORTS_VERSION_SCRIPT
+2026-11-25T12:04:57.9495640Z -- Performing Test LINKER_SUPPORTS_VERSION_SCRIPT - Failed
+2026-11-25T12:04:57.9496230Z -- Using vendored libogg
+2026-11-25T12:04:57.9784040Z -- Configuring libogg 1.3.5
+2026-11-25T12:04:57.9785080Z -- Looking for include file inttypes.h
+2026-11-25T12:04:58.0906400Z -- Looking for include file inttypes.h - found
+2026-11-25T12:04:58.0907040Z -- Looking for include file stdint.h
+2026-11-25T12:04:58.2118630Z -- Looking for include file stdint.h - found
+2026-11-25T12:04:58.2119210Z -- Looking for include file sys/types.h
+2026-11-25T12:04:58.3310760Z -- Looking for include file sys/types.h - found
+2026-11-25T12:04:58.3555220Z -- Looking for sys/types.h
+2026-11-25T12:04:58.4557900Z -- Looking for sys/types.h - found
+2026-11-25T12:04:58.4558380Z -- Looking for stdint.h
+2026-11-25T12:04:58.5701410Z -- Looking for stdint.h - found
+2026-11-25T12:04:58.5701700Z -- Looking for stddef.h
+2026-11-25T12:04:58.7248200Z -- Looking for stddef.h - found
+2026-11-25T12:04:58.7248550Z -- Check size of int16_t
+2026-11-25T12:04:58.8810480Z -- Check size of int16_t - done
+2026-11-25T12:04:58.8811450Z -- Check size of uint16_t
+2026-11-25T12:04:59.0100240Z -- Check size of uint16_t - done
+2026-11-25T12:04:59.0101070Z -- Check size of u_int16_t
+2026-11-25T12:04:59.1409900Z -- Check size of u_int16_t - done
+2026-11-25T12:04:59.1410950Z -- Check size of int32_t
+2026-11-25T12:04:59.2664820Z -- Check size of int32_t - done
+2026-11-25T12:04:59.2665520Z -- Check size of uint32_t
+2026-11-25T12:04:59.3937120Z -- Check size of uint32_t - done
+2026-11-25T12:04:59.3938050Z -- Check size of u_int32_t
+2026-11-25T12:04:59.5234930Z -- Check size of u_int32_t - done
+2026-11-25T12:04:59.5235760Z -- Check size of int64_t
+2026-11-25T12:04:59.6458820Z -- Check size of int64_t - done
+2026-11-25T12:04:59.6459760Z -- Check size of short
+2026-11-25T12:04:59.7690700Z -- Check size of short - done
+2026-11-25T12:04:59.7691620Z -- Check size of int
+2026-11-25T12:04:59.8979100Z -- Check size of int - done
+2026-11-25T12:04:59.8980000Z -- Check size of long
+2026-11-25T12:05:00.0881360Z -- Check size of long - done
+2026-11-25T12:05:00.0882360Z -- Check size of long long
+2026-11-25T12:05:00.2222830Z -- Check size of long long - done
+2026-11-25T12:05:00.2293290Z -- Using vendored vorbis + vorbisfile
+2026-11-25T12:05:00.2324710Z -- Configuring vorbis 1.3.7
+2026-11-25T12:05:00.2358360Z -- Using vendored libgme
+2026-11-25T12:05:00.2412940Z -- VGM/GYM: Nuked OPN2 emulator will be used
+2026-11-25T12:05:00.2423190Z -- Zlib-Compressed formats excluded
+2026-11-25T12:05:00.2424500Z -- Performing Test LIBM_NOT_NEEDED
+2026-11-25T12:05:00.4828220Z -- Performing Test LIBM_NOT_NEEDED - Success
+2026-11-25T12:05:00.5109180Z -- SDL3_mixer backends:
+2026-11-25T12:05:00.5109960Z -- - enabled:  vorbis_vorbisfile gme wave aiff voc au
+2026-11-25T12:05:00.5110620Z -- - disabled: opus vorbis_stb vorbis_tremor flac_libflac flac_drflac mod_xmp mp3_drmp3 mp3_mpg123 midi_fluidsynth midi_timidity wavpack
+2026-11-25T12:05:00.5124680Z -- Plume - Building with backends: Vulkan=1 Metal=1 D3D12=
+2026-11-25T12:05:00.5125100Z -- Plume - SDL2 Vulkan integration: OFF
+2026-11-25T12:05:00.5125330Z -- Plume - SDL3 Vulkan integration: OFF
+2026-11-25T12:05:00.5125570Z -- Plume - D3D12 Agility SDK: OFF
+2026-11-25T12:05:00.5125800Z -- Plume - Building examples: OFF
+2026-11-25T12:05:00.5185420Z -- {fmt} version: 11.0.2
+2026-11-25T12:05:00.5185660Z -- Build type: Release
+2026-11-25T12:05:00.5196960Z -- Performing Test HAS_NULLPTR_WARNING
+2026-11-25T12:05:00.6179470Z -- Performing Test HAS_NULLPTR_WARNING - Success
+2026-11-25T12:05:00.6706790Z CMake Warning (deprecated) at tools/XenonRecomp/thirdparty/xxHash/cmake_unofficial/CMakeLists.txt:8 (cmake_minimum_required):
+2026-11-25T12:05:00.6707660Z   Compatibility with CMake < 3.10 will be removed from a future version of
+2026-11-25T12:05:00.6708060Z   CMake.
+2026-11-25T12:05:00.6708140Z 
+2026-11-25T12:05:00.6708300Z   Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+2026-11-25T12:05:00.6708800Z   to tell CMake that the project requires at least <min> but has been updated
+2026-11-25T12:05:00.6709160Z   to work with policies introduced by <max> or earlier.
+2026-11-25T12:05:00.6709520Z This warning is for project developers.  Use -Wno-author or -Wno-deprecated
+2026-11-25T12:05:00.6709820Z to suppress it.
+2026-11-25T12:05:00.6709910Z 
+2026-11-25T12:05:00.6825140Z -- xxHash build type: Release
+2026-11-25T12:05:00.7072010Z -- Architecture: arm64
+2026-11-25T12:05:00.7540490Z -- The ASM compiler identification is AppleClang
+2026-11-25T12:05:00.7557150Z -- Found assembler: /usr/bin/cc
+2026-11-25T12:05:00.7616120Z -- ZSTD VERSION: 1.5.7
+2026-11-25T12:05:00.7643960Z -- Performing Test C_FLAG_WALL
+2026-11-25T12:05:00.8597550Z -- Performing Test C_FLAG_WALL - Success
+2026-11-25T12:05:00.8602940Z -- Performing Test CXX_FLAG_WALL
+2026-11-25T12:05:00.9796490Z -- Performing Test CXX_FLAG_WALL - Success
+2026-11-25T12:05:00.9801970Z -- Performing Test C_FLAG_WEXTRA
+2026-11-25T12:05:01.0914140Z -- Performing Test C_FLAG_WEXTRA - Success
+2026-11-25T12:05:01.0919130Z -- Performing Test CXX_FLAG_WEXTRA
+2026-11-25T12:05:01.2037580Z -- Performing Test CXX_FLAG_WEXTRA - Success
+2026-11-25T12:05:01.2043290Z -- Performing Test C_FLAG_WUNDEF
+2026-11-25T12:05:01.3092520Z -- Performing Test C_FLAG_WUNDEF - Success
+2026-11-25T12:05:01.3098020Z -- Performing Test CXX_FLAG_WUNDEF
+2026-11-25T12:05:01.4153980Z -- Performing Test CXX_FLAG_WUNDEF - Success
+2026-11-25T12:05:01.4159510Z -- Performing Test C_FLAG_WSHADOW
+2026-11-25T12:05:01.5278680Z -- Performing Test C_FLAG_WSHADOW - Success
+2026-11-25T12:05:01.5283780Z -- Performing Test CXX_FLAG_WSHADOW
+2026-11-25T12:05:01.6481920Z -- Performing Test CXX_FLAG_WSHADOW - Success
+2026-11-25T12:05:01.6487400Z -- Performing Test C_FLAG_WCAST_ALIGN
+2026-11-25T12:05:01.7608180Z -- Performing Test C_FLAG_WCAST_ALIGN - Success
+2026-11-25T12:05:01.7613000Z -- Performing Test CXX_FLAG_WCAST_ALIGN
+2026-11-25T12:05:01.8753550Z -- Performing Test CXX_FLAG_WCAST_ALIGN - Success
+2026-11-25T12:05:01.8758920Z -- Performing Test C_FLAG_WCAST_QUAL
+2026-11-25T12:05:01.9920860Z -- Performing Test C_FLAG_WCAST_QUAL - Success
+2026-11-25T12:05:01.9925840Z -- Performing Test CXX_FLAG_WCAST_QUAL
+2026-11-25T12:05:02.1041950Z -- Performing Test CXX_FLAG_WCAST_QUAL - Success
+2026-11-25T12:05:02.1047550Z -- Performing Test C_FLAG_WSTRICT_PROTOTYPES
+2026-11-25T12:05:02.2204550Z -- Performing Test C_FLAG_WSTRICT_PROTOTYPES - Success
+2026-11-25T12:05:02.2216300Z -- Performing Test LD_FLAG_Z_NOEXECSTACK
+2026-11-25T12:05:02.3331600Z -- Performing Test LD_FLAG_Z_NOEXECSTACK - Failed
+2026-11-25T12:05:02.3337040Z -- Performing Test C_FLAG_QUNUSED_ARGUMENTS
+2026-11-25T12:05:02.4517830Z -- Performing Test C_FLAG_QUNUSED_ARGUMENTS - Success
+2026-11-25T12:05:02.4522770Z -- Performing Test CXX_FLAG_QUNUSED_ARGUMENTS
+2026-11-25T12:05:02.5810800Z -- Performing Test CXX_FLAG_QUNUSED_ARGUMENTS - Success
+2026-11-25T12:05:02.5816160Z -- Performing Test C_FLAG_WA_NOEXECSTACK
+2026-11-25T12:05:02.7073440Z -- Performing Test C_FLAG_WA_NOEXECSTACK - Success
+2026-11-25T12:05:02.7079350Z -- Performing Test CXX_FLAG_WA_NOEXECSTACK
+2026-11-25T12:05:02.8247650Z -- Performing Test CXX_FLAG_WA_NOEXECSTACK - Success
+2026-11-25T12:05:02.8248200Z -- CMAKE_INSTALL_PREFIX: /usr/local
+2026-11-25T12:05:02.8248430Z -- CMAKE_INSTALL_LIBDIR: lib
+2026-11-25T12:05:02.8248660Z -- ZSTD_LEGACY_SUPPORT defined!
+2026-11-25T12:05:02.8248860Z -- ZSTD_MULTITHREAD_SUPPORT is enabled
+2026-11-25T12:05:02.8609420Z -- Generating version information...
+2026-11-25T12:05:02.8614780Z -- Build: v1.0.0
+2026-11-25T12:05:02.8615200Z -- Creating /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/version.h
+2026-11-25T12:05:02.8618860Z -- Creating /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/version.cpp
+2026-11-25T12:05:02.8853810Z -- Configuring done (27.7s)
+2026-11-25T12:05:03.0239820Z -- Generating done (0.1s)
+2026-11-25T12:05:03.0249050Z -- Build files have been written to: /Users/runner/work/KronosiOS/KronosiOS/build-ios
+2026-11-25T12:05:03.0498490Z [0/2] Re-checking globbed directories...
+2026-11-25T12:05:03.1528320Z [1/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/DistanceMapping.cpp.o
+2026-11-25T12:05:03.2696800Z [2/867] Building C object thirdparty/SDL_mixer/external/ogg-build/CMakeFiles/ogg.dir/src/bitwise.c.o
+2026-11-25T12:05:03.2797120Z [3/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/EdgeHolder.cpp.o
+2026-11-25T12:05:03.3696020Z [4/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/Projection.cpp.o
+2026-11-25T12:05:03.4081180Z [5/867] Building C object thirdparty/SDL_mixer/external/ogg-build/CMakeFiles/ogg.dir/src/framing.c.o
+2026-11-25T12:05:03.6859650Z [6/867] Generating shader
+2026-11-25T12:05:03.6960950Z Extraction complete!
+2026-11-25T12:05:03.7062480Z Extraction complete!
+2026-11-25T12:05:04.5533760Z [7/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/Scanline.cpp.o
+2026-11-25T12:05:04.5836360Z [8/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/Contour.cpp.o
+2026-11-25T12:05:04.7769600Z [9/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/edge-segments.cpp.o
+2026-11-25T12:05:04.8950080Z [10/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/edge-selectors.cpp.o
+2026-11-25T12:05:04.9801370Z [11/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/equation-solver.cpp.o
+2026-11-25T12:05:05.0686020Z [12/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/Shape.cpp.o
+2026-11-25T12:05:05.2908730Z [13/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/contour-combiners.cpp.o
+2026-11-25T12:05:05.4664290Z [14/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/MSDFErrorCorrection.cpp.o
+2026-11-25T12:05:05.8790180Z [15/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/export-svg.cpp.o
+2026-11-25T12:05:06.0485750Z [16/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/render-sdf.cpp.o
+2026-11-25T12:05:06.1540780Z [17/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/save-bmp.cpp.o
+2026-11-25T12:05:06.2042800Z [18/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/save-fl32.cpp.o
+2026-11-25T12:05:06.2965640Z [19/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/save-rgba.cpp.o
+2026-11-25T12:05:06.3067200Z [20/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/msdf-error-correction.cpp.o
+2026-11-25T12:05:06.3541480Z [21/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/save-tiff.cpp.o
+2026-11-25T12:05:06.5544350Z [22/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/rasterization.cpp.o
+2026-11-25T12:05:06.6145890Z [23/867] Linking C static library thirdparty/SDL_mixer/external/ogg-build/libogg.a
+2026-11-25T12:05:06.6475960Z [24/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/msdfgen.cpp.o
+2026-11-25T12:05:06.6577880Z [25/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/edge-coloring.cpp.o
+2026-11-25T12:05:06.7492680Z [26/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/mdct.c.o
+2026-11-25T12:05:06.8213190Z [27/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/envelope.c.o
+2026-11-25T12:05:06.8413740Z [28/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/block.c.o
+2026-11-25T12:05:06.8888910Z [29/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/window.c.o
+2026-11-25T12:05:06.9290570Z [30/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/lsp.c.o
+2026-11-25T12:05:06.9591900Z [31/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/lpc.c.o
+2026-11-25T12:05:06.9816220Z [32/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/analysis.c.o
+2026-11-25T12:05:07.0118310Z [33/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/synthesis.c.o
+2026-11-25T12:05:07.1100360Z [34/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/info.c.o
+2026-11-25T12:05:07.2702850Z [35/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/floor1.c.o
+2026-11-25T12:05:07.3240700Z [36/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/smallft.c.o
+2026-11-25T12:05:07.3456310Z [37/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/floor0.c.o
+2026-11-25T12:05:07.4085290Z [38/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/shape-description.cpp.o
+2026-11-25T12:05:07.4387950Z [39/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/mapping0.c.o
+2026-11-25T12:05:07.4589830Z [40/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/registry.c.o
+2026-11-25T12:05:07.5031830Z [41/867] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/sdf-error-estimation.cpp.o
+2026-11-25T12:05:07.5333980Z [42/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/codebook.c.o
+2026-11-25T12:05:07.5436660Z [43/867] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/lookup.c.o
+2026-11-25T12:05:07.5550870Z [43/867] Generating generated/ppc/ppc_config.h, generated/ppc/ppc_context.h, generated/ppc/ppc_func_mapping.cpp, generated/ppc/ppc_recomp_shared.h, generated/ppc/ppc_recomp.0.cpp, generated/ppc/ppc_recomp.1.cpp, generated/ppc/ppc_recomp.2.cpp, generated/ppc/ppc_recomp.3.cpp, generated/ppc/ppc_recomp.4.cpp, generated/ppc/ppc_recomp.5.cpp, generated/ppc/ppc_recomp.6.cpp, generated/ppc/ppc_recomp.7.cpp, generated/ppc/ppc_recomp.8.cpp, generated/ppc/ppc_recomp.9.cpp, generated/ppc/ppc_recomp.10.cpp, generated/ppc/ppc_recomp.11.cpp, generated/ppc/ppc_recomp.12.cpp, generated/ppc/ppc_recomp.13.cpp, generated/ppc/ppc_recomp.14.cpp, generated/ppc/ppc_recomp.15.cpp, generated/ppc/ppc_recomp.16.cpp, generated/ppc/ppc_recomp.17.cpp, generated/ppc/ppc_recomp.18.cpp, generated/ppc/ppc_recomp.19.cpp, generated/ppc/ppc_recomp.20.cpp, generated/ppc/ppc_recomp.21.cpp, generated/ppc/ppc_recomp.22.cpp, generated/ppc/ppc_recomp.23.cpp, generated/ppc/ppc_recomp.24.cpp, generated/ppc/ppc_recomp.25.cpp, generated/ppc/ppc_recomp.26.cpp, generated/ppc/ppc_recomp.27.cpp, generated/ppc/ppc_recomp.28.cpp, generated/ppc/ppc_recomp.29.cpp, generated/ppc/ppc_recomp.30.cpp, generated/ppc/ppc_recomp.31.cpp, generated/ppc/ppc_recomp.32.cpp, generated/ppc/ppc_recomp.33.cpp, generated/ppc/ppc_recomp.34.cpp, generated/ppc/ppc_recomp.35.cpp, generated/ppc/ppc_recomp.36.cpp, generated/ppc/ppc_recomp.37.cpp, generated/ppc/ppc_recomp.38.cpp, generated/ppc/ppc_recomp.39.cpp, generated/ppc/ppc_recomp.40.cpp, generated/ppc/ppc_recomp.41.cpp, generated/ppc/ppc_recomp.42.cpp, generated/ppc/ppc_recomp.43.cpp, generated/ppc/ppc_recomp.44.cpp, generated/ppc/ppc_recomp.45.cpp, generated/ppc/ppc_recomp.46.cpp, generated/ppc/ppc_recomp.47.cpp, generated/ppc/ppc_recomp.48.cpp, generated/ppc/ppc_recomp.49.cpp, generated/ppc/ppc_recomp.50.cpp, generated/ppc/ppc_recomp.51.cpp, generated/ppc/ppc_recomp.52.cpp, generated/ppc/ppc_recomp.53.cpp, generated/ppc/ppc_recomp.54.cpp, generated/ppc/ppc_recomp.55.cpp, generated/ppc/ppc_recomp.56.cpp, generated/ppc/ppc_recomp.57.cpp, generated/ppc/ppc_recomp.58.cpp, generated/ppc/ppc_recomp.59.cpp, generated/ppc/ppc_recomp.60.cpp, generated/ppc/ppc_recomp.61.cpp, generated/ppc/ppc_recomp.62.cpp, generated/ppc/ppc_recomp.63.cpp, generated/ppc/ppc_recomp.64.cpp, generated/ppc/ppc_recomp.65.cpp, generated/ppc/ppc_recomp.66.cpp, generated/ppc/ppc_recomp.67.cpp, generated/ppc/ppc_recomp.68.cpp, generated/ppc/ppc_recomp.69.cpp, generated/ppc/ppc_recomp.70.cpp, generated/ppc/ppc_recomp.71.cpp, generated/ppc/ppc_recomp.72.cpp, generated/ppc/ppc_recomp.73.cpp, generated/ppc/ppc_recomp.74.cpp, generated/ppc/ppc_recomp.75.cpp, generated/ppc/ppc_recomp.76.cpp, generated/ppc/ppc_recomp.77.cpp, generated/ppc/ppc_recomp.78.cpp, generated/ppc/ppc_recomp.79.cpp, generated/ppc/ppc_recomp.80.cpp, generated/ppc/ppc_recomp.81.cpp, generated/ppc/ppc_recomp.82.cpp, generated/ppc/ppc_recomp.83.cpp, generated/ppc/ppc_recomp.84.cpp, generated/ppc/ppc_recomp.85.cpp, generated/ppc/ppc_recomp.86.cpp, generated/ppc/ppc_recomp.87.cpp, generated/ppc/ppc_recomp.88.cpp, generated/ppc/ppc_recomp.89.cpp, generated/ppc/ppc_recomp.90.cpp, generated/ppc/ppc_recomp.91.cpp, generated/ppc/ppc_recomp.92.cpp, generated/ppc/ppc_recomp.93.cpp, generated/ppc/ppc_recomp.94.cpp, generated/ppc/ppc_recomp.95.cpp, generated/ppc/ppc_recomp.96.cpp, generated/ppc/ppc_recomp.97.cpp, generated/ppc/ppc_recomp.98.cpp, generated/ppc/ppc_recomp.99.cpp, generated/ppc/ppc_recomp.100.cpp, generated/ppc/ppc_recomp.101.cpp, generated/ppc/ppc_recomp.102.cpp, generated/ppc/ppc_recomp.103.cpp, generated/ppc/ppc_recomp.104.cpp, generated/ppc/ppc_recomp.105.cpp, generated/ppc/ppc_recomp.106.cpp, generated/ppc/ppc_recomp.107.cpp, generated/ppc/ppc_recomp.108.cpp, generated/ppc/ppc_recomp.109.cpp, generated/ppc/ppc_recomp.110.cpp, generated/ppc/ppc_recomp.111.cpp, generated/ppc/ppc_recomp.112.cpp, generated/ppc/ppc_recomp.113.cpp, generated/ppc/ppc_recomp.114.cpp, generated/ppc/ppc_recomp.115.cpp, generated/ppc/ppc_recomp.116.cpp, generated/ppc/ppc_recomp.117.cpp, generated/ppc/ppc_recomp.118.cpp, generated/ppc/ppc_recomp.119.cpp, generated/ppc/ppc_recomp.120.cpp, generated/ppc/ppc_recomp.121.cpp, generated/ppc/ppc_recomp.122.cpp, generated/ppc/ppc_recomp.123.cpp, generated/ppc/ppc_recomp.124.cpp, generated/ppc/ppc_recomp.125.cpp, generated/ppc/ppc_recomp.126.cpp, generated/ppc/ppc_recomp.127.cpp, generated/ppc/ppc_recomp.128.cpp, generated/ppc/ppc_recomp.129.cpp, generated/ppc/ppc_recomp.130.cpp, generated/ppc/ppc_recomp.131.cpp, generated/ppc/ppc_recomp.132.cpp, generated/ppc/ppc_recomp.133.cpp, generated/ppc/ppc_recomp.134.cpp, generated/ppc/ppc_recomp.135.cpp, generated/ppc/ppc_recomp.136.cpp, generated/ppc/ppc_recomp.137.cpp, generated/ppc/ppc_recomp.138.cpp, generated/ppc/ppc_recomp.139.cpp, generated/ppc/ppc_recomp.140.cpp, generated/ppc/ppc_recomp.141.cpp, generated/ppc/ppc_recomp.142.cpp, generated/ppc/ppc_recomp.143.cpp, generated/ppc/ppc_recomp.144.cpp, generated/ppc/ppc_recomp.145.cpp
+2026-11-25T12:05:17.3362960Z Recompiling functions... 0.002686006%
+2026-11-25T12:05:17.3421260Z Recompiling functions... 5.5036263%
+2026-11-25T12:05:17.3422350Z Recompiling functions... 11.004566%
+2026-11-25T12:05:17.3422820Z Recompiling functions... 16.505507%
+2026-11-25T12:05:17.3423310Z Recompiling functions... 22.006447%
+2026-11-25T12:05:17.3423760Z Recompiling functions... 27.507385%
+2026-11-25T12:05:17.3424310Z Recompiling functions... 33.008327%
+2026-11-25T12:05:17.3424770Z Recompiling functions... 38.509266%
+2026-11-25T12:05:17.3525710Z Recompiling functions... 44.01021%
+2026-11-25T12:05:17.3626470Z Recompiling functions... 49.511147%
+2026-11-25T12:05:17.3727120Z Recompiling functions... 55.01209%
+2026-11-25T12:05:17.3828480Z Recompiling functions... 60.513027%
+2026-11-25T12:05:17.3929690Z Recompiling functions... 66.01397%
+2026-11-25T12:05:17.4031690Z Recompiling functions... 71.51491%
+2026-11-25T12:05:17.4132420Z Recompiling functions... 77.01585%
+2026-11-25T12:05:17.4233010Z Recompiling functions... 82.51679%
+2026-11-25T12:05:17.4334110Z Recompiling functions... 88.01772%
+2026-11-25T12:05:17.4434360Z Recompiling functions... 93.51867%
+2026-11-25T12:05:17.4535720Z Recompiling functions... 99.01961%
+2026-11-25T12:05:17.4636330Z Recompiling functions... 100%
+2026-11-25T12:05:17.4737470Z [171/867] Building C object thirdparty/SDL/CMakeFiles/SDL3-static.dir/src/haptic/SDL_haptic.c.o
+2026-11-25T12:05:17.4838680Z [172/867] Generating generated/shader/shader_cache.cpp
+2026-11-25T12:06:44.5286830Z Recompiling shaders with 3 threads
+2026-11-25T12:06:44.5287860Z Recompiling shaders... 1.0940919%
+2026-11-25T12:06:44.5288250Z Recompiling shaders... 2.1881838%
+2026-11-25T12:06:44.5288680Z Recompiling shaders... 3.2822757%
+2026-11-25T12:06:44.5289090Z Recompiling shaders... 4.3763676%
+2026-11-25T12:06:44.5289450Z Recompiling shaders... 5.4704595%
+2026-11-25T12:06:44.5289830Z Recompiling shaders... 6.5645514%
+2026-11-25T12:06:44.5290450Z Recompiling shaders... 7.6586432%
+2026-11-25T12:06:44.5290780Z Recompiling shaders... 8.752735%
+2026-11-25T12:06:44.5291190Z Recompiling shaders... 9.8468275%
+2026-11-25T12:06:44.5291580Z Recompiling shaders... 10.940919%
+2026-11-25T12:06:44.5291970Z Recompiling shaders... 12.03501%
+2026-11-25T12:06:44.5292350Z Recompiling shaders... 13.129103%
+2026-11-25T12:06:44.5293040Z Recompiling shaders... 14.223194%
+2026-11-25T12:06:44.5303720Z Recompiling shaders... 15.3172865%
+2026-11-25T12:06:44.5304030Z Recompiling shaders... 16.411379%
+2026-11-25T12:06:44.5304330Z Recompiling shaders... 17.50547%
+2026-11-25T12:06:44.5304570Z Recompiling shaders... 18.599562%
+2026-11-25T12:06:44.5304850Z Recompiling shaders... 19.693655%
+2026-11-25T12:06:44.5305090Z Recompiling shaders... 20.787746%
+2026-11-25T12:06:44.5305380Z Recompiling shaders... 21.881838%
+2026-11-25T12:06:44.5305690Z Recompiling shaders... 22.975931%
+2026-11-25T12:06:44.5305940Z Recompiling shaders... 24.07002%
+2026-11-25T12:06:44.5306220Z Recompiling shaders... 25.164112%
+2026-11-25T12:06:44.5306490Z Recompiling shaders... 26.258205%
+2026-11-25T12:06:44.5306820Z Recompiling shaders... 27.352297%
+2026-11-25T12:06:44.5307100Z Recompiling shaders... 28.446388%
+2026-11-25T12:06:44.5307330Z Recompiling shaders... 29.540482%
+2026-11-25T12:06:44.5307620Z Recompiling shaders... 30.634573%
+2026-11-25T12:06:44.5307920Z Recompiling shaders... 31.728664%
+2026-11-25T12:06:44.5308160Z Recompiling shaders... 32.822758%
+2026-11-25T12:06:44.5308430Z Recompiling shaders... 33.916847%
+2026-11-25T12:06:44.5308660Z Recompiling shaders... 35.01094%
+2026-11-25T12:06:44.5308930Z Recompiling shaders... 36.105034%
+2026-11-25T12:06:44.5309210Z Recompiling shaders... 37.199123%
+2026-11-25T12:06:44.5309470Z Recompiling shaders... 38.293217%
+2026-11-25T12:06:44.5309810Z Recompiling shaders... 39.38731%
+2026-11-25T12:06:44.5310070Z Recompiling shaders... 40.4814%
+2026-11-25T12:06:44.5310410Z Recompiling shaders... 41.575493%
+2026-11-25T12:06:44.5310700Z Recompiling shaders... 42.669586%
+2026-11-25T12:06:44.5324430Z Recompiling shaders... 43.763676%
+2026-11-25T12:06:44.5324830Z Recompiling shaders... 44.85777%
+2026-11-25T12:06:44.5325110Z Recompiling shaders... 45.951862%
+2026-11-25T12:06:44.5325460Z Recompiling shaders... 47.04595%
+2026-11-25T12:06:44.5325780Z Recompiling shaders... 48.14004%
+2026-11-25T12:06:44.5326080Z Recompiling shaders... 49.23414%
+2026-11-25T12:06:44.5326390Z Recompiling shaders... 50.328224%
+2026-11-25T12:06:44.5326780Z Recompiling shaders... 51.42232%
+2026-11-25T12:06:44.5327080Z Recompiling shaders... 52.51641%
+2026-11-25T12:06:44.5327450Z Recompiling shaders... 53.610504%
+2026-11-25T12:06:44.5327860Z Recompiling shaders... 54.704594%
+2026-11-25T12:06:44.5328120Z Recompiling shaders... 55.798687%
+2026-11-25T12:06:44.5328480Z Recompiling shaders... 56.892776%
+2026-11-25T12:06:44.5328870Z Recompiling shaders... 57.986874%
+2026-11-25T12:06:44.5329220Z Recompiling shaders... 59.080963%
+2026-11-25T12:06:44.5329550Z Recompiling shaders... 60.175056%
+2026-11-25T12:06:44.5329840Z Recompiling shaders... 61.269146%
+2026-11-25T12:06:44.5330150Z Recompiling shaders... 62.363235%
+2026-11-25T12:06:44.5330470Z Recompiling shaders... 63.45733%
+2026-11-25T12:06:44.5330770Z Recompiling shaders... 64.55142%
+2026-11-25T12:06:44.5331090Z Recompiling shaders... 65.645515%
+2026-11-25T12:06:44.5331390Z Recompiling shaders... 66.73961%
+2026-11-25T12:06:44.5331690Z Recompiling shaders... 67.833694%
+2026-11-25T12:06:44.5332060Z Recompiling shaders... 68.92779%
+2026-11-25T12:06:44.5332300Z Recompiling shaders... 70.02188%
+2026-11-25T12:06:44.5332680Z Recompiling shaders... 71.115974%
+2026-11-25T12:06:44.5332970Z Recompiling shaders... 72.21007%
+2026-11-25T12:06:44.5333370Z Recompiling shaders... 73.30416%
+2026-11-25T12:06:44.5333700Z Recompiling shaders... 74.39825%
+2026-11-25T12:06:44.5333960Z Recompiling shaders... 75.49234%
+2026-11-25T12:06:44.5334290Z Recompiling shaders... 76.58643%
+2026-11-25T12:06:44.5334680Z Recompiling shaders... 77.68052%
+2026-11-25T12:06:44.5334960Z Recompiling shaders... 78.77462%
+2026-11-25T12:06:44.5335300Z Recompiling shaders... 79.86871%
+2026-11-25T12:06:44.5335610Z Recompiling shaders... 80.9628%
+2026-11-25T12:06:44.5336000Z Recompiling shaders... 82.05689%
+2026-11-25T12:06:44.5336380Z Recompiling shaders... 83.150986%
+2026-11-25T12:06:44.5336640Z Recompiling shaders... 84.24507%
+2026-11-25T12:06:44.5336940Z Recompiling shaders... 85.33917%
+2026-11-25T12:06:44.5337640Z Recompiling shaders... 86.43326%
+2026-11-25T12:06:44.5338000Z Recompiling shaders... 87.52735%
+2026-11-25T12:06:44.5338400Z Recompiling shaders... 88.621445%
+2026-11-25T12:06:44.5338670Z Recompiling shaders... 89.71554%
+2026-11-25T12:06:44.5338990Z Recompiling shaders... 90.80962%
+2026-11-25T12:06:44.5339260Z Recompiling shaders... 91.903725%
+2026-11-25T12:06:44.5339630Z Recompiling shaders... 92.99781%
+2026-11-25T12:06:44.5339930Z Recompiling shaders... 94.0919%
+2026-11-25T12:06:44.5340180Z Recompiling shaders... 95.186%
+2026-11-25T12:06:44.5340540Z Recompiling shaders... 96.28008%
+2026-11-25T12:06:44.5340850Z Recompiling shaders... 97.374176%
+2026-11-25T12:06:44.5341200Z Recompiling shaders... 98.46828%
+2026-11-25T12:06:44.5341510Z Recompiling shaders... 99.56236%
+2026-11-25T12:06:44.5341790Z Recompiling shaders... 99.89059%
+2026-11-25T12:06:44.5342140Z Creating shader cache...
+2026-11-25T12:06:44.5342450Z Compressing DXIL cache...
+2026-11-25T12:06:44.5342720Z Compressing AIR cache...
+2026-11-25T12:06:44.5343050Z Compressing SPIRV cache...
+2026-11-25T12:06:44.5349030Z [460/867] Linking C static library zstd/lib/libzstd.a
+2026-11-25T12:06:45.4566670Z [462/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/cmake_pch.hxx.pch
+2026-11-25T12:06:46.3710940Z [463/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_func_mapping.cpp.o
+2026-11-25T12:06:47.6880340Z [464/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.4.cpp.o
+2026-11-25T12:06:47.7683650Z [465/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.0.cpp.o
+2026-11-25T12:06:48.7382890Z [466/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.3.cpp.o
+2026-11-25T12:06:48.9635280Z [467/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.2.cpp.o
+2026-11-25T12:06:49.5526050Z [468/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.5.cpp.o
+2026-11-25T12:06:49.7240400Z [469/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.1.cpp.o
+2026-11-25T12:06:49.9560850Z [470/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.8.cpp.o
+2026-11-25T12:06:50.3121640Z [471/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.6.cpp.o
+2026-11-25T12:06:50.6232060Z [472/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.7.cpp.o
+2026-11-25T12:06:50.8355300Z [473/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.9.cpp.o
+2026-11-25T12:06:51.1886080Z [474/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.10.cpp.o
+2026-11-25T12:06:52.5394200Z [475/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.12.cpp.o
+2026-11-25T12:06:52.6799640Z [476/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.11.cpp.o
+2026-11-25T12:06:53.1334170Z [477/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.13.cpp.o
+2026-11-25T12:06:53.3262230Z [478/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.15.cpp.o
+2026-11-25T12:06:53.5588460Z [479/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.14.cpp.o
+2026-11-25T12:06:55.0243500Z [480/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.16.cpp.o
+2026-11-25T12:06:55.5371020Z [481/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.18.cpp.o
+2026-11-25T12:06:55.8561840Z [482/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.17.cpp.o
+2026-11-25T12:06:56.1412890Z [483/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.19.cpp.o
+2026-11-25T12:06:56.4376380Z [484/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.20.cpp.o
+2026-11-25T12:06:57.4742730Z [485/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.21.cpp.o
+2026-11-25T12:06:57.7571000Z [486/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.22.cpp.o
+2026-11-25T12:06:58.1608970Z [487/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.23.cpp.o
+2026-11-25T12:06:58.8867470Z [488/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.24.cpp.o
+2026-11-25T12:07:01.4011990Z [489/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.28.cpp.o
+2026-11-25T12:07:01.7440970Z [490/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.27.cpp.o
+2026-11-25T12:07:02.0765180Z [491/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.26.cpp.o
+2026-11-25T12:07:03.5050420Z [492/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.25.cpp.o
+2026-11-25T12:07:04.1070310Z [493/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.29.cpp.o
+2026-11-25T12:07:05.7389960Z [494/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.30.cpp.o
+2026-11-25T12:07:06.0400220Z [495/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.32.cpp.o
+2026-11-25T12:07:06.2311290Z [496/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.31.cpp.o
+2026-11-25T12:07:07.2237020Z [497/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.33.cpp.o
+2026-11-25T12:07:07.9691670Z [498/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.34.cpp.o
+2026-11-25T12:07:08.0506650Z [499/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.36.cpp.o
+2026-11-25T12:07:08.3734230Z [500/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.37.cpp.o
+2026-11-25T12:07:09.0994130Z [501/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.35.cpp.o
+2026-11-25T12:07:09.8338010Z [502/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.38.cpp.o
+2026-11-25T12:07:09.9441040Z [503/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.39.cpp.o
+2026-11-25T12:07:10.5176990Z [504/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.40.cpp.o
+2026-11-25T12:07:11.0904000Z [505/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.41.cpp.o
+2026-11-25T12:07:12.0673030Z [506/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.42.cpp.o
+2026-11-25T12:07:13.1613510Z [507/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.45.cpp.o
+2026-11-25T12:07:13.3620270Z [508/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.43.cpp.o
+2026-11-25T12:07:13.5536100Z [509/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.44.cpp.o
+2026-11-25T12:07:13.9708810Z [510/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.46.cpp.o
+2026-11-25T12:07:14.6430580Z [511/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.51.cpp.o
+2026-11-25T12:07:14.9161950Z [512/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.47.cpp.o
+2026-11-25T12:07:15.2170390Z [513/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.52.cpp.o
+2026-11-25T12:07:15.5956390Z [514/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.48.cpp.o
+2026-11-25T12:07:16.0520130Z [515/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.53.cpp.o
+2026-11-25T12:07:16.2764490Z [516/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.50.cpp.o
+2026-11-25T12:07:16.8216760Z [517/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.55.cpp.o
+2026-11-25T12:07:17.0142700Z [518/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.54.cpp.o
+2026-11-25T12:07:17.2548990Z [519/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.49.cpp.o
+2026-11-25T12:07:18.6060890Z [520/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.57.cpp.o
+2026-11-25T12:07:18.7463950Z [521/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.56.cpp.o
+2026-11-25T12:07:19.3102480Z [522/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.59.cpp.o
+2026-11-25T12:07:19.7629470Z [523/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.58.cpp.o
+2026-11-25T12:07:20.1521190Z [524/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.60.cpp.o
+2026-11-25T12:07:22.4467060Z [525/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.63.cpp.o
+2026-11-25T12:07:22.5132060Z [526/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.64.cpp.o
+2026-11-25T12:07:23.1289110Z [527/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.65.cpp.o
+2026-11-25T12:07:23.5277150Z [528/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.66.cpp.o
+2026-11-25T12:07:23.6218390Z [529/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.62.cpp.o
+2026-11-25T12:07:24.1936130Z [530/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.61.cpp.o
+2026-11-25T12:07:25.3563730Z [531/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.70.cpp.o
+2026-11-25T12:07:26.5674020Z [532/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.72.cpp.o
+2026-11-25T12:07:26.6295820Z [533/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.68.cpp.o
+2026-11-25T12:07:26.6698040Z [534/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.71.cpp.o
+2026-11-25T12:07:27.0926170Z [535/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.67.cpp.o
+2026-11-25T12:07:28.2691290Z [536/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.75.cpp.o
+2026-11-25T12:07:28.8869950Z [537/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.76.cpp.o
+2026-11-25T12:07:29.6937320Z [538/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.74.cpp.o
+2026-11-25T12:07:29.7237920Z [539/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.73.cpp.o
+2026-11-25T12:07:30.1867670Z [540/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.77.cpp.o
+2026-11-25T12:07:30.7203770Z [541/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.69.cpp.o
+2026-11-25T12:07:31.2226260Z [542/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.78.cpp.o
+2026-11-25T12:07:31.5634290Z [543/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.79.cpp.o
+2026-11-25T12:07:32.4487980Z [544/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.81.cpp.o
+2026-11-25T12:07:32.5690520Z [545/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.80.cpp.o
+2026-11-25T12:07:33.5675380Z [546/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.83.cpp.o
+2026-11-25T12:07:33.9720240Z [547/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.82.cpp.o
+2026-11-25T12:07:34.3652370Z [548/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.84.cpp.o
+2026-11-25T12:07:34.5780100Z [549/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.85.cpp.o
+2026-11-25T12:07:34.6383850Z [550/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.86.cpp.o
+2026-11-25T12:07:35.6153260Z [551/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.87.cpp.o
+2026-11-25T12:07:36.2474840Z [552/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.88.cpp.o
+2026-11-25T12:07:36.2575050Z [553/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.89.cpp.o
+2026-11-25T12:07:36.8792000Z [554/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.90.cpp.o
+2026-11-25T12:07:37.2112060Z [555/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.91.cpp.o
+2026-11-25T12:07:38.1092820Z [556/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.93.cpp.o
+2026-11-25T12:07:38.3900840Z [557/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.92.cpp.o
+2026-11-25T12:07:39.7708000Z [558/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.94.cpp.o
+2026-11-25T12:07:40.3827800Z [559/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.95.cpp.o
+2026-11-25T12:07:41.2014640Z [560/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.98.cpp.o
+2026-11-25T12:07:41.4520570Z [561/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.96.cpp.o
+2026-11-25T12:07:41.7126740Z [562/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.99.cpp.o
+2026-11-25T12:07:42.2864110Z [563/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.97.cpp.o
+2026-11-25T12:07:44.4142310Z [564/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.100.cpp.o
+2026-11-25T12:07:44.5746010Z [565/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.103.cpp.o
+2026-11-25T12:07:46.1786080Z [566/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.104.cpp.o
+2026-11-25T12:07:46.6725190Z [567/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.102.cpp.o
+2026-11-25T12:07:47.6677780Z [568/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.101.cpp.o
+2026-11-25T12:07:50.0801870Z [569/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.109.cpp.o
+2026-11-25T12:07:51.1087480Z [570/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.105.cpp.o
+2026-11-25T12:07:53.6646340Z [571/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.110.cpp.o
+2026-11-25T12:07:55.9917800Z [572/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.111.cpp.o
+2026-11-25T12:07:56.1442070Z [573/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.106.cpp.o
+2026-11-25T12:07:58.4103980Z [574/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.112.cpp.o
+2026-11-25T12:08:02.0509300Z [575/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.107.cpp.o
+2026-11-25T12:08:02.7182680Z [576/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.115.cpp.o
+2026-11-25T12:08:03.8094370Z [577/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.114.cpp.o
+2026-11-25T12:08:04.4043150Z [578/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.116.cpp.o
+2026-11-25T12:08:06.1572740Z [579/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.117.cpp.o
+2026-11-25T12:08:06.3577830Z [580/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.118.cpp.o
+2026-11-25T12:08:07.1020260Z [581/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.108.cpp.o
+2026-11-25T12:08:07.5878110Z [582/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.113.cpp.o
+2026-11-25T12:08:07.7682930Z [583/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.120.cpp.o
+2026-11-25T12:08:08.5154830Z [584/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.121.cpp.o
+2026-11-25T12:08:08.9613940Z [585/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.119.cpp.o
+2026-11-25T12:08:09.4041810Z [586/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.122.cpp.o
+2026-11-25T12:08:10.1819790Z [587/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.123.cpp.o
+2026-11-25T12:08:11.0494680Z [588/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.124.cpp.o
+2026-11-25T12:08:13.1550260Z [589/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.126.cpp.o
+2026-11-25T12:08:16.9892870Z [590/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.129.cpp.o
+2026-11-25T12:08:17.3733390Z [591/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.127.cpp.o
+2026-11-25T12:08:17.5942630Z [592/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.130.cpp.o
+2026-11-25T12:08:17.6545500Z [593/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.125.cpp.o
+2026-11-25T12:08:25.5247820Z [594/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.134.cpp.o
+2026-11-25T12:08:27.5136000Z [595/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.131.cpp.o
+2026-11-25T12:08:30.0373900Z [596/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.128.cpp.o
+2026-11-25T12:08:33.9610740Z [597/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.132.cpp.o
+2026-11-25T12:08:35.1510310Z [598/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.133.cpp.o
+2026-11-25T12:08:35.8273540Z [599/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.135.cpp.o
+2026-11-25T12:08:36.6220240Z [600/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.137.cpp.o
+2026-11-25T12:08:37.1526850Z [601/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.136.cpp.o
+2026-11-25T12:08:40.0130300Z [602/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.142.cpp.o
+2026-11-25T12:08:41.6408410Z [603/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.140.cpp.o
+2026-11-25T12:08:41.8443370Z [604/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.143.cpp.o
+2026-11-25T12:08:43.0996830Z [605/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.141.cpp.o
+2026-11-25T12:08:43.1718120Z [606/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.138.cpp.o
+2026-11-25T12:08:43.6857090Z [607/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.139.cpp.o
+2026-11-25T12:08:44.4298710Z [608/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.144.cpp.o
+2026-11-25T12:08:51.2712320Z [609/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/ppc/ppc_recomp.145.cpp.o
+2026-11-25T12:08:58.3833510Z [610/867] Building CXX object MarathonRecompLib/CMakeFiles/MarathonRecompLib.dir/generated/shader/shader_cache.cpp.o
+2026-11-25T12:08:59.0990000Z [611/867] Linking CXX static library MarathonRecompLib/libMarathonRecompLib.a
+2026-11-25T12:08:59.2618150Z [612/867] Generating generated/gpu/shader/msl/copy_vs.metal.ir
+2026-11-25T12:08:59.9040520Z [613/867] Generating generated/gpu/shader/msl/copy_color_ps.metal.ir
+2026-11-25T12:08:59.9886320Z [614/867] Generating generated/gpu/shader/msl/conditional_survey_ps.metal.ir
+2026-11-25T12:09:00.0738670Z [615/867] Generating generated/gpu/shader/msl/copy_depth_ps.metal.ir
+2026-11-25T12:09:00.1554430Z [616/867] Generating generated/gpu/shader/msl/enhanced_burnout_blur_vs.metal.ir
+2026-11-25T12:09:00.2661300Z [617/867] Generating generated/gpu/shader/msl/imgui_ps.metal.ir
+2026-11-25T12:09:00.2961550Z [618/867] Generating generated/gpu/shader/msl/enhanced_burnout_blur_ps.metal.ir
+2026-11-25T12:09:00.3648170Z [619/867] Generating generated/gpu/shader/msl/resolve_msaa_color_2x.metal.ir
+2026-11-25T12:09:00.3749690Z [620/867] Generating generated/gpu/shader/msl/downsample_ps.metal.ir
+2026-11-25T12:09:00.3850920Z [621/867] Generating generated/gpu/shader/msl/imgui_vs.metal.ir
+2026-11-25T12:09:00.4566640Z [622/867] Generating generated/gpu/shader/msl/resolve_msaa_color_4x.metal.ir
+2026-11-25T12:09:00.4688770Z [623/867] Generating generated/gpu/shader/msl/resolve_msaa_color_8x.metal.ir
+2026-11-25T12:09:00.4791400Z [624/867] Generating generated/gpu/shader/msl/resolve_msaa_depth_2x.metal.ir
+2026-11-25T12:09:00.4919030Z [625/867] Generating generated/gpu/shader/msl/movie_ps.metal.ir
+2026-11-25T12:09:00.4922330Z [626/867] Generating generated/gpu/shader/msl/gamma_correction_ps.metal.ir
+2026-11-25T12:09:00.5922870Z [627/867] Generating generated/gpu/shader/msl/resolve_msaa_depth_4x.metal.ir
+2026-11-25T12:09:00.6033720Z [628/867] Generating generated/gpu/shader/msl/conditional_survey_ps.metal.metallib
+2026-11-25T12:09:00.6142760Z [629/867] Generating generated/gpu/shader/msl/resolve_msaa_depth_8x.metal.ir
+2026-11-25T12:09:00.6256890Z [630/867] Generating generated/gpu/shader/msl/copy_vs.metal.metallib
+2026-11-25T12:09:00.6363290Z [631/867] Generating generated/gpu/shader/msl/copy_color_ps.metal.metallib
+2026-11-25T12:09:00.6515240Z [632/867] Generating generated/gpu/shader/msl/copy_depth_ps.metal.metallib
+2026-11-25T12:09:00.6617420Z [633/867] Generating generated/gpu/shader/msl/downsample_ps.metal.metallib
+2026-11-25T12:09:00.6741420Z [634/867] Generating generated/gpu/shader/msl/enhanced_burnout_blur_vs.metal.metallib
+2026-11-25T12:09:00.7219260Z [635/867] Generating generated/gpu/shader/msl/enhanced_burnout_blur_ps.metal.metallib
+2026-11-25T12:09:00.7624340Z [636/867] Generating generated/gpu/shader/msl/movie_ps.metal.metallib
+2026-11-25T12:09:00.7941740Z [637/867] Generating generated/gpu/shader/msl/imgui_vs.metal.metallib
+2026-11-25T12:09:00.8166320Z [638/867] Generating generated/gpu/shader/msl/imgui_ps.metal.metallib
+2026-11-25T12:09:00.8601370Z [639/867] Generating generated/gpu/shader/msl/gamma_correction_ps.metal.metallib
+2026-11-25T12:09:00.8805130Z [640/867] Generating generated/gpu/shader/msl/resolve_msaa_color_8x.metal.metallib
+2026-11-25T12:09:00.9017650Z [641/867] Generating generated/gpu/shader/msl/resolve_msaa_color_2x.metal.metallib
+2026-11-25T12:09:00.9120960Z [642/867] Generating generated/gpu/shader/msl/resolve_msaa_depth_2x.metal.metallib
+2026-11-25T12:09:00.9500230Z [643/867] Generating generated/gpu/shader/msl/resolve_msaa_color_4x.metal.metallib
+2026-11-25T12:09:00.9606850Z [644/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/conditional_survey_ps.metal.metallib...
+2026-11-25T12:09:00.9733900Z [645/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/copy_vs.metal.metallib...
+2026-11-25T12:09:00.9848810Z [646/867] Generating generated/gpu/shader/msl/resolve_msaa_depth_4x.metal.metallib
+2026-11-25T12:09:00.9956360Z [647/867] Generating generated/gpu/shader/msl/resolve_msaa_depth_8x.metal.metallib
+2026-11-25T12:09:01.0059410Z [648/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/copy_color_ps.metal.metallib...
+2026-11-25T12:09:01.0281060Z [649/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/copy_depth_ps.metal.metallib...
+2026-11-25T12:09:01.0517020Z [650/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/downsample_ps.metal.metallib...
+2026-11-25T12:09:01.3629730Z [651/867] Generating generated/gpu/shader/hlsl/conditional_survey_ps.hlsl.spirv.h
+2026-11-25T12:09:01.3688940Z [652/867] Generating generated/gpu/shader/hlsl/copy_vs.hlsl.spirv.h
+2026-11-25T12:09:01.3789940Z [653/867] Generating generated/gpu/shader/hlsl/copy_color_ps.hlsl.spirv.h
+2026-11-25T12:09:01.3906990Z [654/867] Generating generated/gpu/shader/hlsl/copy_depth_ps.hlsl.spirv.h
+2026-11-25T12:09:01.4025810Z [655/867] Generating generated/gpu/shader/hlsl/downsample_ps.hlsl.spirv.h
+2026-11-25T12:09:01.4132440Z [656/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/enhanced_burnout_blur_vs.metal.metallib...
+2026-11-25T12:09:01.4241780Z [657/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/enhanced_burnout_blur_ps.metal.metallib...
+2026-11-25T12:09:01.4342570Z [658/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/movie_ps.metal.metallib...
+2026-11-25T12:09:01.4445680Z [659/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/gamma_correction_ps.metal.metallib...
+2026-11-25T12:09:01.4547270Z [660/867] Generating generated/gpu/shader/hlsl/movie_ps.hlsl.spirv.h
+2026-11-25T12:09:01.4653610Z [661/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/imgui_ps.metal.metallib...
+2026-11-25T12:09:01.4759230Z [662/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/imgui_vs.metal.metallib...
+2026-11-25T12:09:01.4884140Z [663/867] Generating generated/gpu/shader/hlsl/enhanced_burnout_blur_vs.hlsl.spirv.h
+2026-11-25T12:09:01.4986380Z [664/867] Generating generated/gpu/shader/hlsl/gamma_correction_ps.hlsl.spirv.h
+2026-11-25T12:09:01.5088970Z [665/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/resolve_msaa_color_2x.metal.metallib...
+2026-11-25T12:09:01.5192130Z [666/867] Generating generated/gpu/shader/hlsl/enhanced_burnout_blur_ps.hlsl.spirv.h
+2026-11-25T12:09:01.5322040Z [667/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/resolve_msaa_color_4x.metal.metallib...
+2026-11-25T12:09:01.5424870Z [668/867] Generating generated/gpu/shader/hlsl/imgui_vs.hlsl.spirv.h
+2026-11-25T12:09:01.5521800Z [669/867] Generating generated/gpu/shader/hlsl/resolve_msaa_color_2x.hlsl.spirv.h
+2026-11-25T12:09:01.5628700Z [670/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/resolve_msaa_color_8x.metal.metallib...
+2026-11-25T12:09:01.5735380Z [671/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/resolve_msaa_depth_2x.metal.metallib...
+2026-11-25T12:09:01.5845340Z [672/867] Generating generated/gpu/shader/hlsl/resolve_msaa_color_4x.hlsl.spirv.h
+2026-11-25T12:09:01.5949550Z [673/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/resolve_msaa_depth_4x.metal.metallib...
+2026-11-25T12:09:01.6051040Z [674/867] Generating generated/gpu/shader/hlsl/resolve_msaa_color_8x.hlsl.spirv.h
+2026-11-25T12:09:01.6183900Z [675/867] Generating generated/gpu/shader/hlsl/resolve_msaa_depth_2x.hlsl.spirv.h
+2026-11-25T12:09:01.6285810Z [676/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/gpu/shader/msl/resolve_msaa_depth_8x.metal.metallib...
+2026-11-25T12:09:01.6388120Z [677/867] Generating generated/gpu/shader/hlsl/resolve_msaa_depth_4x.hlsl.spirv.h
+2026-11-25T12:09:01.6497720Z [678/867] Generating generated/gpu/shader/hlsl/resolve_msaa_depth_8x.hlsl.spirv.h
+2026-11-25T12:09:01.6608440Z [679/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/button_window.dds...
+2026-11-25T12:09:01.6798210Z [680/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/controller.dds...
+2026-11-25T12:09:01.7401540Z [681/867] Generating generated/gpu/shader/hlsl/imgui_ps.hlsl.spirv.h
+2026-11-25T12:09:01.7505300Z [682/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/kbm.dds...
+2026-11-25T12:09:01.7941460Z [683/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/bc_diff/button_bc_diff.bin...
+2026-11-25T12:09:01.9318890Z [684/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/main_menu1.dds...
+2026-11-25T12:09:02.0022340Z [685/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/main_menu8.dds...
+2026-11-25T12:09:02.1043290Z [686/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/main_menu9.dds...
+2026-11-25T12:09:02.1245860Z [687/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/arrow.dds...
+2026-11-25T12:09:02.1350780Z [688/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/window.dds...
+2026-11-25T12:09:02.1478140Z [689/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/select_arrow.dds...
+2026-11-25T12:09:02.2049240Z [690/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/font/im_font_atlas.bin...
+2026-11-25T12:09:02.2851030Z [691/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/installer/install_001.dds...
+2026-11-25T12:09:02.4700940Z [692/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/installer/install_002.dds...
+2026-11-25T12:09:02.4802850Z [693/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/installer/install_003.dds...
+2026-11-25T12:09:02.5480410Z [694/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/main_menu7.dds...
+2026-11-25T12:09:02.6929050Z [695/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/installer/install_005.dds...
+2026-11-25T12:09:02.7031050Z [696/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/installer/install_006.dds...
+2026-11-25T12:09:02.7138220Z [697/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/installer/install_004.dds...
+2026-11-25T12:09:02.8311440Z [698/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/game_icon_mac.png...
+2026-11-25T12:09:02.8612080Z [699/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/installer/install_008.dds...
+2026-11-25T12:09:02.8762380Z [700/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/sounds/window_open.ogg...
+2026-11-25T12:09:02.8913100Z [701/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/sounds/window_close.ogg...
+2026-11-25T12:09:02.9016260Z [702/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/sounds/cursor.ogg...
+2026-11-25T12:09:02.9166940Z [703/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/sounds/deside.ogg...
+2026-11-25T12:09:02.9316410Z [704/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/sounds/move.ogg...
+2026-11-25T12:09:02.9418300Z [705/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/sounds/main_deside.ogg...
+2026-11-25T12:09:02.9518880Z [706/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/installer/install_007.dds...
+2026-11-25T12:09:02.9620210Z [707/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/sounds/cannot_deside.ogg...
+2026-11-25T12:09:03.0502060Z [708/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/images/common/sonicnext-dev.dds...
+2026-11-25T12:09:03.0869030Z [709/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/music/installer.ogg...
+2026-11-25T12:09:07.5238550Z [710/867] Generating binary header for /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/../MarathonRecompResources/font/im_font_atlas.dds...
+2026-11-25T12:09:09.3343000Z [711/867] Building OBJCXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/os/ios/ios_virtual_controller.mm.o
+2026-11-25T12:09:09.3445690Z FAILED: [code=1] MarathonRecomp/CMakeFiles/MarathonRecomp.dir/os/ios/ios_virtual_controller.mm.o 
+2026-11-25T12:09:09.3630990Z /usr/bin/c++ -DMARATHON_IOS_NATIVE_METAL=1 -DMARATHON_IOS_PORT=1 -DMARATHON_IOS_STREAMING_XISO=1 -DMARATHON_RECOMP_METAL -DMARATHON_RECOMP_METAL=1 -DMSDFGEN_COPYRIGHT_YEAR=2026 -DMSDFGEN_DISABLE_PNG -DMSDFGEN_DISABLE_SVG -DMSDFGEN_EXTENSIONS -DMSDFGEN_EXT_PUBLIC="" -DMSDFGEN_PUBLIC="" -DMSDFGEN_USE_CPP11 -DMSDFGEN_VERSION=1.12.0 -DMSDFGEN_VERSION_MAJOR=1 -DMSDFGEN_VERSION_MINOR=12 -DMSDFGEN_VERSION_REVISION=0 -DMSDF_ATLAS_COPYRIGHT_YEAR=2026 -DMSDF_ATLAS_NO_ARTERY_FONT -DMSDF_ATLAS_PUBLIC="" -DMSDF_ATLAS_VERSION=1.3.0 -DMSDF_ATLAS_VERSION_MAJOR=1 -DMSDF_ATLAS_VERSION_MINOR=3 -DMSDF_ATLAS_VERSION_REVISION=0 -D_CRT_SECURE_NO_WARNINGS -D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/api -I/Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/concurrentqueue -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/ddspp -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/imgui -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/implot -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/json/include -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/magic_enum/include -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/stb -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/unordered_dense/include -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/tools/bc_diff -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/tools/XenosRecomp/thirdparty/smol-v/source -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/ios_compat/include -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/tools/XenonRecomp/thirdparty/fmt/include -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/tools/XenosRecomp/thirdparty/zstd/build/cmake/../../lib -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/msdf-atlas-gen -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/msdf-atlas-gen/msdfgen -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/o1heap/. -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/tools/XenonRecomp/XenonUtils/. -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/tools/XenonRecomp/thirdparty/simde -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/tools/XenonRecomp/thirdparty/disasm/. -I/Users/runner/work/KronosiOS/KronosiOS/build-ios/thirdparty/SDL/include-revision -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/SDL/include -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/SDL_mixer/include -I/Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecompLib/generated -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/tools/XenonRecomp/thirdparty/xxHash/cmake_unofficial/.. -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/plume -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/plume/contrib/volk -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/plume/contrib/Vulkan-Headers/include -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/plume/contrib/VulkanMemoryAllocator/include -I/Users/runner/work/KronosiOS/KronosiOS/ios-deps/ffmpeg-install/include -isystem /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/tools/XenonRecomp/thirdparty/tomlplusplus/include -x objective-c++ -O3 -DNDEBUG -std=gnu++2a -arch arm64 -isysroot /Applications/Xcode_16.2.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.2.sdk -miphoneos-version-min=17.0 -fPIE -fPIC -fno-strict-aliasing -Wno-switch -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable -Wno-void-pointer-to-int-cast -Wno-int-to-void-pointer-cast -Wno-invalid-offsetof -Wno-null-arithmetic -Wno-null-conversion -Wno-tautological-undefined-compare -ffp-model=strict -fobjc-arc -MD -MT MarathonRecomp/CMakeFiles/MarathonRecomp.dir/os/ios/ios_virtual_controller.mm.o -MF MarathonRecomp/CMakeFiles/MarathonRecomp.dir/os/ios/ios_virtual_controller.mm.o.d -o MarathonRecomp/CMakeFiles/MarathonRecomp.dir/os/ios/ios_virtual_controller.mm.o -c /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/os/ios/ios_virtual_controller.mm
+2026-11-25T12:09:09.3687560Z /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/os/ios/ios_virtual_controller.mm:1040:13: error: cannot jump from switch statement to this case label
+2026-11-25T12:09:09.3784450Z  1040 |             default:
+2026-11-25T12:09:09.3886060Z       |             ^
+2026-11-25T12:09:09.3988040Z /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/os/ios/ios_virtual_controller.mm:1025:61: note: jump enters lifetime of block which strongly captures a variable
+2026-11-25T12:09:09.4088270Z  1025 |                 [UIView animateWithDuration:0.12 animations:^{
+2026-11-25T12:09:09.4193200Z       |                                                             ^
+2026-11-25T12:09:09.4292250Z /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/os/ios/ios_virtual_controller.mm:1036:13: error: cannot jump from switch statement to this case label
+2026-11-25T12:09:09.4394070Z  1036 |             case kRoleButton:
+2026-11-25T12:09:09.4495000Z       |             ^
+2026-11-25T12:09:09.4597070Z /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/os/ios/ios_virtual_controller.mm:1025:61: note: jump enters lifetime of block which strongly captures a variable
+2026-11-25T12:09:09.4697480Z  1025 |                 [UIView animateWithDuration:0.12 animations:^{
+2026-11-25T12:09:09.4797920Z       |                                                             ^
+2026-11-25T12:09:09.4899720Z /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/os/ios/ios_virtual_controller.mm:1035:13: error: cannot jump from switch statement to this case label
+2026-11-25T12:09:09.5001280Z  1035 |             case kRoleABXY:
+2026-11-25T12:09:09.5102470Z       |             ^
+2026-11-25T12:09:09.5204390Z /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/os/ios/ios_virtual_controller.mm:1025:61: note: jump enters lifetime of block which strongly captures a variable
+2026-11-25T12:09:09.5306180Z  1025 |                 [UIView animateWithDuration:0.12 animations:^{
+2026-11-25T12:09:09.5406710Z       |                                                             ^
+2026-11-25T12:09:09.5508730Z /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/os/ios/ios_virtual_controller.mm:1030:13: error: cannot jump from switch statement to this case label
+2026-11-25T12:09:09.5609460Z  1030 |             case kRoleDPad:
+2026-11-25T12:09:09.5712230Z       |             ^
+2026-11-25T12:09:09.5817900Z /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/MarathonRecomp/os/ios/ios_virtual_controller.mm:1025:61: note: jump enters lifetime of block which strongly captures a variable
+2026-11-25T12:09:09.5914160Z  1025 |                 [UIView animateWithDuration:0.12 animations:^{
+2026-11-25T12:09:09.5944850Z       |                                                             ^
+2026-11-25T12:09:09.6046750Z 4 errors generated.
+2026-11-25T12:09:09.9649630Z [712/867] Building OBJCXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/os/ios/curl_ios_stub.mm.o
+2026-11-25T12:09:10.3019480Z [713/867] Building OBJCXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/os/ios/nfd_ios.mm.o
+2026-11-25T12:09:11.1398520Z [714/867] Building OBJCXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/os/ios/ios_platform.mm.o
+2026-11-25T12:09:12.1000930Z [715/867] Building CXX object MarathonRecomp/CMakeFiles/MarathonRecomp.dir/cmake_pch.hxx.pch
+2026-11-25T12:09:12.1003390Z ninja: build stopped: subcommand failed.
+2026-11-25T12:09:12.1150630Z ##[error]Process completed with exit code 1.
