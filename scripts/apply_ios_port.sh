@@ -257,7 +257,9 @@ python3 - \
   "${UPSTREAM_DIR}/MarathonRecomp/kernel/memory.cpp" \
   "${UPSTREAM_DIR}/MarathonRecomp/locale/locale.cpp" \
   "${UPSTREAM_DIR}/MarathonRecomp/ui/imgui_utils.cpp" \
-  "${UPSTREAM_DIR}/MarathonRecomp/ui/options_menu.cpp" << 'PY_WIZ'
+  "${UPSTREAM_DIR}/MarathonRecomp/ui/options_menu.cpp" \
+  "${UPSTREAM_DIR}/MarathonRecomp/user/config_def.h" \
+  "${UPSTREAM_DIR}/MarathonRecomp/locale/config_locale.cpp" << 'PY_WIZ'
 import sys, pathlib
 
 wiz_p = pathlib.Path(sys.argv[1])
@@ -269,6 +271,8 @@ mem_c = pathlib.Path(sys.argv[6])
 loc_c = pathlib.Path(sys.argv[7])
 imu_c = pathlib.Path(sys.argv[8])
 opt_c = pathlib.Path(sys.argv[9])
+cfg_def_h = pathlib.Path(sys.argv[10])
+cfg_loc_c = pathlib.Path(sys.argv[11])
 
 # 5a. ui/button_window.h & .cpp: hit-test touch + modalità input iOS (Touch senza simboli mouse/tastiera, Keyboard solo su tasto reale, Gamepad su controller)
 if bw_h.exists() and bw_c.exists():
@@ -882,6 +886,7 @@ if opt_c.exists():
         new_fps_row = (
             "#if defined(MARATHON_IOS_PORT)\n"
             "            DrawOption(rowCount++, &Config::FPS, true, nullptr, 30, 60, 120, false);\n"
+            "            DrawOption(rowCount++, &Config::ShowFPS, true);\n"
             "#else\n"
             "            // TODO DrawOption(rowCount++, &Config::FPS, true, nullptr, FPS_MIN, 120, FPS_MAX);\n"
             "#endif"
@@ -942,7 +947,39 @@ if opt_c.exists():
         assert old_int_text in osrc, "Failed to locate Monitor/int32 valueText block in ui/options_menu.cpp"
         osrc = osrc.replace(old_int_text, new_int_text, 1)
         opt_c.write_text(osrc, encoding="utf-8")
-        print("Patched ui/options_menu.cpp: enabled discrete 30 / 60 / 120 FPS lock selector in Video Options on iOS.")
+        print("Patched ui/options_menu.cpp: enabled discrete 30 / 60 / 120 FPS selector + native ShowFPS toggle in Video Options on iOS.")
+
+# 5i. user/config_def.h: promuovi Config::ShowFPS a CONFIG_DEFINE_LOCALISED per stile e localizzazione nativa nel menu Video
+if cfg_def_h.exists():
+    dsrc = cfg_def_h.read_text(encoding="utf-8")
+    old_showfps_def = 'CONFIG_DEFINE("Video", bool, ShowFPS, false, false);'
+    new_showfps_def = 'CONFIG_DEFINE_LOCALISED("Video", bool, ShowFPS, false, false);'
+    if new_showfps_def not in dsrc:
+        assert old_showfps_def in dsrc, "Failed to locate ShowFPS definition in user/config_def.h"
+        dsrc = dsrc.replace(old_showfps_def, new_showfps_def, 1)
+        cfg_def_h.write_text(dsrc, encoding="utf-8")
+        print("Patched user/config_def.h: promoted ShowFPS to CONFIG_DEFINE_LOCALISED.")
+
+# 5j. locale/config_locale.cpp: aggiungi nome e descrizione multilingua di ShowFPS (English/Japanese/German/French/Spanish/Italian)
+if cfg_loc_c.exists():
+    clsrc = cfg_loc_c.read_text(encoding="utf-8")
+    if "CONFIG_DEFINE_LOCALE(ShowFPS)" not in clsrc:
+        anchor_brightness = "CONFIG_DEFINE_LOCALE(Brightness)"
+        showfps_locale = '''CONFIG_DEFINE_LOCALE(ShowFPS)
+{
+    { ELanguage::English,  { "Show FPS", "Display a real-time frame rate counter in the top-left corner of the screen." } },
+    { ELanguage::Japanese, { "FPS表示", "画面の左上に現在のフレームレートを表示します" } },
+    { ELanguage::German,   { "FPS anzeigen", "Zeige eine Echtzeit-Bildwiederholrate oben links auf dem Bildschirm an." } },
+    { ELanguage::French,   { "Afficher les IPS", "Affiche le compteur d'images par seconde en temps réel en haut à gauche de l'écran." } },
+    { ELanguage::Spanish,  { "Mostrar FPS", "Muestra un contador de fotogramas por segundo en la esquina superior izquierda." } },
+    { ELanguage::Italian,  { "Mostra FPS", "Mostra il contatore degli FPS in tempo reale nell'angolo in alto a sinistra dello schermo." } }
+};
+
+CONFIG_DEFINE_LOCALE(Brightness)'''
+        assert anchor_brightness in clsrc, "Failed to locate CONFIG_DEFINE_LOCALE(Brightness) in locale/config_locale.cpp"
+        clsrc = clsrc.replace(anchor_brightness, showfps_locale, 1)
+        cfg_loc_c.write_text(clsrc, encoding="utf-8")
+        print("Patched locale/config_locale.cpp: added 6-language ShowFPS option localization.")
 PY_WIZ
 
 echo "==> [6/8] Patch paths.cpp, paths.h, config.cpp, file_system.cpp, imports.cpp (FIX FREEZE ARM64!), app.cpp e stdafx.h..."
@@ -3242,7 +3279,11 @@ if vid_cpp.exists():
     if "MARATHON_IOS_NATIVE_METAL" not in vsrc:
         vsrc = (
             "#if defined(MARATHON_IOS_PORT)\n"
+            "#include <algorithm>\n"
+            "#include <chrono>\n"
+            "#include <cmath>\n"
             "#include <ios_virtual_controller.h>\n"
+            'extern "C" void MarathonIOS_MapWindowPointToImGui(float winX, float winY, float* outX, float* outY);\n'
             "#endif\n" + vsrc
         )
         vsrc = vsrc.replace(
@@ -3290,6 +3331,195 @@ if vid_cpp.exists():
 #endif'''
         assert old_mouse_scale in vsrc, "Failed to locate DrawImGui mousePosScale in gpu/video.cpp"
         vsrc = vsrc.replace(old_mouse_scale, new_mouse_scale, 1)
+
+        # Enhanced Sonic '06 styled top-left FPS HUD overlay for iOS (safe-area + LB-clearance aware, smooth 0.25s refresh, suspend-spike proof)
+        old_draw_fps = '''static void DrawFPS()
+{
+    if (!Config::ShowFPS)
+        return;
+
+    double time = ImGui::GetTime();
+    static double updateTime = time;
+    static double fps = 0;
+    static double totalDeltaTime = 0.0;
+    static uint32_t totalDeltaCount = 0;
+
+    totalDeltaTime += g_presentProfiler.value.load();
+    totalDeltaCount++;
+
+    if (time - updateTime >= 1.0f)
+    {
+        fps = 1000.0 / std::max(totalDeltaTime / static_cast<double>(totalDeltaCount), 1.0);
+        updateTime = time;
+        totalDeltaTime = 0.0;
+        totalDeltaCount = 0;
+    }
+
+    auto drawList = ImGui::GetBackgroundDrawList();
+
+    auto fmt = fmt::format("FPS: {:.2f}", fps);
+    auto fontSize = Scale(10);
+    auto textSize = g_pFntRodin->CalcTextSizeA(fontSize, FLT_MAX, 0, fmt.c_str());
+
+    ImVec2 min = { Scale(40), Scale(30) };
+    ImVec2 max = { min.x + std::max(Scale(75), textSize.x + Scale(10)), min.y + Scale(15) };
+    ImVec2 textPos = { min.x + Scale(2), CENTRE_TEXT_VERT(min, max, textSize) + Scale(0.2f) };
+
+    drawList->AddRectFilled(min, max, IM_COL32(0, 0, 0, 200));
+    drawList->AddText(g_pFntRodin, fontSize, textPos, IM_COL32_WHITE, fmt.c_str());
+}'''
+        new_draw_fps = '''#if defined(MARATHON_IOS_PORT)
+static void DrawFPS()
+{
+    // MARATHON_IOS_FPS_OVERLAY: Sonic '06 styled top-left FPS HUD overlay (safe-area & touch-control aware)
+    static bool s_hasPrevSample = false;
+    static std::chrono::steady_clock::time_point s_prevFrameTime{};
+    static double s_accumSec = 0.0;
+    static uint32_t s_accumFrames = 0;
+    static double s_displayFps = 0.0;
+    static double s_displayMs = 0.0;
+
+    if (!Config::ShowFPS)
+    {
+        s_hasPrevSample = false;
+        s_accumSec = 0.0;
+        s_accumFrames = 0;
+        s_displayFps = 0.0;
+        s_displayMs = 0.0;
+        return;
+    }
+
+    if (!g_pFntRodin)
+        return;
+
+    const auto now = std::chrono::steady_clock::now();
+    if (s_hasPrevSample)
+    {
+        const double dt = std::chrono::duration<double>(now - s_prevFrameTime).count();
+        if (dt > 0.0005 && dt < 0.5)
+        {
+            s_accumSec += dt;
+            s_accumFrames++;
+            if (s_accumSec >= 0.25 || (s_displayFps <= 0.0 && s_accumFrames >= 2))
+            {
+                s_displayFps = static_cast<double>(s_accumFrames) / s_accumSec;
+                s_displayMs = (s_accumSec * 1000.0) / static_cast<double>(s_accumFrames);
+                s_accumSec = 0.0;
+                s_accumFrames = 0;
+            }
+        }
+    }
+    s_prevFrameTime = now;
+    s_hasPrevSample = true;
+
+    auto* drawList = ImGui::GetBackgroundDrawList();
+    if (!drawList)
+        return;
+
+    const int shownFps = static_cast<int>(std::lround(s_displayFps));
+    const auto label = (s_displayFps > 0.0)
+        ? fmt::format("FPS {:>3}  {:.1f}ms", shownFps, s_displayMs)
+        : std::string("FPS  --  --.-ms");
+
+    const float fontSize = Scale(18.0f, true);
+    const ImVec2 textSize = g_pFntRodin->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, label.c_str());
+
+    float anchorWinX = 24.0f;
+    float anchorWinY = 18.0f;
+    MarathonIOS_GetFPSOverlayAnchorPoints(&anchorWinX, &anchorWinY);
+
+    float posX = 0.0f;
+    float posY = 0.0f;
+    MarathonIOS_MapWindowPointToImGui(anchorWinX, anchorWinY, &posX, &posY);
+
+    const float minMarginX = Scale(16.0f, true);
+    const float minMarginY = Scale(12.0f, true);
+    posX = std::max(posX, minMarginX);
+    posY = std::max(posY, minMarginY);
+
+    const float padLeft = Scale(13.0f, true);
+    const float padRight = Scale(10.0f, true);
+    const float padY = Scale(5.0f, true);
+    const float boxW = std::max(Scale(150.0f, true), textSize.x + padLeft + padRight);
+    const float boxH = textSize.y + padY * 2.0f;
+
+    const ImVec2 disp = ImGui::GetIO().DisplaySize;
+    if (disp.x > boxW + minMarginX)
+        posX = std::min(posX, disp.x - boxW - minMarginX);
+    if (disp.y > boxH + minMarginY)
+        posY = std::min(posY, disp.y - boxH - minMarginY);
+
+    const ImVec2 minPos = { posX, posY };
+    const ImVec2 maxPos = { posX + boxW, posY + boxH };
+    const float rounding = Scale(4.0f, true);
+
+    const double targetFps = static_cast<double>(Config::FPS.Value > 0 ? Config::FPS.Value : 60);
+    const double ratio = (s_displayFps > 0.0) ? (s_displayFps / targetFps) : 1.0;
+    ImU32 accentCol = IM_COL32(82, 245, 148, 255);
+    if (ratio < 0.70)
+        accentCol = IM_COL32(255, 92, 92, 255);
+    else if (ratio < 0.90)
+        accentCol = IM_COL32(255, 210, 64, 255);
+
+    SetShaderModifier(IMGUI_SHADER_MODIFIER_NONE);
+    ResetGradient();
+
+    drawList->AddRectFilled(minPos, maxPos, IM_COL32(8, 14, 28, 210), rounding);
+    drawList->AddRectFilled(
+        ImVec2(minPos.x + Scale(3.0f, true), minPos.y + Scale(3.5f, true)),
+        ImVec2(minPos.x + Scale(6.5f, true), maxPos.y - Scale(3.5f, true)),
+        accentCol,
+        Scale(1.5f, true)
+    );
+    drawList->AddRect(minPos, maxPos, IM_COL32(64, 156, 255, 200), rounding, 0, Scale(1.2f, true));
+
+    const ImVec2 textPos = {
+        minPos.x + padLeft,
+        CENTRE_TEXT_VERT(minPos, maxPos, textSize) + Scale(0.5f, true)
+    };
+    const float shadowOff = Scale(1.2f, true);
+    drawList->AddText(g_pFntRodin, fontSize, ImVec2(textPos.x + shadowOff, textPos.y + shadowOff), IM_COL32(0, 0, 0, 220), label.c_str());
+    drawList->AddText(g_pFntRodin, fontSize, textPos, IM_COL32_WHITE, label.c_str());
+}
+#else
+static void DrawFPS()
+{
+    if (!Config::ShowFPS)
+        return;
+
+    double time = ImGui::GetTime();
+    static double updateTime = time;
+    static double fps = 0;
+    static double totalDeltaTime = 0.0;
+    static uint32_t totalDeltaCount = 0;
+
+    totalDeltaTime += g_presentProfiler.value.load();
+    totalDeltaCount++;
+
+    if (time - updateTime >= 1.0f)
+    {
+        fps = 1000.0 / std::max(totalDeltaTime / static_cast<double>(totalDeltaCount), 1.0);
+        updateTime = time;
+        totalDeltaTime = 0.0;
+        totalDeltaCount = 0;
+    }
+
+    auto drawList = ImGui::GetBackgroundDrawList();
+
+    auto fmt = fmt::format("FPS: {:.2f}", fps);
+    auto fontSize = Scale(10);
+    auto textSize = g_pFntRodin->CalcTextSizeA(fontSize, FLT_MAX, 0, fmt.c_str());
+
+    ImVec2 min = { Scale(40), Scale(30) };
+    ImVec2 max = { min.x + std::max(Scale(75), textSize.x + Scale(10)), min.y + Scale(15) };
+    ImVec2 textPos = { min.x + Scale(2), CENTRE_TEXT_VERT(min, max, textSize) + Scale(0.2f) };
+
+    drawList->AddRectFilled(min, max, IM_COL32(0, 0, 0, 200));
+    drawList->AddText(g_pFntRodin, fontSize, textPos, IM_COL32_WHITE, fmt.c_str());
+}
+#endif'''
+        assert old_draw_fps in vsrc, "Failed to locate DrawFPS() in gpu/video.cpp"
+        vsrc = vsrc.replace(old_draw_fps, new_draw_fps, 1)
 
         # Skip desktop ApplyLowEndDefaults() on iOS (replaced by smart first-launch iOS hardware auto-config in config.cpp)
         vsrc = vsrc.replace(

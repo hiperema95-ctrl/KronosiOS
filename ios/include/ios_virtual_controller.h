@@ -44,6 +44,7 @@ void MarathonIOS_SetCharacterTheme(int theme);
 void MarathonIOS_GetVirtualControllerState(MarathonTouchGamepadState* outState);
 void MarathonIOS_TriggerHapticRumble(uint16_t lowFreqMotor, uint16_t highFreqMotor);
 void MarathonIOS_ResetVirtualControllerInputs(void);
+void MarathonIOS_GetFPSOverlayAnchorPoints(float* outWinX, float* outWinY);
 
 // On-device diagnostics, lifecycle pause/resume, ProMotion FPS pacing & hardware auto-config (ios/os/ios_platform.mm)
 void MarathonIOS_LogLine(const char* tag, const char* msg);

@@ -359,6 +359,44 @@ test('iOS lifecycle pause/resume, hardware thermal auto-config, 30/60/120 FPS Pr
   assert.doesNotMatch(vcMm, /@interface Sonic06PadButton : UIButton/);
 });
 
+test('in-game ShowFPS Video option, 6-language localization, top-left safe-area FPS overlay, and on-disk parity are intact', async () => {
+  const fs = await import('node:fs');
+  const files = generatePortRepository(DEFAULT_BUILD_CONFIG);
+  const patcher = files.find((f) => f.path === 'scripts/apply_ios_port.sh')!.content;
+  const vcHeader = files.find((f) => f.path === 'ios/include/ios_virtual_controller.h')!.content;
+  const vcMm = files.find((f) => f.path === 'ios/ios_virtual_controller.mm')!.content;
+
+  // Native localized Video option directly matching other OptionsMenu rows
+  assert.match(patcher, /CONFIG_DEFINE_LOCALISED\("Video", bool, ShowFPS, false, false\);/);
+  assert.match(patcher, /CONFIG_DEFINE_LOCALE\(ShowFPS\)/);
+  assert.match(patcher, /"Mostra FPS"/);
+  assert.match(patcher, /"Show FPS"/);
+  assert.match(patcher, /DrawOption\(rowCount\+\+, &Config::ShowFPS, true\);/);
+
+  // Top-left Sonic '06 styled FPS HUD overlay with suspend-spike protection and safe-area mapping
+  assert.match(patcher, /MARATHON_IOS_FPS_OVERLAY/);
+  assert.match(patcher, /std::chrono::steady_clock::now\(\)/);
+  assert.match(patcher, /if \(!g_pFntRodin\)/);
+  assert.match(patcher, /MarathonIOS_GetFPSOverlayAnchorPoints\(&anchorWinX, &anchorWinY\);/);
+  assert.match(patcher, /MarathonIOS_MapWindowPointToImGui\(anchorWinX, anchorWinY, &posX, &posY\);/);
+
+  // Virtual controller publishes top-left safe-area anchor clearing LB/LT buttons
+  assert.match(vcHeader, /void MarathonIOS_GetFPSOverlayAnchorPoints\(float\* outWinX, float\* outWinY\);/);
+  assert.match(vcMm, /- \(void\)updateFPSOverlayAnchor;/);
+  assert.match(vcMm, /void MarathonIOS_GetFPSOverlayAnchorPoints\(float\* outWinX, float\* outWinY\)/);
+
+  // Generated files stay 100% byte-for-byte in sync with on-disk overlay files
+  for (const relPath of [
+    'scripts/apply_ios_port.sh',
+    'ios/include/ios_virtual_controller.h',
+    'ios/ios_virtual_controller.mm',
+  ]) {
+    const generated = files.find((f) => f.path === relPath)!.content;
+    const onDisk = fs.readFileSync(relPath, 'utf8');
+    assert.equal(generated, onDisk, `Template mismatch with on-disk ${relPath}`);
+  }
+});
+
 test('inspectXisoCandidate validates extensions and detects real MICROSOFT*XBOX*MEDIA magic', () => {
   const invalid = inspectXisoCandidate({ fileName: 'game.zip', sizeBytes: 1024 });
   assert.equal(invalid.valid, false);

@@ -1384,6 +1384,7 @@ void MarathonIOS_SetCharacterTheme(int theme);
 void MarathonIOS_GetVirtualControllerState(MarathonTouchGamepadState* outState);
 void MarathonIOS_TriggerHapticRumble(uint16_t lowFreqMotor, uint16_t highFreqMotor);
 void MarathonIOS_ResetVirtualControllerInputs(void);
+void MarathonIOS_GetFPSOverlayAnchorPoints(float* outWinX, float* outWinY);
 
 // On-device diagnostics, lifecycle pause/resume, ProMotion FPS pacing & hardware auto-config (ios/os/ios_platform.mm)
 void MarathonIOS_LogLine(const char* tag, const char* msg);
@@ -1431,6 +1432,8 @@ static std::atomic<int16_t> g_ly{0};
 static std::atomic<int16_t> g_rx{0};
 static std::atomic<int16_t> g_ry{0};
 static std::atomic<int> g_currentTheme{MARATHON_THEME_SONIC};
+static std::atomic<float> g_fpsAnchorWinX{24.0f};
+static std::atomic<float> g_fpsAnchorWinY{18.0f};
 
 // Standard XAMINPUT_GAMEPAD_* bitmask constants (matching MarathonRecomp/hid)
 static constexpr uint32_t kBtnDPadUp    = 0x0001;
@@ -1887,6 +1890,7 @@ struct TrackedTouchSlot {
 - (void)applyTheme:(int)theme animated:(BOOL)animated;
 - (void)playRumbleHaptic:(float)intensity sharpness:(float)sharpness;
 - (void)resetAllInputs;
+- (void)updateFPSOverlayAnchor;
 @end
 
 @implementation MarathonTouchOverlayView
@@ -2103,6 +2107,21 @@ struct TrackedTouchSlot {
     CGFloat camMinX = w * 0.54;
     CGFloat camMinY = topPad + shH + 10.0;
     self.rightCameraZone = CGRectMake(camMinX, camMinY, w - camMinX, h - camMinY);
+
+    [self updateFPSOverlayAnchor];
+}
+
+- (void)updateFPSOverlayAnchor {
+    UIEdgeInsets safe = self.safeAreaInsets;
+    CGFloat leftPad = MAX(safe.left, 18.0) + 6.0;
+    CGFloat topPad  = MAX(safe.top, 12.0) + 6.0;
+    BOOL touchVisible = (!self.hidden && self.alpha >= 0.01);
+    CGFloat anchorY = topPad;
+    if (touchVisible && self.btnLB && CGRectGetHeight(self.btnLB.frame) > 1.0) {
+        anchorY = CGRectGetMaxY(self.btnLB.frame) + 8.0;
+    }
+    g_fpsAnchorWinX.store(static_cast<float>(leftPad), std::memory_order_release);
+    g_fpsAnchorWinY.store(static_cast<float>(anchorY), std::memory_order_release);
 }
 
 // Find expanded hit on shoulder/menu buttons (+12pt padding)
@@ -2488,12 +2507,14 @@ struct TrackedTouchSlot {
         BOOL hasPhysical = ([GCController controllers].count > 0);
         if (hasPhysical) [self resetAllInputs];
         self.hidden = hasPhysical;
+        [self updateFPSOverlayAnchor];
     }];
     [nc addObserverForName:GCControllerDidDisconnectNotification
                     object:nil
                      queue:[NSOperationQueue mainQueue]
                 usingBlock:^(__unused NSNotification *note) {
         self.hidden = ([GCController controllers].count > 0);
+        [self updateFPSOverlayAnchor];
     }];
 }
 
@@ -2558,8 +2579,14 @@ void MarathonIOS_SetVirtualControllerVisible(bool visible) {
         if (g_overlayView) {
             if (!visible) [g_overlayView resetAllInputs];
             g_overlayView.hidden = !visible || ([GCController controllers].count > 0);
+            [g_overlayView updateFPSOverlayAnchor];
         }
     });
+}
+
+void MarathonIOS_GetFPSOverlayAnchorPoints(float* outWinX, float* outWinY) {
+    if (outWinX) *outWinX = g_fpsAnchorWinX.load(std::memory_order_acquire);
+    if (outWinY) *outWinY = g_fpsAnchorWinY.load(std::memory_order_acquire);
 }
 
 void MarathonIOS_SetCharacterTheme(int theme) {
