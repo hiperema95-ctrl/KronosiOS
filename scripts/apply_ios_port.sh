@@ -616,17 +616,113 @@ if mw_c.exists():
         mw_c.write_text(msrc, encoding="utf-8")
         print("Patched message_window.cpp for direct 1-tap smartphone dialog confirmation.")
 
-# 5d. hid/hid.cpp: su iOS non bloccare mai l'input se SDL_EVENT_WINDOW_FOCUS_GAINED non viene emesso subito
+# 5d. hid/hid.cpp: cabla il virtual controller Sonic '06 + rumble CoreHaptics e non blocca mai l'input su iOS
 if hid_c.exists():
     hsrc = hid_c.read_text(encoding="utf-8")
-    if "MARATHON_IOS_PORT" not in hsrc:
+    if "MARATHON_IOS_VIRTUAL_GAMEPAD" not in hsrc:
+        assert '#include "hid.h"' in hsrc, "Failed to locate #include \"hid.h\" in hid/hid.cpp"
+        hsrc = hsrc.replace(
+            '#include "hid.h"',
+            '#include "hid.h"\n'
+            '#if defined(MARATHON_IOS_PORT)\n'
+            '#define MARATHON_IOS_VIRTUAL_GAMEPAD 1\n'
+            '#include <algorithm>\n'
+            '#include <cstdlib>\n'
+            '#include <ios_virtual_controller.h>\n'
+            'static inline int16_t MergeTouchAxis(int16_t phys, int16_t virt)\n'
+            '{\n'
+            '    return (std::abs(static_cast<int>(virt)) > std::abs(static_cast<int>(phys))) ? virt : phys;\n'
+            '}\n'
+            '#endif',
+            1
+        )
+        old_get_state = '''        if (const auto pUser = GetManager()->GetUser(in_userIndex))
+        {
+            XAMINPUT_STATE state
+            {
+                .dwPacketNumber = packetNumber++,
+                .Gamepad = pUser->GetState()
+            };
+
+            *out_pState = state;
+
+            return true;
+        }
+
+        return false;'''
+        new_get_state = '''        XAMINPUT_GAMEPAD gamepad{};
+        bool hasUser = false;
+        if (const auto pUser = GetManager()->GetUser(in_userIndex))
+        {
+            gamepad = pUser->GetState();
+            hasUser = true;
+        }
+#if defined(MARATHON_IOS_PORT)
+        if (in_userIndex == 0)
+        {
+            MarathonTouchGamepadState vpad{};
+            MarathonIOS_GetVirtualControllerState(&vpad);
+            gamepad.wButtons |= static_cast<uint16_t>(vpad.buttons & 0xFFFFu);
+            gamepad.bLeftTrigger = std::max(gamepad.bLeftTrigger, vpad.leftTrigger);
+            gamepad.bRightTrigger = std::max(gamepad.bRightTrigger, vpad.rightTrigger);
+            gamepad.sThumbLX = MergeTouchAxis(gamepad.sThumbLX, vpad.thumbLX);
+            gamepad.sThumbLY = MergeTouchAxis(gamepad.sThumbLY, vpad.thumbLY);
+            gamepad.sThumbRX = MergeTouchAxis(gamepad.sThumbRX, vpad.thumbRX);
+            gamepad.sThumbRY = MergeTouchAxis(gamepad.sThumbRY, vpad.thumbRY);
+            hasUser = true;
+        }
+#endif
+        if (hasUser)
+        {
+            XAMINPUT_STATE state
+            {
+                .dwPacketNumber = packetNumber++,
+                .Gamepad = gamepad
+            };
+
+            *out_pState = state;
+
+            return true;
+        }
+
+        return false;'''
+        assert old_get_state in hsrc, "Failed to locate HID::GetState body in hid/hid.cpp"
+        hsrc = hsrc.replace(old_get_state, new_get_state, 1)
+
+        old_set_state = '''        if (const auto pUser = GetManager()->GetUser(in_userIndex))
+        {
+            pUser->SetVibration(*in_pVibration);
+            return true;
+        }
+
+        return false;'''
+        new_set_state = '''#if defined(MARATHON_IOS_PORT)
+        if (in_userIndex == 0)
+        {
+            MarathonIOS_TriggerHapticRumble(in_pVibration->wLeftMotorSpeed, in_pVibration->wRightMotorSpeed);
+        }
+#endif
+        if (const auto pUser = GetManager()->GetUser(in_userIndex))
+        {
+            pUser->SetVibration(*in_pVibration);
+            return true;
+        }
+
+#if defined(MARATHON_IOS_PORT)
+        return (in_userIndex == 0);
+#else
+        return false;
+#endif'''
+        assert old_set_state in hsrc, "Failed to locate HID::SetState body in hid/hid.cpp"
+        hsrc = hsrc.replace(old_set_state, new_set_state, 1)
+
         hsrc = hsrc.replace(
             "return GameWindow::s_isFocused || Config::AllowBackgroundInput;",
             "#if defined(MARATHON_IOS_PORT)\n        return true;\n#else\n        return GameWindow::s_isFocused || Config::AllowBackgroundInput;\n#endif",
             1
         )
         hid_c.write_text(hsrc, encoding="utf-8")
-        print("Patched hid/hid.cpp so touch/input is never blocked on iOS.")
+        print("Patched hid/hid.cpp: wired Sonic '06 virtual gamepad + CoreHaptics rumble + always-active iOS input.")
 
 # 5e. kernel/memory.cpp: FIX CRASH IMMEDIATO SU FEATHER (mmap restituisce MAP_FAILED = (void*)-1, NON nullptr!)
 if mem_c.exists():
@@ -767,13 +863,15 @@ if imu_c.exists():
         print("Patched ui/imgui_utils.cpp: disabled mouse icons in iOS installer, keyboard icons only on real keyboard input.")
 PY_WIZ
 
-echo "==> [6/8] Patch paths.cpp, paths.h, config.cpp, file_system.cpp e stdafx.h (Documents/MarathonRecomp + APFS case-insensitive + Apple libc++ std::atomic_ref deadlock-free)..."
+echo "==> [6/8] Patch paths.cpp, paths.h, config.cpp, file_system.cpp, imports.cpp (FIX FREEZE ARM64!), app.cpp e stdafx.h..."
 python3 - \
   "${UPSTREAM_DIR}/MarathonRecomp/user/paths.cpp" \
   "${UPSTREAM_DIR}/MarathonRecomp/stdafx.h" \
   "${UPSTREAM_DIR}/MarathonRecomp/user/config.cpp" \
   "${UPSTREAM_DIR}/MarathonRecomp/user/paths.h" \
-  "${UPSTREAM_DIR}/MarathonRecomp/kernel/io/file_system.cpp" << 'PY_PATHS'
+  "${UPSTREAM_DIR}/MarathonRecomp/kernel/io/file_system.cpp" \
+  "${UPSTREAM_DIR}/MarathonRecomp/kernel/imports.cpp" \
+  "${UPSTREAM_DIR}/MarathonRecomp/app.cpp" << 'PY_PATHS'
 import sys, pathlib
 
 p = pathlib.Path(sys.argv[1])
@@ -891,6 +989,282 @@ if fs_p.exists():
         fsrc = fsrc.replace(old_attrs, new_attrs, 1)
         fs_p.write_text(fsrc, encoding="utf-8")
         print("Patched kernel/io/file_system.cpp: case-insensitive APFS filePath update + non-throwing XGetFileAttributesA.")
+
+# 6b. kernel/imports.cpp: FIX CRITICO DEADLOCK CASUALE SU ARM64 (compare_exchange_weak spurious failure -> wait(true) / wait(0) infinito!)
+imp_p = pathlib.Path(sys.argv[6])
+if imp_p.exists():
+    isrc = imp_p.read_text(encoding="utf-8")
+    if "MARATHON_IOS_ARM64_CAS_FIX" not in isrc:
+        old_ev_wait = '''        else if (timeout == INFINITE)
+        {
+            if (manualReset)
+            {
+                signaled.wait(false);
+            }
+            else
+            {
+                while (true)
+                {
+                    bool expected = true;
+                    if (signaled.compare_exchange_weak(expected, false))
+                        break;
+
+                    signaled.wait(expected);
+                }
+            }
+        }
+        else
+        {
+            assert(false && "Unhandled timeout value.");
+        }'''
+        new_ev_wait = '''        // MARATHON_IOS_ARM64_CAS_FIX: su ARM64 LL/SC compare_exchange_weak può fallire spuriamente lasciando expected==true -> signaled.wait(true) freeza per sempre!
+        else if (timeout == INFINITE)
+        {
+            if (manualReset)
+            {
+                while (!signaled.load())
+                    signaled.wait(false);
+            }
+            else
+            {
+                while (true)
+                {
+                    bool expected = true;
+                    if (signaled.compare_exchange_strong(expected, false))
+                        break;
+
+                    if (!expected)
+                        signaled.wait(false);
+                }
+            }
+        }
+        else
+        {
+            auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout);
+            while (true)
+            {
+                if (manualReset)
+                {
+                    if (signaled.load())
+                        return STATUS_SUCCESS;
+                }
+                else
+                {
+                    bool expected = true;
+                    if (signaled.compare_exchange_strong(expected, false))
+                        return STATUS_SUCCESS;
+                }
+                if (std::chrono::steady_clock::now() >= deadline)
+                    return STATUS_TIMEOUT;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }'''
+        assert old_ev_wait in isrc, "Failed to locate Event::Wait in kernel/imports.cpp"
+        isrc = isrc.replace(old_ev_wait, new_ev_wait, 1)
+
+        old_sem_wait = '''        if (timeout == 0)
+        {
+            uint32_t currentCount = count.load();
+            if (currentCount != 0)
+            {
+                if (count.compare_exchange_weak(currentCount, currentCount - 1))
+                    return STATUS_SUCCESS;
+            }
+
+            return STATUS_TIMEOUT;
+        }
+        else if (timeout == INFINITE)
+        {
+            uint32_t currentCount;
+            while (true)
+            {
+                currentCount = count.load();
+                if (currentCount != 0)
+                {
+                    if (count.compare_exchange_weak(currentCount, currentCount - 1))
+                        return STATUS_SUCCESS;
+                }
+                else
+                {
+                    count.wait(0);
+                }
+            }
+
+            return STATUS_SUCCESS;
+        }
+        else
+        {
+            assert(false && "Unhandled timeout value.");
+            return STATUS_TIMEOUT;
+        }'''
+        new_sem_wait = '''        if (timeout == 0)
+        {
+            uint32_t currentCount = count.load();
+            while (currentCount != 0)
+            {
+                if (count.compare_exchange_strong(currentCount, currentCount - 1))
+                    return STATUS_SUCCESS;
+            }
+
+            return STATUS_TIMEOUT;
+        }
+        else if (timeout == INFINITE)
+        {
+            uint32_t currentCount;
+            while (true)
+            {
+                currentCount = count.load();
+                if (currentCount != 0)
+                {
+                    if (count.compare_exchange_strong(currentCount, currentCount - 1))
+                        return STATUS_SUCCESS;
+                }
+                else
+                {
+                    count.wait(0);
+                }
+            }
+
+            return STATUS_SUCCESS;
+        }
+        else
+        {
+            auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout);
+            while (true)
+            {
+                uint32_t currentCount = count.load();
+                if (currentCount != 0)
+                {
+                    if (count.compare_exchange_strong(currentCount, currentCount - 1))
+                        return STATUS_SUCCESS;
+                    continue;
+                }
+                if (std::chrono::steady_clock::now() >= deadline)
+                    return STATUS_TIMEOUT;
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        }'''
+        assert old_sem_wait in isrc, "Failed to locate Semaphore::Wait in kernel/imports.cpp"
+        isrc = isrc.replace(old_sem_wait, new_sem_wait, 1)
+
+        old_enter_cs = '''    while (true) 
+    {
+        be<uint32_t> previousOwner = 0;
+
+        if (owningThread.compare_exchange_weak(previousOwner, thisThread) || previousOwner == thisThread)
+        {
+            cs->RecursionCount = cs->RecursionCount.get() + 1;
+            return;
+        }
+
+        owningThread.wait(previousOwner);
+    }'''
+        new_enter_cs = '''    while (true)
+    {
+        be<uint32_t> previousOwner = 0;
+
+        if (owningThread.compare_exchange_strong(previousOwner, thisThread) || previousOwner == thisThread)
+        {
+            cs->RecursionCount = cs->RecursionCount.get() + 1;
+            return;
+        }
+
+        if (previousOwner != 0)
+            owningThread.wait(previousOwner);
+    }'''
+        assert old_enter_cs in isrc, "Failed to locate RtlEnterCriticalSection in kernel/imports.cpp"
+        isrc = isrc.replace(old_enter_cs, new_enter_cs, 1)
+
+        old_try_cs = "    if (owningThread.compare_exchange_weak(previousOwner, thisThread) || previousOwner == thisThread)"
+        new_try_cs = "    if (owningThread.compare_exchange_strong(previousOwner, thisThread) || previousOwner == thisThread)"
+        assert old_try_cs in isrc, "Failed to locate RtlTryEnterCriticalSection in kernel/imports.cpp"
+        isrc = isrc.replace(old_try_cs, new_try_cs, 1)
+
+        isrc = isrc.replace(
+            "if (spinLockRef.compare_exchange_weak(expected, g_ppcContext->r13.u32))",
+            "if (spinLockRef.compare_exchange_strong(expected, g_ppcContext->r13.u32))"
+        )
+        imp_p.write_text(isrc, encoding="utf-8")
+        print("Patched kernel/imports.cpp: fixed ARM64 compare_exchange_weak spurious-failure deadlocks in Event::Wait, Semaphore::Wait, RtlEnterCriticalSection.")
+
+# 6c. app.cpp: Heartbeat Freeze Watchdog + rilevamento dinamico personaggio Sonic / Shadow / Silver per il tema del controller
+app_p = pathlib.Path(sys.argv[7])
+if app_p.exists():
+    asrc = app_p.read_text(encoding="utf-8")
+    if "MARATHON_IOS_CHARACTER_THEME" not in asrc:
+        assert '#include "app.h"' in asrc, "Failed to locate #include \"app.h\" in app.cpp"
+        asrc = asrc.replace(
+            '#include "app.h"',
+            '#include "app.h"\n'
+            '#if defined(MARATHON_IOS_PORT)\n'
+            '#define MARATHON_IOS_CHARACTER_THEME 1\n'
+            '#include <string_view>\n'
+            '#include <ios_virtual_controller.h>\n'
+            '#endif',
+            1
+        )
+        old_app_upd = '''void App::Update(double in_deltaTime)
+{
+    if (HostThread::GetCurrentID() == g_mainThreadId)'''
+        new_app_upd = '''void App::Update(double in_deltaTime)
+{
+#if defined(MARATHON_IOS_PORT)
+    MarathonIOS_Heartbeat("App::Update");
+#endif
+    if (HostThread::GetCurrentID() == g_mainThreadId)'''
+        assert old_app_upd in asrc, "Failed to locate App::Update in app.cpp"
+        asrc = asrc.replace(old_app_upd, new_app_upd, 1)
+
+        old_gamemode = '''    if (const auto pGameMode = pDoc->GetDocMode<Sonicteam::GameMode>("GameMode"))
+    {
+        switch (pGameMode->GetGame()->m_State)'''
+        new_gamemode = '''    if (const auto pGameMode = pDoc->GetDocMode<Sonicteam::GameMode>("GameMode"))
+    {
+#if defined(MARATHON_IOS_PORT)
+        if (const auto pGame = pGameMode->GetGame())
+        {
+            std::string_view charName;
+            if (pGame->m_spActorManager.get() != nullptr && pGame->m_PlayerData[0].ActorID != 0)
+            {
+                if (const auto pPlayer = pGame->GetPlayer(0))
+                {
+                    if (!pPlayer->m_Name.empty())
+                        charName = pPlayer->m_Name.c_str();
+                }
+            }
+            if (charName.empty() && !pGame->m_PlayerInfo[0].StartPlayer.empty())
+            {
+                charName = pGame->m_PlayerInfo[0].StartPlayer.c_str();
+            }
+            if (!charName.empty())
+            {
+                int theme = MARATHON_THEME_SONIC;
+                if (charName.find("shadow") != std::string_view::npos ||
+                    charName.find("rouge") != std::string_view::npos ||
+                    charName.find("omega") != std::string_view::npos)
+                {
+                    theme = MARATHON_THEME_SHADOW;
+                }
+                else if (charName.find("silver") != std::string_view::npos ||
+                         charName.find("blaze") != std::string_view::npos ||
+                         charName.find("amy") != std::string_view::npos)
+                {
+                    theme = MARATHON_THEME_SILVER;
+                }
+                static int s_lastIOSTheme = -1;
+                if (theme != s_lastIOSTheme)
+                {
+                    s_lastIOSTheme = theme;
+                    MarathonIOS_SetCharacterTheme(theme);
+                }
+            }
+        }
+#endif
+        switch (pGameMode->GetGame()->m_State)'''
+        assert old_gamemode in asrc, "Failed to locate GameMode block in app.cpp"
+        asrc = asrc.replace(old_gamemode, new_gamemode, 1)
+        app_p.write_text(asrc, encoding="utf-8")
+        print("Patched app.cpp: added Freeze Watchdog heartbeat + dynamic Sonic/Shadow/Silver controller theming.")
 
 sa = pathlib.Path(sys.argv[2])
 if sa.exists():
@@ -1332,6 +1706,9 @@ if metal_cpp.exists():
         msrc = msrc.replace(
             "namespace plume {",
             "// MARATHON_PLUME_IOS_METAL_PATCH\n"
+            "#if !PLUME_MACOS\n"
+            'extern "C" void MarathonIOS_LogLine(const char* tag, const char* msg);\n'
+            "#endif\n"
             "namespace plume {\n"
             "#if !PLUME_MACOS\n"
             "    void getIOSMetalLayerSize(void *layerPtr, uint32_t &dstWidth, uint32_t &dstHeight);\n"
@@ -1419,7 +1796,7 @@ if metal_cpp.exists():
             1
         )
 
-        # 2b. MetalSwapChain::present: transfer drawable ownership to presentBuffer so iOS CAMetalLayer's 3-drawable pool never exhausts
+        # 2b. MetalSwapChain::present: transfer drawable ownership, remove cross-thread currentAvailableDrawableIndex race, log Metal errors
         old_present_drawable = '''        const MetalDrawable &drawable = drawables[textureIndex];
         assert(drawable.mtl != nullptr && "Cannot present without a valid drawable.");
 
@@ -1459,7 +1836,22 @@ if metal_cpp.exists():
         assert old_present_drawable in msrc, "Failed to locate drawable retain in MetalSwapChain::present"
         msrc = msrc.replace(old_present_drawable, new_present_drawable, 1)
 
-        # 2c. MetalSwapChain::acquireTexture: release stale slot before nextDrawable(), validate dimensions, and signal semaphore only on success
+        old_present_done = '''        presentBuffer->addCompletedHandler([drawableMtl, presentId, this](MTL::CommandBuffer* cmdBuffer) {
+            currentAvailableDrawableIndex = (currentAvailableDrawableIndex + 1) % MAX_DRAWABLES;
+            drawableMtl->release();'''
+        new_present_done = '''        presentBuffer->addCompletedHandler([drawableMtl, presentId, this](MTL::CommandBuffer* cmdBuffer) {
+#if !PLUME_MACOS
+            if (cmdBuffer && cmdBuffer->status() == MTL::CommandBufferStatusError) {
+                const char* errDesc = (cmdBuffer->error() && cmdBuffer->error()->localizedDescription())
+                    ? cmdBuffer->error()->localizedDescription()->utf8String() : "unknown present error";
+                MarathonIOS_LogLine("METAL_ERR", errDesc);
+            }
+#endif
+            drawableMtl->release();'''
+        assert old_present_done in msrc, "Failed to locate presentBuffer completed handler in plume_metal.cpp"
+        msrc = msrc.replace(old_present_done, new_present_done, 1)
+
+        # 2c. MetalSwapChain::acquireTexture: release stale slot before nextDrawable(), advance index cleanly on render thread, validate dimensions
         old_acq_full = '''        // Create a command buffer just to encode the signal
         MetalAutoreleasePool releasePool;
         MTL::CommandBuffer *acquireBuffer = commandQueue->mtl->commandBufferWithUnretainedReferences();
@@ -1522,8 +1914,9 @@ if metal_cpp.exists():
         acquireBuffer->encodeSignalEvent(interfaceSemaphore->mtl, interfaceSemaphore->mtlEventValue);
         acquireBuffer->commit();
 
-        // Set the texture index and drawable data
+        // Set the texture index and drawable data, then advance round-robin index safely on render thread
         *textureIndex = slotIndex;
+        currentAvailableDrawableIndex = (slotIndex + 1) % MAX_DRAWABLES;
         drawable.desc.width = width;
         drawable.desc.height = height;
         drawable.desc.flags = RenderTextureFlag::RENDER_TARGET;
@@ -1535,7 +1928,53 @@ if metal_cpp.exists():
         assert old_acq_full in msrc, "Failed to locate acquireTexture body in plume_metal.cpp"
         msrc = msrc.replace(old_acq_full, new_acq_full, 1)
 
-        # 2d. Defensive null-guards for MetalQueryPool, timestampCounterSet, and residencySet on iOS GPUs
+        # 2d. Log Metal command buffer errors & GPU fence stalls >5s on iOS
+        old_exec_done = '''        if (signalFence != nullptr) {
+            interfaceCommandList->mtl->addCompletedHandler([signalFence](MTL::CommandBuffer* cmdBuffer) {
+                dispatch_semaphore_signal(static_cast<MetalCommandFence *>(signalFence)->semaphore);
+            });
+        }'''
+        new_exec_done = '''        if (signalFence != nullptr) {
+            interfaceCommandList->mtl->addCompletedHandler([signalFence](MTL::CommandBuffer* cmdBuffer) {
+#if !PLUME_MACOS
+                if (cmdBuffer && cmdBuffer->status() == MTL::CommandBufferStatusError) {
+                    const char* errDesc = (cmdBuffer->error() && cmdBuffer->error()->localizedDescription())
+                        ? cmdBuffer->error()->localizedDescription()->utf8String() : "unknown GPU command buffer error";
+                    MarathonIOS_LogLine("METAL_ERR", errDesc);
+                }
+#endif
+                dispatch_semaphore_signal(static_cast<MetalCommandFence *>(signalFence)->semaphore);
+            });
+        }'''
+        assert old_exec_done in msrc, "Failed to locate executeCommandLists completed handler in plume_metal.cpp"
+        msrc = msrc.replace(old_exec_done, new_exec_done, 1)
+
+        old_wait_fence = '''    void MetalCommandQueue::waitForCommandFence(RenderCommandFence *fence) {
+        MetalAutoreleasePool releasePool;
+        const MetalCommandFence *metalFence = static_cast<MetalCommandFence *>(fence);
+        dispatch_semaphore_wait(metalFence->semaphore, DISPATCH_TIME_FOREVER);
+    }'''
+        new_wait_fence = '''    void MetalCommandQueue::waitForCommandFence(RenderCommandFence *fence) {
+        MetalAutoreleasePool releasePool;
+        const MetalCommandFence *metalFence = static_cast<MetalCommandFence *>(fence);
+#if !PLUME_MACOS
+        while (dispatch_semaphore_wait(metalFence->semaphore, dispatch_time(DISPATCH_TIME_NOW, 5LL * NSEC_PER_SEC)) != 0) {
+            MarathonIOS_LogLine("METAL_WARN", "waitForCommandFence stalled >5s waiting for GPU completion");
+        }
+#else
+        dispatch_semaphore_wait(metalFence->semaphore, DISPATCH_TIME_FOREVER);
+#endif
+    }'''
+        assert old_wait_fence in msrc, "Failed to locate MetalCommandQueue::waitForCommandFence in plume_metal.cpp"
+        msrc = msrc.replace(old_wait_fence, new_wait_fence, 1)
+
+        # 2e. Disable unguarded cross-thread MTLResidencySet on iOS 18+ so Plume uses its thread-safe per-encoder useResource() path
+        old_ios_residency = "        const bool supportsResidencySets = osVersion.majorVersion >= 18 && mtl->supportsFamily(MTL::GPUFamilyApple6);"
+        new_ios_residency = "        const bool supportsResidencySets = false; // MARATHON_IOS_DISABLE_RESIDENCY_SET: evita commit() non protetti tra thread su iOS 18+"
+        assert old_ios_residency in msrc, "Failed to locate iOS supportsResidencySets in plume_metal.cpp"
+        msrc = msrc.replace(old_ios_residency, new_ios_residency, 1)
+
+        # 2f. Defensive null-guards for MetalQueryPool, timestampCounterSet, and residencySet on iOS GPUs
         old_qp = '''        MTL::CounterSampleBufferDescriptor *sampleBufferDesc = MTL::CounterSampleBufferDescriptor::alloc()->init();
         sampleBufferDesc->setCounterSet(device->timestampCounterSet);
         sampleBufferDesc->setStorageMode(MTL::StorageModeShared);
@@ -1683,7 +2122,7 @@ if metal_cpp.exists():
             msrc = msrc.replace(old_iface_devs, new_iface_devs, 1)
 
         metal_cpp.write_text(msrc, encoding="utf-8")
-        print("Patched thirdparty/plume/plume_metal.cpp for iOS Metal (drawable ownership, main-queue-free shaders, queryPool safety, CAMetalLayer size).")
+        print("Patched thirdparty/plume/plume_metal.cpp for iOS Metal (disabled unguarded residencySet, race-free drawables, GPU error logging, queryPool safety).")
 
 # 3. thirdparty/plume/CMakeLists.txt: skip plume_vulkan.cpp on iOS when building pure Metal 3
 if cm.exists():
@@ -1745,10 +2184,15 @@ if gw_cpp.exists():
         gw_cpp.write_text(gsrc, encoding="utf-8")
         print("Patched MarathonRecomp/ui/game_window.cpp for iOS Fullscreen Landscape Metal + live resize sync.")
 
-# 5. MarathonRecomp/gpu/video.cpp: pure Metal 3 + live ImGui touch coordinate scaling + MarathonIOS_MapWindowPointToImGui
+# 5. MarathonRecomp/gpu/video.cpp: pure Metal 3 + live ImGui touch coordinate scaling + watchdog heartbeats + MarathonIOS_MapWindowPointToImGui
 if vid_cpp.exists():
     vsrc = vid_cpp.read_text(encoding="utf-8")
     if "MARATHON_IOS_NATIVE_METAL" not in vsrc:
+        vsrc = (
+            "#if defined(MARATHON_IOS_PORT)\n"
+            "#include <ios_virtual_controller.h>\n"
+            "#endif\n" + vsrc
+        )
         vsrc = vsrc.replace(
             "#elif defined(MARATHON_RECOMP_METAL)\n                g_backend = (interfaceFunction == CreateVulkanInterface) ? Backend::VULKAN : Backend::METAL;",
             "#elif defined(MARATHON_IOS_NATIVE_METAL)\n                g_backend = Backend::METAL;\n#elif defined(MARATHON_RECOMP_METAL)\n                g_backend = (interfaceFunction == CreateVulkanInterface) ? Backend::VULKAN : Backend::METAL;"
@@ -1795,6 +2239,68 @@ if vid_cpp.exists():
         assert old_mouse_scale in vsrc, "Failed to locate DrawImGui mousePosScale in gpu/video.cpp"
         vsrc = vsrc.replace(old_mouse_scale, new_mouse_scale, 1)
 
+        # Freeze watchdog heartbeats in Video::Present() & RenderThread ExecuteCommandList
+        old_vid_present = '''void Video::Present()
+{
+    g_readyForCommands = false;
+
+    g_renderQueue.enqueue(RenderCommands::ExecutePendingStretchRectCommands{});
+
+    DrawImGui();
+
+    g_renderQueue.enqueue(RenderCommands::ExecuteCommandList{});
+
+    g_executedCommandList.wait(false);
+    g_executedCommandList = false;'''
+        new_vid_present = '''void Video::Present()
+{
+#if defined(MARATHON_IOS_PORT)
+    MarathonIOS_Heartbeat("Video::Present:Begin");
+#endif
+    g_readyForCommands = false;
+
+    g_renderQueue.enqueue(RenderCommands::ExecutePendingStretchRectCommands{});
+
+    DrawImGui();
+
+    g_renderQueue.enqueue(RenderCommands::ExecuteCommandList{});
+
+#if defined(MARATHON_IOS_PORT)
+    MarathonIOS_Heartbeat("Video::Present:WaitRender");
+#endif
+    g_executedCommandList.wait(false);
+    g_executedCommandList = false;
+#if defined(MARATHON_IOS_PORT)
+    MarathonIOS_Heartbeat("Video::Present:SwapPresent");
+#endif'''
+        assert old_vid_present in vsrc, "Failed to locate Video::Present in gpu/video.cpp"
+        vsrc = vsrc.replace(old_vid_present, new_vid_present, 1)
+
+        old_vid_fence = '''    if (g_commandListStates[g_frame])
+    {
+        g_frameFenceProfiler.Begin();
+        g_queue->waitForCommandFence(g_commandFences[g_frame].get());'''
+        new_vid_fence = '''    if (g_commandListStates[g_frame])
+    {
+#if defined(MARATHON_IOS_PORT)
+        MarathonIOS_Heartbeat("Video::Present:WaitFence");
+#endif
+        g_frameFenceProfiler.Begin();
+        g_queue->waitForCommandFence(g_commandFences[g_frame].get());'''
+        assert old_vid_fence in vsrc, "Failed to locate waitForCommandFence in gpu/video.cpp"
+        vsrc = vsrc.replace(old_vid_fence, new_vid_fence, 1)
+
+        vsrc = vsrc.replace(
+            "    g_renderQueue.enqueue(RenderCommands::BeginCommandList{});",
+            "    g_renderQueue.enqueue(RenderCommands::BeginCommandList{});\n#if defined(MARATHON_IOS_PORT)\n    MarathonIOS_Heartbeat(\"Video::Present:Done\");\n#endif",
+            1
+        )
+        vsrc = vsrc.replace(
+            "static void ProcRenderCommand(const RenderCommands::ExecuteCommandList& cmd)\n{",
+            "static void ProcRenderCommand(const RenderCommands::ExecuteCommandList& cmd)\n{\n#if defined(MARATHON_IOS_PORT)\n    MarathonIOS_RenderHeartbeat(\"Render:ExecuteCommandList\");\n#endif",
+            1
+        )
+
         # Export exact 0-frame-lag touch coordinate mapper for InstallerWizard & MessageWindow
         vsrc += '''
 #if defined(MARATHON_IOS_PORT)
@@ -1830,7 +2336,7 @@ extern "C" void MarathonIOS_MapWindowPointToImGui(float winX, float winY, float*
 #endif
 '''
         vid_cpp.write_text(vsrc, encoding="utf-8")
-        print("Patched MarathonRecomp/gpu/video.cpp for pure Metal 3 + live iOS touch coordinate mapping.")
+        print("Patched MarathonRecomp/gpu/video.cpp for pure Metal 3 + watchdog heartbeats + live iOS touch coordinate mapping.")
 
 # 6. SDL_uikitvideo.m: filter external AirPlay/HDMI scenes in UIKit_GetActiveWindowScene (Feather stability)
 if sdl_uikit.exists():
@@ -2169,15 +2675,24 @@ if main_cpp.exists():
             1
         )
         msrc = msrc.replace(
+            "    KiSystemStartup();",
+            "#if defined(MARATHON_IOS_PORT)\n"
+            "    MarathonIOS_LogLine(\"BOOT\", \"Starting KiSystemStartup()...\");\n"
+            "#endif\n"
+            "    KiSystemStartup();",
+            1
+        )
+        msrc = msrc.replace(
             "GuestThread::Start({ entry, 0, 0 });",
             "#if defined(MARATHON_IOS_PORT)\n"
+            "    MarathonIOS_LogLine(\"BOOT\", \"Attaching Sonic '06 virtual controller and starting GuestThread...\");\n"
             "    MarathonIOS_AttachVirtualController(nullptr);\n"
             "#endif\n"
             "    GuestThread::Start({ entry, 0, 0 });",
             1
         )
         main_cpp.write_text(msrc, encoding="utf-8")
-        print("Patched main.cpp: SDL3/SDL_main.h, writable iOS cwd, skip desktop UpdateChecker on first launch, and virtual controller attach.")
+        print("Patched main.cpp: SDL3/SDL_main.h, writable iOS cwd, skip desktop UpdateChecker on first launch, boot diagnostics, and virtual controller attach.")
 PY_CMAKE
 
 echo "==> Patch iOS Clean-Room applicata con successo!"

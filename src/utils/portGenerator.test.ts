@@ -245,6 +245,58 @@ test('generated apply_ios_port.sh and nfd_ios.mm implement direct XISO streaming
   assert.match(workflow, /rm -rf "\$\{APP_DIR\}\/_CodeSignature"/);
 });
 
+test('ARM64 freeze fixes, ios_debug.log watchdog, and Sonic 06 themed virtual controller are wired cleanly', () => {
+  const files = generatePortRepository(DEFAULT_BUILD_CONFIG);
+  const patcher = files.find((f) => f.path === 'scripts/apply_ios_port.sh')!.content;
+  const platformMm = files.find((f) => f.path === 'ios/os/ios_platform.mm')!.content;
+  const vcHeader = files.find((f) => f.path === 'ios/include/ios_virtual_controller.h')!.content;
+  const vcMm = files.find((f) => f.path === 'ios/ios_virtual_controller.mm')!.content;
+
+  // ARM64 LL/SC compare_exchange_weak deadlock fixes in kernel/imports.cpp
+  assert.match(patcher, /MARATHON_IOS_ARM64_CAS_FIX/);
+  assert.match(patcher, /if \(signaled\.compare_exchange_strong\(expected, false\)\)/);
+  assert.match(patcher, /if \(owningThread\.compare_exchange_strong\(previousOwner, thisThread\) \|\| previousOwner == thisThread\)/);
+  assert.match(patcher, /if \(previousOwner != 0\)\s+owningThread\.wait\(previousOwner\);/);
+
+  // Metal iOS stability & error logging
+  assert.match(patcher, /MARATHON_IOS_DISABLE_RESIDENCY_SET/);
+  assert.match(patcher, /const bool supportsResidencySets = false;/);
+  assert.match(patcher, /MarathonIOS_LogLine\("METAL_ERR", errDesc\)/);
+  assert.match(patcher, /waitForCommandFence stalled >5s/);
+  assert.match(patcher, /Video::Present:WaitFence/);
+
+  // On-device diagnostic log + crash backtrace + Mach thread-state freeze watchdog
+  assert.match(platformMm, /ios_debug\.log/);
+  assert.match(platformMm, /ios_debug_prev\.log/);
+  assert.match(platformMm, /SignalCrashHandler/);
+  assert.match(platformMm, /task_threads\(mach_task_self\(\)/);
+  assert.match(platformMm, /ARM_THREAD_STATE64/);
+  assert.match(platformMm, /void MarathonIOS_Heartbeat\(const char\* phase\)/);
+  assert.match(platformMm, /void MarathonIOS_RenderHeartbeat\(const char\* phase\)/);
+  assert.match(platformMm, /void MarathonIOS_LogLine\(const char\* tag, const char\* msg\)/);
+
+  // Virtual controller wired into HID::GetState/SetState + character theme in app.cpp
+  assert.match(patcher, /MARATHON_IOS_VIRTUAL_GAMEPAD/);
+  assert.match(patcher, /MarathonIOS_GetVirtualControllerState\(&vpad\)/);
+  assert.match(patcher, /MarathonIOS_TriggerHapticRumble/);
+  assert.match(patcher, /MARATHON_IOS_CHARACTER_THEME/);
+  assert.match(patcher, /MarathonIOS_SetCharacterTheme\(theme\)/);
+
+  // Sonic '06 dynamic Sonic / Shadow / Silver virtual controller without "06" / Mods button
+  assert.match(vcHeader, /MARATHON_THEME_SONIC\s*=\s*0/);
+  assert.match(vcHeader, /MARATHON_THEME_SHADOW\s*=\s*1/);
+  assert.match(vcHeader, /MARATHON_THEME_SILVER\s*=\s*2/);
+  assert.match(vcHeader, /void MarathonIOS_SetCharacterTheme\(int theme\);/);
+  assert.match(vcMm, /Sonic06StickView/);
+  assert.match(vcMm, /Sonic06DPadView/);
+  assert.match(vcMm, /- \(void\)layoutSubviews/);
+  assert.match(vcMm, /self\.safeAreaInsets/);
+  assert.doesNotMatch(vcMm, /quickHudBar/);
+  assert.doesNotMatch(vcMm, /MarathonIOS_PresentModManager/);
+  assert.doesNotMatch(vcMm, /setTitle:@"06"/);
+  assert.doesNotMatch(vcMm, /ios_mod_manager\.h/);
+});
+
 test('inspectXisoCandidate validates extensions and detects real MICROSOFT*XBOX*MEDIA magic', () => {
   const invalid = inspectXisoCandidate({ fileName: 'game.zip', sizeBytes: 1024 });
   assert.equal(invalid.valid, false);
