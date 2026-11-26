@@ -4455,8 +4455,9 @@ if metal_cpp.exists():
     }
 
     void* getIOSMetalDrawableTexturePtr(const RenderSwapChain* sc, uint32_t index) {
-        if (!sc || index >= MetalSwapChain::MAX_DRAWABLES) return nullptr;
+        if (!sc) return nullptr;
         const auto* msc = static_cast<const MetalSwapChain*>(sc);
+        if (index >= msc->drawables.size()) return nullptr;
         return msc->drawables[index].mtl ? msc->drawables[index].mtl->texture() : nullptr;
     }
 

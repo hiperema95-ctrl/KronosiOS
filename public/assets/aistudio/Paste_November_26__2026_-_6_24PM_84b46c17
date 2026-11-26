@@ -1,0 +1,830 @@
+3m 27s
+Run CONFIG="Release"
+==> Host tools rilevati:
+    XenonRecomp: /Users/runner/work/KronosiOS/KronosiOS/build-host/tools/XenonRecomp/XenonRecomp/XenonRecomp
+    XenosRecomp: /Users/runner/work/KronosiOS/KronosiOS/build-host/tools/XenosRecomp/XenosRecomp/XenosRecomp
+    u8extract:   /Users/runner/work/KronosiOS/KronosiOS/build-host/tools/u8extract/u8extract
+    file_to_c:   /Users/runner/work/KronosiOS/KronosiOS/build-host/tools/file_to_c/file_to_c
+-- The C compiler identification is AppleClang 16.0.0.16000026
+-- The CXX compiler identification is AppleClang 16.0.0.16000026
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- The OBJC compiler identification is AppleClang 16.0.0.16000026
+-- The OBJCXX compiler identification is AppleClang 16.0.0.16000026
+-- Detecting OBJC compiler ABI info
+-- Detecting OBJC compiler ABI info - done
+-- Check for working OBJC compiler: /usr/bin/cc - skipped
+-- Detecting OBJCXX compiler ABI info
+-- Detecting OBJCXX compiler ABI info - done
+-- Check for working OBJCXX compiler: /usr/bin/c++ - skipped
+-- Detected architecture: arm64
+-- Configuring MarathonRecomp v1.0.0 for iOS arm64 (Deployment Target: 17.0)
+-- Using static iOS FreeType: /Users/runner/work/KronosiOS/KronosiOS/ios-deps/freetype-install/lib/libfreetype.a
+-- Using static iOS FFmpeg (XMA decoder): /Users/runner/work/KronosiOS/KronosiOS/ios-deps/ffmpeg-install
+-- Found Freetype: /Users/runner/work/KronosiOS/KronosiOS/ios-deps/freetype-install/lib/libfreetype.a (found version "2.13.3")
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Found PkgConfig: /opt/homebrew/bin/pkg-config (found version "3.0.11")
+-- Performing Test HAVE_GCC_WALL
+-- Performing Test HAVE_GCC_WALL - Success
+-- Performing Test HAVE_GCC_WUNDEF
+-- Performing Test HAVE_GCC_WUNDEF - Success
+-- Performing Test HAVE_GCC_WFLOAT_CONVERSION
+-- Performing Test HAVE_GCC_WFLOAT_CONVERSION - Success
+-- Performing Test HAVE_GCC_NO_STRICT_ALIASING
+-- Performing Test HAVE_GCC_NO_STRICT_ALIASING - Success
+-- Performing Test HAVE_GCC_WDOCUMENTATION
+-- Performing Test HAVE_GCC_WDOCUMENTATION - Success
+-- Performing Test HAVE_GCC_WDOCUMENTATION_UNKNOWN_COMMAND
+-- Performing Test HAVE_GCC_WDOCUMENTATION_UNKNOWN_COMMAND - Success
+-- Performing Test HAVE_GCC_COMMENT_BLOCK_COMMANDS
+-- Performing Test HAVE_GCC_COMMENT_BLOCK_COMMANDS - Success
+-- Performing Test HAVE_GCC_WSHADOW
+-- Performing Test HAVE_GCC_WSHADOW - Success
+-- Performing Test HAVE_GCC_WUNUSED_LOCAL_TYPEDEFS
+-- Performing Test HAVE_GCC_WUNUSED_LOCAL_TYPEDEFS - Success
+-- Performing Test HAVE_GCC_WIMPLICIT_FALLTHROUGH
+-- Performing Test HAVE_GCC_WIMPLICIT_FALLTHROUGH - Success
+-- Performing Test COMPILER_SUPPORTS_FCOLOR_DIAGNOSTICS
+-- Performing Test COMPILER_SUPPORTS_FCOLOR_DIAGNOSTICS - Success
+-- Looking for __GLIBC__
+-- Looking for __GLIBC__ - not found
+-- Performing Test HAVE_WL_VERSION_SCRIPT
+-- Performing Test HAVE_WL_VERSION_SCRIPT - Failed
+-- Performing Test COMPILER_SUPPORTS_GCC_ATOMICS
+-- Performing Test COMPILER_SUPPORTS_GCC_ATOMICS - Success
+-- Performing Test HAVE_GCC_FVISIBILITY
+-- Performing Test HAVE_GCC_FVISIBILITY - Success
+-- Performing Test COMPILER_SUPPORTS_WNO_ERROR_DEPRECATED_DECLARATIONS
+-- Performing Test COMPILER_SUPPORTS_WNO_ERROR_DEPRECATED_DECLARATIONS - Success
+-- Performing Test COMPILER_SUPPORTS_WNO_DEPRECATED_DECLARATIONS
+-- Performing Test COMPILER_SUPPORTS_WNO_DEPRECATED_DECLARATIONS - Success
+-- Performing Test LINKER_SUPPORTS_WL_NO_UNDEFINED
+-- Performing Test LINKER_SUPPORTS_WL_NO_UNDEFINED - Failed
+-- Performing Test COMPILER_SUPPORTS_ARMNEON
+-- Performing Test COMPILER_SUPPORTS_ARMNEON - Success
+-- Looking for alloca.h
+-- Looking for alloca.h - found
+-- Looking for float.h
+-- Looking for float.h - found
+-- Looking for iconv.h
+-- Looking for iconv.h - found
+-- Looking for inttypes.h
+-- Looking for inttypes.h - found
+-- Looking for limits.h
+-- Looking for limits.h - found
+-- Looking for malloc.h
+-- Looking for malloc.h - not found
+-- Looking for math.h
+-- Looking for math.h - found
+-- Looking for memory.h
+-- Looking for memory.h - found
+-- Looking for signal.h
+-- Looking for signal.h - found
+-- Looking for stdarg.h
+-- Looking for stdarg.h - found
+-- Looking for stdbool.h
+-- Looking for stdbool.h - found
+-- Looking for stddef.h
+-- Looking for stddef.h - found
+-- Looking for stdint.h
+-- Looking for stdint.h - found
+-- Looking for stdio.h
+-- Looking for stdio.h - found
+-- Looking for stdlib.h
+-- Looking for stdlib.h - found
+-- Looking for string.h
+-- Looking for string.h - found
+-- Looking for strings.h
+-- Looking for strings.h - found
+-- Looking for sys/types.h
+-- Looking for sys/types.h - found
+-- Looking for time.h
+-- Looking for time.h - found
+-- Looking for wchar.h
+-- Looking for wchar.h - found
+-- Looking for pow in m
+-- Looking for pow in m - found
+-- Looking for abs
+-- Looking for abs - found
+-- Looking for acos
+-- Looking for acos - found
+-- Looking for acosf
+-- Looking for acosf - found
+-- Looking for asin
+-- Looking for asin - found
+-- Looking for asinf
+-- Looking for asinf - found
+-- Looking for atan
+-- Looking for atan - found
+-- Looking for atan2
+-- Looking for atan2 - found
+-- Looking for atan2f
+-- Looking for atan2f - found
+-- Looking for atanf
+-- Looking for atanf - found
+-- Looking for atof
+-- Looking for atof - found
+-- Looking for atoi
+-- Looking for atoi - found
+-- Looking for bcopy
+-- Looking for bcopy - found
+-- Looking for ceil
+-- Looking for ceil - found
+-- Looking for ceilf
+-- Looking for ceilf - found
+-- Looking for copysign
+-- Looking for copysign - found
+-- Looking for copysignf
+-- Looking for copysignf - found
+-- Looking for cos
+-- Looking for cos - found
+-- Looking for cosf
+-- Looking for cosf - found
+-- Looking for _Exit
+-- Looking for _Exit - found
+-- Looking for exp
+-- Looking for exp - found
+-- Looking for expf
+-- Looking for expf - found
+-- Looking for fabs
+-- Looking for fabs - found
+-- Looking for fabsf
+-- Looking for fabsf - found
+-- Looking for floor
+-- Looking for floor - found
+-- Looking for floorf
+-- Looking for floorf - found
+-- Looking for fmod
+-- Looking for fmod - found
+-- Looking for fmodf
+-- Looking for fmodf - found
+-- Looking for fopen64
+-- Looking for fopen64 - not found
+-- Looking for fseeko
+-- Looking for fseeko - found
+-- Looking for fseeko64
+-- Looking for fseeko64 - not found
+-- Looking for getenv
+-- Looking for getenv - found
+-- Looking for _i64toa
+-- Looking for _i64toa - not found
+-- Looking for index
+-- Looking for index - found
+-- Looking for itoa
+-- Looking for itoa - not found
+-- Looking for log
+-- Looking for log - found
+-- Looking for log10
+-- Looking for log10 - found
+-- Looking for log10f
+-- Looking for log10f - found
+-- Looking for logf
+-- Looking for logf - found
+-- Looking for lround
+-- Looking for lround - found
+-- Looking for lroundf
+-- Looking for lroundf - found
+-- Looking for _ltoa
+-- Looking for _ltoa - not found
+-- Looking for malloc
+-- Looking for malloc - found
+-- Looking for memcmp
+-- Looking for memcmp - found
+-- Looking for memcpy
+-- Looking for memcpy - found
+-- Looking for memmove
+-- Looking for memmove - found
+-- Looking for memset
+-- Looking for memset - found
+-- Looking for modf
+-- Looking for modf - found
+-- Looking for modff
+-- Looking for modff - found
+-- Looking for pow
+-- Looking for pow - found
+-- Looking for powf
+-- Looking for powf - found
+-- Looking for putenv
+-- Looking for putenv - found
+-- Looking for rindex
+-- Looking for rindex - found
+-- Looking for round
+-- Looking for round - found
+-- Looking for roundf
+-- Looking for roundf - found
+-- Looking for scalbn
+-- Looking for scalbn - found
+-- Looking for scalbnf
+-- Looking for scalbnf - found
+-- Looking for setenv
+-- Looking for setenv - found
+-- Looking for sin
+-- Looking for sin - found
+-- Looking for sinf
+-- Looking for sinf - found
+-- Looking for sqr
+-- Looking for sqr - not found
+-- Looking for sqrt
+-- Looking for sqrt - found
+-- Looking for sqrtf
+-- Looking for sqrtf - found
+-- Looking for sscanf
+-- Looking for sscanf - found
+-- Looking for strchr
+-- Looking for strchr - found
+-- Looking for strcmp
+-- Looking for strcmp - found
+-- Looking for strlcat
+-- Looking for strlcat - found
+-- Looking for strlcpy
+-- Looking for strlcpy - found
+-- Looking for strlen
+-- Looking for strlen - found
+-- Looking for strncmp
+-- Looking for strncmp - found
+-- Looking for strnlen
+-- Looking for strnlen - found
+-- Looking for strpbrk
+-- Looking for strpbrk - found
+-- Looking for strrchr
+-- Looking for strrchr - found
+-- Looking for strstr
+-- Looking for strstr - found
+-- Looking for strnstr
+-- Looking for strnstr - found
+-- Looking for strtod
+-- Looking for strtod - found
+-- Looking for strtok_r
+-- Looking for strtok_r - found
+-- Looking for strtol
+-- Looking for strtol - found
+-- Looking for strtoll
+-- Looking for strtoll - found
+-- Looking for strtoul
+-- Looking for strtoul - found
+-- Looking for strtoull
+-- Looking for strtoull - found
+-- Looking for tan
+-- Looking for tan - found
+-- Looking for tanf
+-- Looking for tanf - found
+-- Looking for trunc
+-- Looking for trunc - found
+-- Looking for truncf
+-- Looking for truncf - found
+-- Looking for unsetenv
+-- Looking for unsetenv - found
+-- Looking for vsnprintf
+-- Looking for vsnprintf - found
+-- Looking for vsscanf
+-- Looking for vsscanf - found
+-- Looking for wcsnlen
+-- Looking for wcsnlen - found
+-- Looking for wcscmp
+-- Looking for wcscmp - found
+-- Looking for wcsdup
+-- Looking for wcsdup - found
+-- Looking for wcslcat
+-- Looking for wcslcat - found
+-- Looking for wcslcpy
+-- Looking for wcslcpy - found
+-- Looking for wcslen
+-- Looking for wcslen - found
+-- Looking for wcsncmp
+-- Looking for wcsncmp - found
+-- Looking for wcsstr
+-- Looking for wcsstr - found
+-- Looking for wcstol
+-- Looking for wcstol - found
+-- Looking for strcasestr
+-- Looking for strcasestr - found
+-- Performing Test LIBC_HAS_ISINF
+-- Performing Test LIBC_HAS_ISINF - Success
+-- Performing Test LIBC_ISINF_HANDLES_FLOAT
+-- Performing Test LIBC_ISINF_HANDLES_FLOAT - Success
+-- Performing Test LIBC_HAS_ISINFF
+-- Performing Test LIBC_HAS_ISINFF - Failed
+-- Performing Test LIBC_HAS_ISNAN
+-- Performing Test LIBC_HAS_ISNAN - Success
+-- Performing Test LIBC_ISNAN_HANDLES_FLOAT
+-- Performing Test LIBC_ISNAN_HANDLES_FLOAT - Success
+-- Performing Test LIBC_HAS_ISNANF
+-- Performing Test LIBC_HAS_ISNANF - Failed
+-- Looking for fdatasync
+-- Looking for fdatasync - not found
+-- Looking for gethostname
+-- Looking for gethostname - found
+-- Looking for getpagesize
+-- Looking for getpagesize - found
+-- Looking for getresgid
+-- Looking for getresgid - not found
+-- Looking for getresuid
+-- Looking for getresuid - not found
+-- Looking for sigaction
+-- Looking for sigaction - found
+-- Looking for sigtimedwait
+-- Looking for sigtimedwait - not found
+-- Looking for setjmp
+-- Looking for setjmp - found
+-- Looking for nanosleep
+-- Looking for nanosleep - found
+-- Looking for gmtime_r
+-- Looking for gmtime_r - found
+-- Looking for localtime_r
+-- Looking for localtime_r - found
+-- Looking for nl_langinfo
+-- Looking for nl_langinfo - found
+-- Looking for sysconf
+-- Looking for sysconf - found
+-- Looking for sysctlbyname
+-- Looking for sysctlbyname - found
+-- Looking for getauxval
+-- Looking for getauxval - not found
+-- Looking for elf_aux_info
+-- Looking for elf_aux_info - not found
+-- Looking for ppoll
+-- Looking for ppoll - not found
+-- Looking for memfd_create
+-- Looking for memfd_create - not found
+-- Looking for posix_fallocate
+-- Looking for posix_fallocate - not found
+-- Looking for posix_spawn_file_actions_addchdir
+-- Looking for posix_spawn_file_actions_addchdir - not found
+-- Looking for posix_spawn_file_actions_addchdir_np
+-- Looking for posix_spawn_file_actions_addchdir_np - not found
+-- Looking for dlopen
+-- Looking for dlopen - found
+-- Performing Test HAVE_O_CLOEXEC
+-- Performing Test HAVE_O_CLOEXEC - Success
+-- Performing Test HAVE_FRAMEWORK_METAL
+-- Performing Test HAVE_FRAMEWORK_METAL - Success
+-- Performing Test HAVE_PTHREADS
+-- Performing Test HAVE_PTHREADS - Success
+-- Performing Test HAVE_RECURSIVE_MUTEXES
+-- Performing Test HAVE_RECURSIVE_MUTEXES - Success
+-- Performing Test HAVE_PTHREADS_SEM
+-- Performing Test HAVE_PTHREADS_SEM - Success
+-- Performing Test COMPILER_HAS_SEM_TIMEDWAIT
+-- Performing Test COMPILER_HAS_SEM_TIMEDWAIT - Failed
+-- Looking for pthread.h
+-- Looking for pthread.h - found
+-- Looking for pthread_np.h
+-- Looking for pthread_np.h - not found
+-- Performing Test HAVE_PTHREAD_SETNAME_NP
+-- Performing Test HAVE_PTHREAD_SETNAME_NP - Success
+-- Performing Test HAVE_POSIX_SPAWN
+-- Performing Test HAVE_POSIX_SPAWN - Success
+-- Performing Test COMPILER_SUPPORTS_FOBJC_ARC
+-- Performing Test COMPILER_SUPPORTS_FOBJC_ARC - Success
+-- 
+-- SDL3 was configured with the following options:
+-- 
+-- Platform: iOS
+-- 64-bit:   TRUE
+-- Compiler: /usr/bin/cc
+-- Revision: SDL-3.4.16-fa2c02b
+-- Vendor:   
+-- 
+-- Subsystems:
+--   Audio:    ON
+--   Video:    ON
+--   GPU:      ON
+--   Render:   ON
+--   Camera:   ON
+--   Joystick: ON
+--   Haptic:   ON
+--   Hidapi:   ON
+--   Power:    ON
+--   Sensor:   ON
+--   Dialog:   ON
+--   Tray:     ON
+-- 
+-- Options:
+--   SDL_ALSA                    (Wanted: OFF): OFF
+--   SDL_ALSA_SHARED             (Wanted: OFF): OFF
+--   SDL_ALTIVEC                 (Wanted: OFF): OFF
+--   SDL_ARMNEON                 (Wanted: ON): ON
+--   SDL_ASAN                    (Wanted: OFF): OFF
+--   SDL_ASSEMBLY                (Wanted: ON): ON
+--   SDL_ASSERTIONS              (Wanted: auto): auto
+--   SDL_AVX                     (Wanted: OFF): OFF
+--   SDL_AVX2                    (Wanted: OFF): OFF
+--   SDL_AVX512F                 (Wanted: OFF): OFF
+--   SDL_BACKGROUNDING_SIGNAL    (Wanted: OFF): OFF
+--   SDL_CCACHE                  (Wanted: OFF): OFF
+--   SDL_CLANG_TIDY              (Wanted: OFF): OFF
+--   SDL_CLOCK_GETTIME           (Wanted: OFF): OFF
+--   SDL_COCOA                   (Wanted: ON): OFF
+--   SDL_DBUS                    (Wanted: OFF): OFF
+--   SDL_DEPS_SHARED             (Wanted: ON): OFF
+--   SDL_DIRECTX                 (Wanted: OFF): OFF
+--   SDL_DISKAUDIO               (Wanted: ON): ON
+--   SDL_DLOPEN_NOTES            (Wanted: OFF): OFF
+--   SDL_DUMMYAUDIO              (Wanted: ON): ON
+--   SDL_DUMMYCAMERA             (Wanted: ON): ON
+--   SDL_DUMMYVIDEO              (Wanted: ON): ON
+--   SDL_EXAMPLES                (Wanted: OFF): OFF
+--   SDL_EXAMPLES_LINK_SHARED    (Wanted: OFF): OFF
+--   SDL_FOREGROUNDING_SIGNAL    (Wanted: OFF): OFF
+--   SDL_FRIBIDI                 (Wanted: OFF): OFF
+--   SDL_FRIBIDI_SHARED          (Wanted: OFF): OFF
+--   SDL_GCC_ATOMICS             (Wanted: ON): ON
+--   SDL_HIDAPI                  (Wanted: ON): ON
+--   SDL_HIDAPI_JOYSTICK         (Wanted: ON): ON
+--   SDL_HIDAPI_LIBUSB           (Wanted: OFF): OFF
+--   SDL_HIDAPI_LIBUSB_SHARED    (Wanted: OFF): OFF
+--   SDL_IBUS                    (Wanted: OFF): OFF
+--   SDL_INSTALL                 (Wanted: OFF): OFF
+--   SDL_INSTALL_TESTS           (Wanted: OFF): OFF
+--   SDL_JACK                    (Wanted: OFF): OFF
+--   SDL_JACK_SHARED             (Wanted: OFF): OFF
+--   SDL_KMSDRM                  (Wanted: OFF): OFF
+--   SDL_KMSDRM_SHARED           (Wanted: OFF): OFF
+--   SDL_LASX                    (Wanted: OFF): OFF
+--   SDL_LIBC                    (Wanted: ON): ON
+--   SDL_LIBICONV                (Wanted: OFF): OFF
+--   SDL_LIBTHAI                 (Wanted: OFF): OFF
+--   SDL_LIBTHAI_SHARED          (Wanted: OFF): OFF
+--   SDL_LIBUDEV                 (Wanted: ON): OFF
+--   SDL_LIBURING                (Wanted: OFF): OFF
+--   SDL_LSX                     (Wanted: OFF): OFF
+--   SDL_METAL                   (Wanted: ON): ON
+--   SDL_MMX                     (Wanted: OFF): OFF
+--   SDL_OFFSCREEN               (Wanted: ON): ON
+--   SDL_OPENGL                  (Wanted: OFF): OFF
+--   SDL_OPENGLES                (Wanted: ON): ON
+--   SDL_OPENVR                  (Wanted: OFF): OFF
+--   SDL_OSS                     (Wanted: OFF): OFF
+--   SDL_PIPEWIRE                (Wanted: OFF): OFF
+--   SDL_PIPEWIRE_SHARED         (Wanted: OFF): OFF
+--   SDL_PTHREADS                (Wanted: ON): ON
+--   SDL_PTHREADS_SEM            (Wanted: ON): ON
+--   SDL_PULSEAUDIO              (Wanted: OFF): OFF
+--   SDL_PULSEAUDIO_SHARED       (Wanted: OFF): OFF
+--   SDL_RENDER_D3D              (Wanted: OFF): OFF
+--   SDL_RENDER_D3D11            (Wanted: OFF): OFF
+--   SDL_RENDER_D3D12            (Wanted: OFF): OFF
+--   SDL_RENDER_GPU              (Wanted: ON): ON
+--   SDL_RENDER_METAL            (Wanted: ON): ON
+--   SDL_RENDER_VULKAN           (Wanted: OFF): OFF
+--   SDL_ROCKCHIP                (Wanted: OFF): OFF
+--   SDL_RPATH                   (Wanted: ON): OFF
+--   SDL_RPI                     (Wanted: OFF): OFF
+--   SDL_SNDIO                   (Wanted: OFF): OFF
+--   SDL_SNDIO_SHARED            (Wanted: OFF): OFF
+--   SDL_SSE                     (Wanted: OFF): OFF
+--   SDL_SSE2                    (Wanted: OFF): OFF
+--   SDL_SSE3                    (Wanted: OFF): OFF
+--   SDL_SSE4_1                  (Wanted: OFF): OFF
+--   SDL_SSE4_2                  (Wanted: OFF): OFF
+--   SDL_SYSTEM_ICONV            (Wanted: OFF): OFF
+--   SDL_TESTS                   (Wanted: OFF): OFF
+--   SDL_TESTS_LINK_SHARED       (Wanted: OFF): OFF
+--   SDL_UNINSTALL               (Wanted: OFF): OFF
+--   SDL_VIRTUAL_JOYSTICK        (Wanted: ON): ON
+--   SDL_VIVANTE                 (Wanted: OFF): OFF
+--   SDL_VULKAN                  (Wanted: OFF): OFF
+--   SDL_WASAPI                  (Wanted: OFF): OFF
+--   SDL_WAYLAND                 (Wanted: OFF): OFF
+--   SDL_WAYLAND_LIBDECOR        (Wanted: OFF): OFF
+--   SDL_WAYLAND_LIBDECOR_SHARED (Wanted: OFF): OFF
+--   SDL_WAYLAND_SHARED          (Wanted: OFF): OFF
+--   SDL_X11                     (Wanted: OFF): OFF
+--   SDL_X11_SHARED              (Wanted: OFF): OFF
+--   SDL_X11_XCURSOR             (Wanted: OFF): OFF
+--   SDL_X11_XDBE                (Wanted: OFF): OFF
+--   SDL_X11_XFIXES              (Wanted: OFF): OFF
+--   SDL_X11_XINPUT              (Wanted: OFF): OFF
+--   SDL_X11_XRANDR              (Wanted: OFF): OFF
+--   SDL_X11_XSCRNSAVER          (Wanted: OFF): OFF
+--   SDL_X11_XSHAPE              (Wanted: OFF): OFF
+--   SDL_X11_XSYNC               (Wanted: OFF): OFF
+--   SDL_X11_XTEST               (Wanted: OFF): OFF
+--   SDL_XINPUT                  (Wanted: OFF): OFF
+-- 
+--  Build Shared Library: OFF
+--  Build Static Library: ON
+--  Build libraries as Apple Framework: OFF
+-- 
+-- Enabled backends:
+--   Video drivers: dummy offscreen uikit
+--   Render drivers: gpu metal ogl_es2
+--   GPU drivers: metal
+--   Audio drivers: coreaudio disk dummy
+--   Joystick drivers: hidapi mfi virtual
+--   Camera drivers: coremedia dummy
+-- 
+-- If something was not detected, although the libraries
+-- were installed, then make sure you have set the
+-- CMAKE_C_FLAGS and CMAKE_PREFIX_PATH CMake variables correctly.
+-- 
+-- Configuring SDL3_mixer 3.2.4
+-- Performing Test LINKER_SUPPORTS_VERSION_SCRIPT
+-- Performing Test LINKER_SUPPORTS_VERSION_SCRIPT - Failed
+-- Using vendored libogg
+-- Configuring libogg 1.3.5
+-- Looking for include file inttypes.h
+-- Looking for include file inttypes.h - found
+-- Looking for include file stdint.h
+-- Looking for include file stdint.h - found
+-- Looking for include file sys/types.h
+-- Looking for include file sys/types.h - found
+-- Looking for sys/types.h
+-- Looking for sys/types.h - found
+-- Looking for stdint.h
+-- Looking for stdint.h - found
+-- Looking for stddef.h
+-- Looking for stddef.h - found
+-- Check size of int16_t
+-- Check size of int16_t - done
+-- Check size of uint16_t
+-- Check size of uint16_t - done
+-- Check size of u_int16_t
+-- Check size of u_int16_t - done
+-- Check size of int32_t
+-- Check size of int32_t - done
+-- Check size of uint32_t
+-- Check size of uint32_t - done
+-- Check size of u_int32_t
+-- Check size of u_int32_t - done
+-- Check size of int64_t
+-- Check size of int64_t - done
+-- Check size of short
+-- Check size of short - done
+-- Check size of int
+-- Check size of int - done
+-- Check size of long
+-- Check size of long - done
+-- Check size of long long
+-- Check size of long long - done
+-- Using vendored vorbis + vorbisfile
+-- Configuring vorbis 1.3.7
+-- Using vendored libgme
+-- VGM/GYM: Nuked OPN2 emulator will be used
+-- Zlib-Compressed formats excluded
+-- Performing Test LIBM_NOT_NEEDED
+-- Performing Test LIBM_NOT_NEEDED - Success
+-- SDL3_mixer backends:
+-- - enabled:  vorbis_vorbisfile gme wave aiff voc au
+-- - disabled: opus vorbis_stb vorbis_tremor flac_libflac flac_drflac mod_xmp mp3_drmp3 mp3_mpg123 midi_fluidsynth midi_timidity wavpack
+-- Plume - Building with backends: Vulkan=1 Metal=1 D3D12=
+-- Plume - SDL2 Vulkan integration: OFF
+-- Plume - SDL3 Vulkan integration: OFF
+-- Plume - D3D12 Agility SDK: OFF
+-- Plume - Building examples: OFF
+-- {fmt} version: 11.0.2
+-- Build type: Release
+-- Performing Test HAS_NULLPTR_WARNING
+-- Performing Test HAS_NULLPTR_WARNING - Success
+CMake Warning (deprecated) at tools/XenonRecomp/thirdparty/xxHash/cmake_unofficial/CMakeLists.txt:8 (cmake_minimum_required):
+  Compatibility with CMake < 3.10 will be removed from a future version of
+  CMake.
+
+  Update the VERSION argument <min> value.  Or, use the <min>...<max> syntax
+  to tell CMake that the project requires at least <min> but has been updated
+  to work with policies introduced by <max> or earlier.
+This warning is for project developers.  Use -Wno-author or -Wno-deprecated
+to suppress it.
+
+-- xxHash build type: Release
+-- Architecture: arm64
+-- The ASM compiler identification is AppleClang
+-- Found assembler: /usr/bin/cc
+-- ZSTD VERSION: 1.5.7
+-- Performing Test C_FLAG_WALL
+-- Performing Test C_FLAG_WALL - Success
+-- Performing Test CXX_FLAG_WALL
+-- Performing Test CXX_FLAG_WALL - Success
+-- Performing Test C_FLAG_WEXTRA
+-- Performing Test C_FLAG_WEXTRA - Success
+-- Performing Test CXX_FLAG_WEXTRA
+-- Performing Test CXX_FLAG_WEXTRA - Success
+-- Performing Test C_FLAG_WUNDEF
+-- Performing Test C_FLAG_WUNDEF - Success
+-- Performing Test CXX_FLAG_WUNDEF
+-- Performing Test CXX_FLAG_WUNDEF - Success
+-- Performing Test C_FLAG_WSHADOW
+-- Performing Test C_FLAG_WSHADOW - Success
+-- Performing Test CXX_FLAG_WSHADOW
+-- Performing Test CXX_FLAG_WSHADOW - Success
+-- Performing Test C_FLAG_WCAST_ALIGN
+-- Performing Test C_FLAG_WCAST_ALIGN - Success
+-- Performing Test CXX_FLAG_WCAST_ALIGN
+-- Performing Test CXX_FLAG_WCAST_ALIGN - Success
+-- Performing Test C_FLAG_WCAST_QUAL
+-- Performing Test C_FLAG_WCAST_QUAL - Success
+-- Performing Test CXX_FLAG_WCAST_QUAL
+-- Performing Test CXX_FLAG_WCAST_QUAL - Success
+-- Performing Test C_FLAG_WSTRICT_PROTOTYPES
+-- Performing Test C_FLAG_WSTRICT_PROTOTYPES - Success
+-- Performing Test LD_FLAG_Z_NOEXECSTACK
+-- Performing Test LD_FLAG_Z_NOEXECSTACK - Failed
+-- Performing Test C_FLAG_QUNUSED_ARGUMENTS
+-- Performing Test C_FLAG_QUNUSED_ARGUMENTS - Success
+-- Performing Test CXX_FLAG_QUNUSED_ARGUMENTS
+-- Performing Test CXX_FLAG_QUNUSED_ARGUMENTS - Success
+-- Performing Test C_FLAG_WA_NOEXECSTACK
+-- Performing Test C_FLAG_WA_NOEXECSTACK - Success
+-- Performing Test CXX_FLAG_WA_NOEXECSTACK
+-- Performing Test CXX_FLAG_WA_NOEXECSTACK - Success
+-- CMAKE_INSTALL_PREFIX: /usr/local
+-- CMAKE_INSTALL_LIBDIR: lib
+-- ZSTD_LEGACY_SUPPORT defined!
+-- ZSTD_MULTITHREAD_SUPPORT is enabled
+-- Generating version information...
+-- Build: v1.0.0
+-- Creating /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/version.h
+-- Creating /Users/runner/work/KronosiOS/KronosiOS/build-ios/MarathonRecomp/generated/version.cpp
+-- Configuring done (40.4s)
+-- Generating done (0.2s)
+-- Build files have been written to: /Users/runner/work/KronosiOS/KronosiOS/build-ios
+[0/2] Re-checking globbed directories...
+[1/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/DistanceMapping.cpp.o
+[2/868] Building C object thirdparty/SDL_mixer/external/ogg-build/CMakeFiles/ogg.dir/src/bitwise.c.o
+[3/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/EdgeHolder.cpp.o
+[4/868] Building C object thirdparty/SDL_mixer/external/ogg-build/CMakeFiles/ogg.dir/src/framing.c.o
+[5/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/Projection.cpp.o
+[6/868] Generating shader
+Extraction complete!
+Extraction complete!
+[7/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/Scanline.cpp.o
+[8/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/Contour.cpp.o
+[9/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/edge-segments.cpp.o
+[10/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/edge-selectors.cpp.o
+[11/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/equation-solver.cpp.o
+[12/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/Shape.cpp.o
+[13/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/contour-combiners.cpp.o
+[14/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/MSDFErrorCorrection.cpp.o
+[15/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/export-svg.cpp.o
+[16/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/render-sdf.cpp.o
+[17/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/save-bmp.cpp.o
+[18/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/save-fl32.cpp.o
+[19/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/save-rgba.cpp.o
+[20/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/save-tiff.cpp.o
+[21/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/msdf-error-correction.cpp.o
+[22/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/rasterization.cpp.o
+[23/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/msdfgen.cpp.o
+[24/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/edge-coloring.cpp.o
+[25/868] Linking C static library thirdparty/SDL_mixer/external/ogg-build/libogg.a
+[26/868] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/mdct.c.o
+[27/868] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/envelope.c.o
+[28/868] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/block.c.o
+[29/868] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/window.c.o
+[30/868] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/lsp.c.o
+[31/868] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/lpc.c.o
+[32/868] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/analysis.c.o
+[33/868] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/synthesis.c.o
+[34/868] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/info.c.o
+[35/868] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/floor1.c.o
+[36/868] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/smallft.c.o
+[37/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/shape-description.cpp.o
+[38/868] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/floor0.c.o
+[39/868] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/registry.c.o
+[40/868] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/mapping0.c.o
+[41/868] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/codebook.c.o
+[42/868] Building CXX object thirdparty/msdf-atlas-gen/msdfgen/CMakeFiles/msdfgen-core.dir/core/sdf-error-estimation.cpp.o
+[43/868] Building C object thirdparty/SDL_mixer/external/vorbis-build/lib/CMakeFiles/vorbis.dir/lookup.c.o
+[43/868] Generating generated/ppc/ppc_config.h, generated/ppc/ppc_context.h, generated/ppc/ppc_func_mapping.cpp, generated/ppc/ppc_recomp_shared.h, generated/ppc/ppc_recomp.0.cpp, generated/ppc/ppc_recomp.1.cpp, generated/ppc/ppc_recomp.2.cpp, generated/ppc/ppc_recomp.3.cpp, generated/ppc/ppc_recomp.4.cpp, generated/ppc/ppc_recomp.5.cpp, generated/ppc/ppc_recomp.6.cpp, generated/ppc/ppc_recomp.7.cpp, generated/ppc/ppc_recomp.8.cpp, generated/ppc/ppc_recomp.9.cpp, generated/ppc/ppc_recomp.10.cpp, generated/ppc/ppc_recomp.11.cpp, generated/ppc/ppc_recomp.12.cpp, generated/ppc/ppc_recomp.13.cpp, generated/ppc/ppc_recomp.14.cpp, generated/ppc/ppc_recomp.15.cpp, generated/ppc/ppc_recomp.16.cpp, generated/ppc/ppc_recomp.17.cpp, generated/ppc/ppc_recomp.18.cpp, generated/ppc/ppc_recomp.19.cpp, generated/ppc/ppc_recomp.20.cpp, generated/ppc/ppc_recomp.21.cpp, generated/ppc/ppc_recomp.22.cpp, generated/ppc/ppc_recomp.23.cpp, generated/ppc/ppc_recomp.24.cpp, generated/ppc/ppc_recomp.25.cpp, generated/ppc/ppc_recomp.26.cpp, generated/ppc/ppc_recomp.27.cpp, generated/ppc/ppc_recomp.28.cpp, generated/ppc/ppc_recomp.29.cpp, generated/ppc/ppc_recomp.30.cpp, generated/ppc/ppc_recomp.31.cpp, generated/ppc/ppc_recomp.32.cpp, generated/ppc/ppc_recomp.33.cpp, generated/ppc/ppc_recomp.34.cpp, generated/ppc/ppc_recomp.35.cpp, generated/ppc/ppc_recomp.36.cpp, generated/ppc/ppc_recomp.37.cpp, generated/ppc/ppc_recomp.38.cpp, generated/ppc/ppc_recomp.39.cpp, generated/ppc/ppc_recomp.40.cpp, generated/ppc/ppc_recomp.41.cpp, generated/ppc/ppc_recomp.42.cpp, generated/ppc/ppc_recomp.43.cpp, generated/ppc/ppc_recomp.44.cpp, generated/ppc/ppc_recomp.45.cpp, generated/ppc/ppc_recomp.46.cpp, generated/ppc/ppc_recomp.47.cpp, generated/ppc/ppc_recomp.48.cpp, generated/ppc/ppc_recomp.49.cpp, generated/ppc/ppc_recomp.50.cpp, generated/ppc/ppc_recomp.51.cpp, generated/ppc/ppc_recomp.52.cpp, generated/ppc/ppc_recomp.53.cpp, generated/ppc/ppc_recomp.54.cpp, generated/ppc/ppc_recomp.55.cpp, generated/ppc/ppc_recomp.56.cpp, generated/ppc/ppc_recomp.57.cpp, generated/ppc/ppc_recomp.58.cpp, generated/ppc/ppc_recomp.59.cpp, generated/ppc/ppc_recomp.60.cpp, generated/ppc/ppc_recomp.61.cpp, generated/ppc/ppc_recomp.62.cpp, generated/ppc/ppc_recomp.63.cpp, generated/ppc/ppc_recomp.64.cpp, generated/ppc/ppc_recomp.65.cpp, generated/ppc/ppc_recomp.66.cpp, generated/ppc/ppc_recomp.67.cpp, generated/ppc/ppc_recomp.68.cpp, generated/ppc/ppc_recomp.69.cpp, generated/ppc/ppc_recomp.70.cpp, generated/ppc/ppc_recomp.71.cpp, generated/ppc/ppc_recomp.72.cpp, generated/ppc/ppc_recomp.73.cpp, generated/ppc/ppc_recomp.74.cpp, generated/ppc/ppc_recomp.75.cpp, generated/ppc/ppc_recomp.76.cpp, generated/ppc/ppc_recomp.77.cpp, generated/ppc/ppc_recomp.78.cpp, generated/ppc/ppc_recomp.79.cpp, generated/ppc/ppc_recomp.80.cpp, generated/ppc/ppc_recomp.81.cpp, generated/ppc/ppc_recomp.82.cpp, generated/ppc/ppc_recomp.83.cpp, generated/ppc/ppc_recomp.84.cpp, generated/ppc/ppc_recomp.85.cpp, generated/ppc/ppc_recomp.86.cpp, generated/ppc/ppc_recomp.87.cpp, generated/ppc/ppc_recomp.88.cpp, generated/ppc/ppc_recomp.89.cpp, generated/ppc/ppc_recomp.90.cpp, generated/ppc/ppc_recomp.91.cpp, generated/ppc/ppc_recomp.92.cpp, generated/ppc/ppc_recomp.93.cpp, generated/ppc/ppc_recomp.94.cpp, generated/ppc/ppc_recomp.95.cpp, generated/ppc/ppc_recomp.96.cpp, generated/ppc/ppc_recomp.97.cpp, generated/ppc/ppc_recomp.98.cpp, generated/ppc/ppc_recomp.99.cpp, generated/ppc/ppc_recomp.100.cpp, generated/ppc/ppc_recomp.101.cpp, generated/ppc/ppc_recomp.102.cpp, generated/ppc/ppc_recomp.103.cpp, generated/ppc/ppc_recomp.104.cpp, generated/ppc/ppc_recomp.105.cpp, generated/ppc/ppc_recomp.106.cpp, generated/ppc/ppc_recomp.107.cpp, generated/ppc/ppc_recomp.108.cpp, generated/ppc/ppc_recomp.109.cpp, generated/ppc/ppc_recomp.110.cpp, generated/ppc/ppc_recomp.111.cpp, generated/ppc/ppc_recomp.112.cpp, generated/ppc/ppc_recomp.113.cpp, generated/ppc/ppc_recomp.114.cpp, generated/ppc/ppc_recomp.115.cpp, generated/ppc/ppc_recomp.116.cpp, generated/ppc/ppc_recomp.117.cpp, generated/ppc/ppc_recomp.118.cpp, generated/ppc/ppc_recomp.119.cpp, generated/ppc/ppc_recomp.120.cpp, generated/ppc/ppc_recomp.121.cpp, generated/ppc/ppc_recomp.122.cpp, generated/ppc/ppc_recomp.123.cpp, generated/ppc/ppc_recomp.124.cpp, generated/ppc/ppc_recomp.125.cpp, generated/ppc/ppc_recomp.126.cpp, generated/ppc/ppc_recomp.127.cpp, generated/ppc/ppc_recomp.128.cpp, generated/ppc/ppc_recomp.129.cpp, generated/ppc/ppc_recomp.130.cpp, generated/ppc/ppc_recomp.131.cpp, generated/ppc/ppc_recomp.132.cpp, generated/ppc/ppc_recomp.133.cpp, generated/ppc/ppc_recomp.134.cpp, generated/ppc/ppc_recomp.135.cpp, generated/ppc/ppc_recomp.136.cpp, generated/ppc/ppc_recomp.137.cpp, generated/ppc/ppc_recomp.138.cpp, generated/ppc/ppc_recomp.139.cpp, generated/ppc/ppc_recomp.140.cpp, generated/ppc/ppc_recomp.141.cpp, generated/ppc/ppc_recomp.142.cpp, generated/ppc/ppc_recomp.143.cpp, generated/ppc/ppc_recomp.144.cpp, generated/ppc/ppc_recomp.145.cpp
+Recompiling functions... 0.002686006%
+Recompiling functions... 5.5036263%
+Recompiling functions... 11.004566%
+Recompiling functions... 16.505507%
+Recompiling functions... 22.006447%
+Recompiling functions... 27.507385%
+Recompiling functions... 33.008327%
+Recompiling functions... 38.509266%
+Recompiling functions... 44.01021%
+Recompiling functions... 49.511147%
+Recompiling functions... 55.01209%
+Recompiling functions... 60.513027%
+Recompiling functions... 66.01397%
+Recompiling functions... 71.51491%
+Recompiling functions... 77.01585%
+Recompiling functions... 82.51679%
+Recompiling functions... 88.01772%
+Recompiling functions... 93.51867%
+Recompiling functions... 99.01961%
+Recompiling functions... 100%
+[115/868] Building CXX object thirdparty/msdf-atlas-gen/CMakeFiles/msdf-atlas-gen.dir/msdf-atlas-gen/RectanglePacker.cpp.o
+[116/868] Generating generated/shader/shader_cache.cpp
+Recompiling shaders with 3 threads
+Recompiling shaders... 1.0940919%
+Recompiling shaders... 2.1881838%
+Recompiling shaders... 3.2822757%
+Recompiling shaders... 4.3763676%
+Recompiling shaders... 5.4704595%
+Recompiling shaders... 6.5645514%
+Recompiling shaders... 7.6586432%
+Recompiling shaders... 8.752735%
+Recompiling shaders... 9.8468275%
+Recompiling shaders... 10.940919%
+Recompiling shaders... 12.03501%
+Recompiling shaders... 13.129103%
+Recompiling shaders... 14.223194%
+Recompiling shaders... 15.3172865%
+Recompiling shaders... 16.411379%
+Recompiling shaders... 17.50547%
+Recompiling shaders... 18.599562%
+Recompiling shaders... 19.693655%
+Recompiling shaders... 20.787746%
+Recompiling shaders... 21.881838%
+Recompiling shaders... 22.975931%
+Recompiling shaders... 24.07002%
+Recompiling shaders... 25.164112%
+Recompiling shaders... 26.258205%
+Recompiling shaders... 27.352297%
+Recompiling shaders... 28.446388%
+Recompiling shaders... 29.540482%
+Recompiling shaders... 30.634573%
+Recompiling shaders... 31.728664%
+Recompiling shaders... 32.822758%
+Recompiling shaders... 33.916847%
+Recompiling shaders... 35.01094%
+Recompiling shaders... 36.105034%
+Recompiling shaders... 37.199123%
+Recompiling shaders... 38.293217%
+Recompiling shaders... 39.38731%
+Recompiling shaders... 40.4814%
+Recompiling shaders... 41.575493%
+Recompiling shaders... 42.669586%
+Recompiling shaders... 43.763676%
+Recompiling shaders... 44.85777%
+Recompiling shaders... 45.951862%
+Recompiling shaders... 47.04595%
+Recompiling shaders... 48.14004%
+Recompiling shaders... 49.23414%
+Recompiling shaders... 50.328224%
+Recompiling shaders... 51.42232%
+Recompiling shaders... 52.51641%
+Recompiling shaders... 53.610504%
+Recompiling shaders... 54.704594%
+Recompiling shaders... 55.798687%
+Recompiling shaders... 56.892776%
+Recompiling shaders... 57.986874%
+Recompiling shaders... 59.080963%
+Recompiling shaders... 60.175056%
+Recompiling shaders... 61.269146%
+Recompiling shaders... 62.363235%
+Recompiling shaders... 63.45733%
+Recompiling shaders... 64.55142%
+Recompiling shaders... 65.645515%
+Recompiling shaders... 66.73961%
+Recompiling shaders... 67.833694%
+Recompiling shaders... 68.92779%
+Recompiling shaders... 70.02188%
+Recompiling shaders... 71.115974%
+Recompiling shaders... 72.21007%
+Recompiling shaders... 73.30416%
+Recompiling shaders... 74.39825%
+Recompiling shaders... 75.49234%
+Recompiling shaders... 76.58643%
+Recompiling shaders... 77.68052%
+Recompiling shaders... 78.77462%
+Recompiling shaders... 79.86871%
+Recompiling shaders... 80.9628%
+Recompiling shaders... 82.05689%
+Recompiling shaders... 83.150986%
+Recompiling shaders... 84.24507%
+Recompiling shaders... 85.33917%
+Recompiling shaders... 86.43326%
+Recompiling shaders... 87.52735%
+Recompiling shaders... 88.621445%
+Recompiling shaders... 89.71554%
+Recompiling shaders... 90.80962%
+Recompiling shaders... 91.903725%
+Recompiling shaders... 92.99781%
+Recompiling shaders... 94.0919%
+Recompiling shaders... 95.186%
+Recompiling shaders... 96.28008%
+Recompiling shaders... 97.374176%
+Recompiling shaders... 98.46828%
+Recompiling shaders... 99.56236%
+Recompiling shaders... 99.89059%
+Creating shader cache...
+Compressing DXIL cache...
+Compressing AIR cache...
+Compressing SPIRV cache...
+[406/868] Building CXX object thirdparty/plume/CMakeFiles/plume.dir/plume_metal.cpp.o
+FAILED: [code=1] thirdparty/plume/CMakeFiles/plume.dir/plume_metal.cpp.o 
+/usr/bin/c++ -DMARATHON_IOS_METALFX=1 -DMARATHON_IOS_NATIVE_METAL=1 -DMARATHON_IOS_PORT=1 -DMARATHON_IOS_PROMOTION_120HZ=1 -DMARATHON_IOS_STREAMING_XISO=1 -DMARATHON_RECOMP_METAL=1 -DPLUME_APPLE_RETINA_ENABLED -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/plume -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/plume/contrib/volk -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/plume/contrib/Vulkan-Headers/include -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/plume/contrib/VulkanMemoryAllocator/include -I/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/plume/contrib/metal-cpp -O3 -DNDEBUG -std=gnu++17 -arch arm64 -isysroot /Applications/Xcode_16.2.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.2.sdk -miphoneos-version-min=17.0 -fPIC -fvisibility=hidden -g -mcpu=apple-a14 -fno-math-errno -fPIC -MD -MT thirdparty/plume/CMakeFiles/plume.dir/plume_metal.cpp.o -MF thirdparty/plume/CMakeFiles/plume.dir/plume_metal.cpp.o.d -o thirdparty/plume/CMakeFiles/plume.dir/plume_metal.cpp.o -c /Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/plume/plume_metal.cpp
+/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/plume/plume_metal.cpp:4723:29: error: no member named 'MAX_DRAWABLES' in 'plume::MetalSwapChain'; did you mean simply 'MAX_DRAWABLES'?
+ 4723 |         if (!sc || index >= MetalSwapChain::MAX_DRAWABLES) return nullptr;
+      |                             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |                             MAX_DRAWABLES
+/Users/runner/work/KronosiOS/KronosiOS/MarathonRecomp-Upstream/thirdparty/plume/plume_metal.cpp:126:29: note: 'MAX_DRAWABLES' declared here
+  126 |     static constexpr size_t MAX_DRAWABLES = 3;
+      |                             ^
+1 error generated.
+[409/868] Building CXX object xenon-utils/CMakeFiles/XenonUtils.dir/xex.cpp.o
+ninja: build stopped: subcommand failed.
+Error: Process completed with exit code 1.

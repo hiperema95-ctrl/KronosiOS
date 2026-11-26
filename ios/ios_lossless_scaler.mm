@@ -943,7 +943,8 @@ static id CreateFrameInterpolatorLocked(id<MTLDevice> dev,
                 ((void (*)(id, SEL, id))objc_msgSend)(fiDesc, @selector(setScaler:), temporalScalerObj);
             }
             if ([fiDesc respondsToSelector:@selector(newFrameInterpolatorWithDevice:)]) {
-                return ((id (*)(id, SEL, id))objc_msgSend)(fiDesc, @selector(newFrameInterpolatorWithDevice:), dev);
+                void *rawFi = ((void * (*)(id, SEL, id))objc_msgSend)(fiDesc, @selector(newFrameInterpolatorWithDevice:), dev);
+                return rawFi ? (__bridge_transfer id)rawFi : nil;
             }
         } @catch (NSException *ex) {
             MarathonIOS_LogLine("METAL_WARN", ex.reason ? ex.reason.UTF8String : "MTLFXFrameInterpolatorDescriptor exception");
@@ -1759,7 +1760,8 @@ bool MarathonIOS_MetalFXEncodeFrame(const MarathonIOSMetalFXFrameInput* in) {
     // Copy clean UI overlay into private uiRing[currSlot] before Plume starts overwriting g_iosUiOverlayTexture next frame
     bool pacerHasUi = false;
     if (didInterpolate && uiTex != nil && uiSnapshotTex != nil &&
-        uiTex.width == uiSnapshotTex.width && uiTex.height == uiSnapshotTex.height) {
+        uiTex.width == uiSnapshotTex.width && uiTex.height == uiSnapshotTex.height &&
+        uiTex.pixelFormat == uiSnapshotTex.pixelFormat) {
         id<MTLBlitCommandEncoder> blit = [cmdBuf blitCommandEncoder];
         if (blit) {
             [blit copyFromTexture:uiTex
