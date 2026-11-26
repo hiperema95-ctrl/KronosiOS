@@ -32,6 +32,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
     add_compile_definitions(
         MARATHON_IOS_PORT=1
         MARATHON_IOS_PROMOTION_120HZ=1
+        MARATHON_IOS_METALFX=1
         MARATHON_RECOMP_METAL=1
     MARATHON_IOS_NATIVE_METAL=1
         MARATHON_IOS_STREAMING_XISO=1
@@ -49,6 +50,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
         "-framework Foundation"
         "-framework UIKit"
         "-framework Metal"
+        "-weak_framework MetalFX"
         "-framework QuartzCore"
         "-framework CoreGraphics"
         "-framework CoreFoundation"

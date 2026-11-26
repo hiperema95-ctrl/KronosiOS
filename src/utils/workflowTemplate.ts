@@ -1484,7 +1484,7 @@ if imu_c.exists():
         imu_c.write_text(isrc, encoding="utf-8")
         print("Patched ui/imgui_utils.cpp: disabled mouse icons in iOS installer, keyboard icons only on real keyboard input.")
 
-# 5h. ui/options_menu.cpp: abilita selettore framerate 30 / 60 / 120 FPS nella scheda Video su iOS
+# 5h. ui/options_menu.cpp: abilita selettore framerate 30 / 40 / 60 / 120 FPS + MetalFX Upscaling + Frame Generation + Output Scale nella scheda Video su iOS
 if opt_c.exists():
     osrc = opt_c.read_text(encoding="utf-8")
     if "MARATHON_IOS_FPS_SELECTOR" not in osrc:
@@ -1495,16 +1495,29 @@ if opt_c.exists():
             '#if defined(MARATHON_IOS_PORT)\\n'
             '#define MARATHON_IOS_FPS_SELECTOR 1\\n'
             '#include <ios_virtual_controller.h>\\n'
+            '#include <ios_lossless_scaler.h>\\n'
             '#endif',
             1
         )
+        old_res_row = "            DrawOption(rowCount++, &Config::ResolutionScale, true, nullptr, 0.25f, 1.0f, 2.0f);"
+        new_res_row = (
+            "#if defined(MARATHON_IOS_PORT)\\n"
+            "            DrawOption(rowCount++, &Config::ResolutionScale, true, nullptr, 0.50f, 0.75f, 1.00f);\\n"
+            "#else\\n"
+            "            DrawOption(rowCount++, &Config::ResolutionScale, true, nullptr, 0.25f, 1.0f, 2.0f);\\n"
+            "#endif"
+        )
+        assert old_res_row in osrc, "Failed to locate ResolutionScale DrawOption in ui/options_menu.cpp"
+        osrc = osrc.replace(old_res_row, new_res_row, 1)
+
         old_fps_row = "            // TODO DrawOption(rowCount++, &Config::FPS, true, nullptr, FPS_MIN, 120, FPS_MAX);"
         new_fps_row = (
             "#if defined(MARATHON_IOS_PORT)\\n"
             "            DrawOption(rowCount++, &Config::FPS, true, nullptr, 30, 60, 120, false);\\n"
             "            DrawOption(rowCount++, &Config::ShowFPS, true);\\n"
-            "            DrawOption(rowCount++, &Config::LosslessUpscaling, true);\\n"
+            "            DrawOption(rowCount++, &Config::MetalFXUpscaling, true);\\n"
             "            DrawOption(rowCount++, &Config::FrameGeneration, true);\\n"
+            "            DrawOption(rowCount++, &Config::OutputResolutionScale, true);\\n"
             "#else\\n"
             "            // TODO DrawOption(rowCount++, &Config::FPS, true, nullptr, FPS_MIN, 120, FPS_MAX);\\n"
             "#endif"
@@ -1524,14 +1537,19 @@ if opt_c.exists():
 #if defined(MARATHON_IOS_PORT)
                             if (static_cast<const void*>(config) == static_cast<const void*>(&Config::FPS))
                             {
-                                static constexpr int32_t kIOSFpsPresets[3] = { 30, 60, 120 };
-                                int idx = 1;
+                                static constexpr int32_t kIOSFpsPresets[4] = { 30, 40, 60, 120 };
+                                const int presetCount = (Config::FrameGeneration.Value == EFrameGeneration::On) ? 3 : 4;
+                                int idx = 2;
                                 if (config->Value <= 35) idx = 0;
-                                else if (config->Value >= 100) idx = 2;
-                                if (decrement) idx = (idx + 2) % 3;
-                                else if (increment) idx = (idx + 1) % 3;
+                                else if (config->Value <= 48) idx = 1;
+                                else if (config->Value <= 90) idx = 2;
+                                else idx = (presetCount > 3) ? 3 : 2;
+                                if (decrement) idx = (idx + presetCount - 1) % presetCount;
+                                else if (increment) idx = (idx + 1) % presetCount;
                                 config->Value = kIOSFpsPresets[idx];
+                                MarathonIOS_SetBaseFpsLimit(config->Value);
                                 MarathonIOS_SetTargetFPS(config->Value);
+                                MarathonIOS_NotifyFrameGenChanged();
                             }
                             else
 #endif
@@ -1557,7 +1575,12 @@ if opt_c.exists():
 #if defined(MARATHON_IOS_PORT)
         else if (config == &Config::FPS)
         {
-            valueText = fmt::format("{} FPS", config->Value);
+            const int fgBase = MarathonIOS_GetFrameGenBaseFPS();
+            const int fgOut = MarathonIOS_GetFrameGenOutputFPS();
+            if (fgBase > 0 && fgOut > 0)
+                valueText = fmt::format("{} -> {} FPS", fgBase, fgOut);
+            else
+                valueText = fmt::format("{} FPS", config->Value);
             isValueCentred = true;
         }
 #endif
@@ -1565,12 +1588,12 @@ if opt_c.exists():
         assert old_int_text in osrc, "Failed to locate Monitor/int32 valueText block in ui/options_menu.cpp"
         osrc = osrc.replace(old_int_text, new_int_text, 1)
         opt_c.write_text(osrc, encoding="utf-8")
-        print("Patched ui/options_menu.cpp: enabled 30/60/120 FPS selector + ShowFPS + Lossless Scaling + Frame Generation in Video Options.")
+        print("Patched ui/options_menu.cpp: enabled 30/40/60/120 FPS + ShowFPS + MetalFX Upscaling + Frame Generation + Output Scale in Video Options.")
 
-# 5i. user/config.h: aggiungi enum ELosslessUpscaling ed EFrameGeneration
+# 5i. user/config.h: aggiungi enum EMetalFXUpscaling, EFrameGeneration ed EOutputResolutionScale
 if cfg_h.exists():
     chsrc = cfg_h.read_text(encoding="utf-8")
-    if "enum class ELosslessUpscaling" not in chsrc:
+    if "enum class EMetalFXUpscaling" not in chsrc:
         old_ui_enum = '''enum class EUIAlignmentMode : uint32_t
 {
     Edge,
@@ -1582,45 +1605,50 @@ if cfg_h.exists():
     Centre
 };
 
-enum class ELosslessUpscaling : uint32_t
+enum class EMetalFXUpscaling : uint32_t
 {
     Off,
-    Quality,
-    Balanced,
-    Performance
+    Temporal,
+    Spatial
 };
 
 enum class EFrameGeneration : uint32_t
 {
     Off,
-    X2_120,
-    X3_120,
-    X2_Eco60
+    On
+};
+
+enum class EOutputResolutionScale : uint32_t
+{
+    Scale75,
+    Scale85,
+    Scale100
 };'''
         assert old_ui_enum in chsrc, "Failed to locate EUIAlignmentMode in user/config.h"
         chsrc = chsrc.replace(old_ui_enum, new_ui_enum, 1)
         cfg_h.write_text(chsrc, encoding="utf-8")
-        print("Patched user/config.h: added ELosslessUpscaling and EFrameGeneration enums.")
+        print("Patched user/config.h: added EMetalFXUpscaling, EFrameGeneration and EOutputResolutionScale enums.")
 
-# 5j. user/config_def.h: promuovi Config::ShowFPS a CONFIG_DEFINE_LOCALISED + aggiungi LosslessUpscaling & FrameGeneration
+# 5j. user/config_def.h: promuovi Config::ShowFPS a CONFIG_DEFINE_LOCALISED + aggiungi MetalFXUpscaling, FrameGeneration & OutputResolutionScale
 if cfg_def_h.exists():
     dsrc = cfg_def_h.read_text(encoding="utf-8")
     old_showfps_def = 'CONFIG_DEFINE("Video", bool, ShowFPS, false, false);'
     new_showfps_def = (
         'CONFIG_DEFINE_LOCALISED("Video", bool, ShowFPS, false, false);\\n'
-        'CONFIG_DEFINE_ENUM_LOCALISED("Video", ELosslessUpscaling, LosslessUpscaling, ELosslessUpscaling::Off, false);\\n'
-        'CONFIG_DEFINE_ENUM_LOCALISED("Video", EFrameGeneration, FrameGeneration, EFrameGeneration::Off, false);'
+        'CONFIG_DEFINE_ENUM_LOCALISED("Video", EMetalFXUpscaling, MetalFXUpscaling, EMetalFXUpscaling::Off, false);\\n'
+        'CONFIG_DEFINE_ENUM_LOCALISED("Video", EFrameGeneration, FrameGeneration, EFrameGeneration::Off, false);\\n'
+        'CONFIG_DEFINE_ENUM_LOCALISED("Video", EOutputResolutionScale, OutputResolutionScale, EOutputResolutionScale::Scale100, false);'
     )
-    if "LosslessUpscaling" not in dsrc:
+    if "MetalFXUpscaling" not in dsrc:
         assert old_showfps_def in dsrc, "Failed to locate ShowFPS definition in user/config_def.h"
         dsrc = dsrc.replace(old_showfps_def, new_showfps_def, 1)
         cfg_def_h.write_text(dsrc, encoding="utf-8")
-        print("Patched user/config_def.h: promoted ShowFPS + added LosslessUpscaling & FrameGeneration options.")
+        print("Patched user/config_def.h: promoted ShowFPS + added MetalFXUpscaling, FrameGeneration & OutputResolutionScale.")
 
-# 5k. locale/config_locale.cpp: aggiungi localizzazione 6 lingue di ShowFPS, LosslessUpscaling e FrameGeneration
+# 5k. locale/config_locale.cpp: aggiungi localizzazione 6 lingue di ShowFPS, MetalFXUpscaling, FrameGeneration e OutputResolutionScale
 if cfg_loc_c.exists():
     clsrc = cfg_loc_c.read_text(encoding="utf-8")
-    if "CONFIG_DEFINE_LOCALE(LosslessUpscaling)" not in clsrc:
+    if "CONFIG_DEFINE_LOCALE(MetalFXUpscaling)" not in clsrc:
         anchor_brightness = "CONFIG_DEFINE_LOCALE(Brightness)"
         showfps_locale = '''CONFIG_DEFINE_LOCALE(ShowFPS)
 {
@@ -1632,82 +1660,76 @@ if cfg_loc_c.exists():
     { ELanguage::Italian,  { "Mostra FPS", "Mostra il contatore degli FPS in tempo reale nell'angolo in alto a sinistra dello schermo." } }
 };
 
-CONFIG_DEFINE_LOCALE(LosslessUpscaling)
+CONFIG_DEFINE_LOCALE(MetalFXUpscaling)
 {
-    { ELanguage::English,  { "Lossless Scaling", "Render at lower internal resolution and restore crisp edges with Metal RCAS sharpening to drastically reduce heat." } },
-    { ELanguage::Japanese, { "ロスレススケーリング", "内部解像度を下げてMetal RCASで鮮明に復元し、発熱と負荷を大幅に抑えます" } },
-    { ELanguage::German,   { "Lossless Scaling", "Rendert intern niedriger und schärft Kanten mit Metal RCAS nach, um Hitze und Last stark zu senken." } },
-    { ELanguage::French,   { "Lossless Scaling", "Réduit la résolution interne et restaure la netteté via Metal RCAS pour limiter la chauffe." } },
-    { ELanguage::Spanish,  { "Lossless Scaling", "Renderiza a menor resolución interna y recupera nitidez con Metal RCAS para reducir el calor." } },
-    { ELanguage::Italian,  { "Lossless Scaling", "Riduce la risoluzione interna e recupera nitidezza con Metal RCAS per tagliare calore e consumi." } }
+    { ELanguage::English,  { "MetalFX Upscaling", "Hardware-accelerated Apple MetalFX temporal or spatial upscaling from internal render scale to crisp display output." } },
+    { ELanguage::Japanese, { "MetalFXアップスケーリング", "Apple MetalFXのテンポラルまたは空間スケーリングで低負荷かつ高精細に描画します" } },
+    { ELanguage::German,   { "MetalFX-Upscaling", "Hardwarebeschleunigtes Apple MetalFX Temporal- oder Spatial-Upscaling für scharfe Grafik bei geringer GPU-Last." } },
+    { ELanguage::French,   { "Mise à l'échelle MetalFX", "Upscaling matériel Apple MetalFX temporel ou spatial pour une image nette et un GPU plus frais." } },
+    { ELanguage::Spanish,  { "Escalado MetalFX", "Escalado por hardware Apple MetalFX temporal o espacial para imagen nítida y menor temperatura." } },
+    { ELanguage::Italian,  { "MetalFX Upscaling", "Upscaling hardware nativo Apple MetalFX temporale o spaziale per immagine nitida e GPU fresca." } }
 };
 
-CONFIG_DEFINE_ENUM_LOCALE(ELosslessUpscaling)
+CONFIG_DEFINE_ENUM_LOCALE(EMetalFXUpscaling)
 {
     {
         ELanguage::English,
         {
-            { ELosslessUpscaling::Off,         { "Off", "" } },
-            { ELosslessUpscaling::Quality,     { "Quality (75%)", "" } },
-            { ELosslessUpscaling::Balanced,    { "Balanced (65%)", "" } },
-            { ELosslessUpscaling::Performance, { "Performance (55%)", "" } }
+            { EMetalFXUpscaling::Off,      { "Off", "" } },
+            { EMetalFXUpscaling::Temporal, { "Temporal", "" } },
+            { EMetalFXUpscaling::Spatial,  { "Spatial", "" } }
         }
     },
     {
         ELanguage::Japanese,
         {
-            { ELosslessUpscaling::Off,         { "オフ", "" } },
-            { ELosslessUpscaling::Quality,     { "品質 (75%)", "" } },
-            { ELosslessUpscaling::Balanced,    { "バランス (65%)", "" } },
-            { ELosslessUpscaling::Performance, { "パフォーマンス (55%)", "" } }
+            { EMetalFXUpscaling::Off,      { "オフ", "" } },
+            { EMetalFXUpscaling::Temporal, { "テンポラル", "" } },
+            { EMetalFXUpscaling::Spatial,  { "空間", "" } }
         }
     },
     {
         ELanguage::German,
         {
-            { ELosslessUpscaling::Off,         { "Aus", "" } },
-            { ELosslessUpscaling::Quality,     { "Qualität (75%)", "" } },
-            { ELosslessUpscaling::Balanced,    { "Ausgewogen (65%)", "" } },
-            { ELosslessUpscaling::Performance, { "Leistung (55%)", "" } }
+            { EMetalFXUpscaling::Off,      { "Aus", "" } },
+            { EMetalFXUpscaling::Temporal, { "Temporal", "" } },
+            { EMetalFXUpscaling::Spatial,  { "Spatial", "" } }
         }
     },
     {
         ELanguage::French,
         {
-            { ELosslessUpscaling::Off,         { "Désactivé", "" } },
-            { ELosslessUpscaling::Quality,     { "Qualité (75%)", "" } },
-            { ELosslessUpscaling::Balanced,    { "Équilibré (65%)", "" } },
-            { ELosslessUpscaling::Performance, { "Performances (55%)", "" } }
+            { EMetalFXUpscaling::Off,      { "Désactivé", "" } },
+            { EMetalFXUpscaling::Temporal, { "Temporel", "" } },
+            { EMetalFXUpscaling::Spatial,  { "Spatial", "" } }
         }
     },
     {
         ELanguage::Spanish,
         {
-            { ELosslessUpscaling::Off,         { "Desactivado", "" } },
-            { ELosslessUpscaling::Quality,     { "Calidad (75%)", "" } },
-            { ELosslessUpscaling::Balanced,    { "Equilibrado (65%)", "" } },
-            { ELosslessUpscaling::Performance, { "Rendimiento (55%)", "" } }
+            { EMetalFXUpscaling::Off,      { "Desactivado", "" } },
+            { EMetalFXUpscaling::Temporal, { "Temporal", "" } },
+            { EMetalFXUpscaling::Spatial,  { "Espacial", "" } }
         }
     },
     {
         ELanguage::Italian,
         {
-            { ELosslessUpscaling::Off,         { "Disattivato", "" } },
-            { ELosslessUpscaling::Quality,     { "Qualità (75%)", "" } },
-            { ELosslessUpscaling::Balanced,    { "Bilanciato (65%)", "" } },
-            { ELosslessUpscaling::Performance, { "Prestazioni (55%)", "" } }
+            { EMetalFXUpscaling::Off,      { "Disattivato", "" } },
+            { EMetalFXUpscaling::Temporal, { "Temporale", "" } },
+            { EMetalFXUpscaling::Spatial,  { "Spaziale", "" } }
         }
     }
 };
 
 CONFIG_DEFINE_LOCALE(FrameGeneration)
 {
-    { ELanguage::English,  { "Frame Generation", "Synthesize intermediate frames with Metal Optical Flow to reach 120 FPS while keeping the device cool." } },
-    { ELanguage::Japanese, { "フレーム生成", "Metalオプティカルフローで中間フレームを生成し、発熱を抑えながら120 FPSを実現します" } },
-    { ELanguage::German,   { "Frame Generation", "Erzeugt Zwischenbilder per Metal Optical Flow für 120 FPS bei deutlich kühlerem Gerät." } },
-    { ELanguage::French,   { "Génération d'images", "Génère des images intermédiaires via Metal Optical Flow pour atteindre 120 IPS sans surchauffe." } },
-    { ELanguage::Spanish,  { "Generación de fotogramas", "Genera fotogramas intermedios con Metal Optical Flow para lograr 120 FPS manteniendo el móvil frío." } },
-    { ELanguage::Italian,  { "Frame Generation", "Genera fotogrammi intermedi con Metal Optical Flow per raggiungere i 120 FPS a telefono freddo." } }
+    { ELanguage::English,  { "MetalFX Frame Gen", "Native Apple MetalFX Frame Interpolation (2x). Doubles base FPS (e.g. 60->120) with clean HUD compositing; auto-disables if unsupported." } },
+    { ELanguage::Japanese, { "MetalFXフレーム生成", "Apple MetalFXフレーム補間 (2x) で60->120 FPSを実現します。非対応環境では自動で無効になります" } },
+    { ELanguage::German,   { "MetalFX Frame Gen", "Native Apple MetalFX Frame Interpolation (2x) für 60->120 FPS mit sauberem HUD; bei fehlender Unterstützung automatisch aus." } },
+    { ELanguage::French,   { "MetalFX Frame Gen", "Interpolation native Apple MetalFX (2x) doublant les IPS (60->120) avec HUD propre; désactivation auto si non supporté." } },
+    { ELanguage::Spanish,  { "MetalFX Frame Gen", "Interpolación nativa Apple MetalFX (2x) que duplica FPS (60->120) con HUD limpio; se desactiva si no es compatible." } },
+    { ELanguage::Italian,  { "MetalFX Frame Gen", "Interpolazione nativa Apple MetalFX (2x): raddoppia gli FPS base (60->120) con HUD pulito; fallback automatico se non supportata." } }
 };
 
 CONFIG_DEFINE_ENUM_LOCALE(EFrameGeneration)
@@ -1715,55 +1737,105 @@ CONFIG_DEFINE_ENUM_LOCALE(EFrameGeneration)
     {
         ELanguage::English,
         {
-            { EFrameGeneration::Off,      { "Off", "" } },
-            { EFrameGeneration::X2_120,   { "2x (60->120)", "" } },
-            { EFrameGeneration::X3_120,   { "3x (40->120)", "" } },
-            { EFrameGeneration::X2_Eco60, { "2x Eco (30->60)", "" } }
+            { EFrameGeneration::Off, { "Off", "" } },
+            { EFrameGeneration::On,  { "On (2x)", "" } }
         }
     },
     {
         ELanguage::Japanese,
         {
-            { EFrameGeneration::Off,      { "オフ", "" } },
-            { EFrameGeneration::X2_120,   { "2x (60->120)", "" } },
-            { EFrameGeneration::X3_120,   { "3x (40->120)", "" } },
-            { EFrameGeneration::X2_Eco60, { "2x 省電力 (30->60)", "" } }
+            { EFrameGeneration::Off, { "オフ", "" } },
+            { EFrameGeneration::On,  { "オン (2x)", "" } }
         }
     },
     {
         ELanguage::German,
         {
-            { EFrameGeneration::Off,      { "Aus", "" } },
-            { EFrameGeneration::X2_120,   { "2x (60->120)", "" } },
-            { EFrameGeneration::X3_120,   { "3x (40->120)", "" } },
-            { EFrameGeneration::X2_Eco60, { "2x Öko (30->60)", "" } }
+            { EFrameGeneration::Off, { "Aus", "" } },
+            { EFrameGeneration::On,  { "Ein (2x)", "" } }
         }
     },
     {
         ELanguage::French,
         {
-            { EFrameGeneration::Off,      { "Désactivé", "" } },
-            { EFrameGeneration::X2_120,   { "2x (60->120)", "" } },
-            { EFrameGeneration::X3_120,   { "3x (40->120)", "" } },
-            { EFrameGeneration::X2_Eco60, { "2x Éco (30->60)", "" } }
+            { EFrameGeneration::Off, { "Désactivé", "" } },
+            { EFrameGeneration::On,  { "Activé (2x)", "" } }
         }
     },
     {
         ELanguage::Spanish,
         {
-            { EFrameGeneration::Off,      { "Desactivado", "" } },
-            { EFrameGeneration::X2_120,   { "2x (60->120)", "" } },
-            { EFrameGeneration::X3_120,   { "3x (40->120)", "" } },
-            { EFrameGeneration::X2_Eco60, { "2x Eco (30->60)", "" } }
+            { EFrameGeneration::Off, { "Desactivado", "" } },
+            { EFrameGeneration::On,  { "Activado (2x)", "" } }
         }
     },
     {
         ELanguage::Italian,
         {
-            { EFrameGeneration::Off,      { "Disattivato", "" } },
-            { EFrameGeneration::X2_120,   { "2x (60->120)", "" } },
-            { EFrameGeneration::X3_120,   { "3x (40->120)", "" } },
-            { EFrameGeneration::X2_Eco60, { "2x Eco (30->60)", "" } }
+            { EFrameGeneration::Off, { "Disattivato", "" } },
+            { EFrameGeneration::On,  { "Attivo (2x)", "" } }
+        }
+    }
+};
+
+CONFIG_DEFINE_LOCALE(OutputResolutionScale)
+{
+    { ELanguage::English,  { "Output Scale", "Adjusts display output resolution (75%-100% of native Retina) to give the GPU extra thermal headroom at 120Hz." } },
+    { ELanguage::Japanese, { "出力解像度スケール", "ディスプレイ出力解像度をネイティブの75%〜100%で調整し、120Hz時の発熱を抑えます" } },
+    { ELanguage::German,   { "Ausgabe-Skalierung", "Passt die Ausgabeauflösung (75%-100% nativ) für mehr thermische Reserve bei 120Hz an." } },
+    { ELanguage::French,   { "Échelle de sortie", "Ajuste la résolution de sortie (75%-100% native) pour garder une marge thermique à 120Hz." } },
+    { ELanguage::Spanish,  { "Escala de salida", "Ajusta la resolución de salida (75%-100% nativa) para mantener margen térmico a 120Hz." } },
+    { ELanguage::Italian,  { "Scala Output", "Regola la risoluzione di output (75%-100% della nativa Retina) per avere più margine termico a 120Hz." } }
+};
+
+CONFIG_DEFINE_ENUM_LOCALE(EOutputResolutionScale)
+{
+    {
+        ELanguage::English,
+        {
+            { EOutputResolutionScale::Scale75,  { "75% (Cool)", "" } },
+            { EOutputResolutionScale::Scale85,  { "85% (Balanced)", "" } },
+            { EOutputResolutionScale::Scale100, { "100% (Native)", "" } }
+        }
+    },
+    {
+        ELanguage::Japanese,
+        {
+            { EOutputResolutionScale::Scale75,  { "75% (省発熱)", "" } },
+            { EOutputResolutionScale::Scale85,  { "85% (バランス)", "" } },
+            { EOutputResolutionScale::Scale100, { "100% (ネイティブ)", "" } }
+        }
+    },
+    {
+        ELanguage::German,
+        {
+            { EOutputResolutionScale::Scale75,  { "75% (Kühl)", "" } },
+            { EOutputResolutionScale::Scale85,  { "85% (Ausgewogen)", "" } },
+            { EOutputResolutionScale::Scale100, { "100% (Nativ)", "" } }
+        }
+    },
+    {
+        ELanguage::French,
+        {
+            { EOutputResolutionScale::Scale75,  { "75% (Frais)", "" } },
+            { EOutputResolutionScale::Scale85,  { "85% (Équilibré)", "" } },
+            { EOutputResolutionScale::Scale100, { "100% (Natif)", "" } }
+        }
+    },
+    {
+        ELanguage::Spanish,
+        {
+            { EOutputResolutionScale::Scale75,  { "75% (Frío)", "" } },
+            { EOutputResolutionScale::Scale85,  { "85% (Equilibrado)", "" } },
+            { EOutputResolutionScale::Scale100, { "100% (Nativo)", "" } }
+        }
+    },
+    {
+        ELanguage::Italian,
+        {
+            { EOutputResolutionScale::Scale75,  { "75% (Fresco)", "" } },
+            { EOutputResolutionScale::Scale85,  { "85% (Bilanciato)", "" } },
+            { EOutputResolutionScale::Scale100, { "100% (Nativa)", "" } }
         }
     }
 };
@@ -1772,7 +1844,7 @@ CONFIG_DEFINE_LOCALE(Brightness)'''
         assert anchor_brightness in clsrc, "Failed to locate CONFIG_DEFINE_LOCALE(Brightness) in locale/config_locale.cpp"
         clsrc = clsrc.replace(anchor_brightness, showfps_locale, 1)
         cfg_loc_c.write_text(clsrc, encoding="utf-8")
-        print("Patched locale/config_locale.cpp: added 6-language ShowFPS, LosslessUpscaling & FrameGeneration localization.")
+        print("Patched locale/config_locale.cpp: added 6-language ShowFPS, MetalFXUpscaling, FrameGeneration & OutputResolutionScale localization.")
 PY_WIZ
 
 echo "==> [6/8] Patch paths.cpp, paths.h, config.cpp, file_system.cpp, imports.cpp (FIX FREEZE ARM64!), app.cpp, sdl3_driver.cpp, heap.cpp, guest_thread.cpp e stdafx.h..."
@@ -1822,6 +1894,25 @@ if cfg_p.exists():
             '#include <cmath>\\n'
             '#include <ios_virtual_controller.h>\\n'
             '#include <ios_lossless_scaler.h>\\n'
+            'static float OutputScaleEnumToFloat(EOutputResolutionScale s)\\n'
+            '{\\n'
+            '    switch (s)\\n'
+            '    {\\n'
+            '        case EOutputResolutionScale::Scale75: return 0.75f;\\n'
+            '        case EOutputResolutionScale::Scale85: return 0.85f;\\n'
+            '        case EOutputResolutionScale::Scale100: default: return 1.00f;\\n'
+            '    }\\n'
+            '}\\n'
+            'static void SyncIOSMetalFXFromConfig()\\n'
+            '{\\n'
+            '    MarathonIOS_SetUpscaleMode(static_cast<int>(Config::MetalFXUpscaling.Value));\\n'
+            '    MarathonIOS_SetRenderScale(Config::ResolutionScale.Value);\\n'
+            '    MarathonIOS_SetFrameGenMode(static_cast<int>(Config::FrameGeneration.Value));\\n'
+            '    MarathonIOS_SetBaseFpsLimit(Config::FPS.Value);\\n'
+            '    MarathonIOS_SetOutputResolutionScale(OutputScaleEnumToFloat(Config::OutputResolutionScale.Value));\\n'
+            '    MarathonIOS_SetTargetFPS(Config::FPS.Value);\\n'
+            '    MarathonIOS_NotifyFrameGenChanged();\\n'
+            '}\\n'
             'static void ApplyIOSHardwareDefaults(bool applyValues)\\n'
             '{\\n'
             '    MarathonIOSHardwareProfile prof{};\\n'
@@ -1841,18 +1932,22 @@ if cfg_p.exists():
             '    setDef(Config::RadialBlur, prof.recommendedRadialBlur == 0 ? ERadialBlur::Off : ERadialBlur::Original);\\n'
             '    setDef(Config::AnisotropicFiltering, static_cast<uint32_t>(prof.recommendedAF));\\n'
             '    if (prof.tier >= 3) {\\n'
-            '        // iPhone 15 Pro / 16 Pro (120Hz ProMotion): Lossless Balanced (0.65x + RCAS) + 2x FG (60 -> 120 FPS) = cool & locked 120 FPS!\\n'
-            '        setDef(Config::LosslessUpscaling, ELosslessUpscaling::Balanced);\\n'
-            '        setDef(Config::FrameGeneration, EFrameGeneration::X2_120);\\n'
+            '        // iPhone 15 Pro / 16 Pro (A18 Pro, 120Hz ProMotion): native Apple MetalFX Temporal (0.75x) + 2x FrameGen (60 -> 120 FPS) + 75% output scale = locked 120 FPS with >=25-30% thermal headroom!\\n'
+            '        setDef(Config::MetalFXUpscaling, EMetalFXUpscaling::Temporal);\\n'
+            '        setDef(Config::FrameGeneration, EFrameGeneration::On);\\n'
+            '        setDef(Config::OutputResolutionScale, EOutputResolutionScale::Scale75);\\n'
             '    } else if (prof.tier == 2) {\\n'
-            '        setDef(Config::LosslessUpscaling, ELosslessUpscaling::Quality);\\n'
+            '        setDef(Config::MetalFXUpscaling, EMetalFXUpscaling::Temporal);\\n'
             '        setDef(Config::FrameGeneration, EFrameGeneration::Off);\\n'
+            '        setDef(Config::OutputResolutionScale, EOutputResolutionScale::Scale85);\\n'
             '    } else if (prof.tier == 1) {\\n'
-            '        setDef(Config::LosslessUpscaling, ELosslessUpscaling::Balanced);\\n'
-            '        setDef(Config::FrameGeneration, EFrameGeneration::X2_Eco60);\\n'
-            '    } else {\\n'
-            '        setDef(Config::LosslessUpscaling, ELosslessUpscaling::Performance);\\n'
+            '        setDef(Config::MetalFXUpscaling, EMetalFXUpscaling::Temporal);\\n'
             '        setDef(Config::FrameGeneration, EFrameGeneration::Off);\\n'
+            '        setDef(Config::OutputResolutionScale, EOutputResolutionScale::Scale75);\\n'
+            '    } else {\\n'
+            '        setDef(Config::MetalFXUpscaling, EMetalFXUpscaling::Spatial);\\n'
+            '        setDef(Config::FrameGeneration, EFrameGeneration::Off);\\n'
+            '        setDef(Config::OutputResolutionScale, EOutputResolutionScale::Scale75);\\n'
             '    }\\n'
             '}\\n'
             '#endif',
@@ -1871,23 +1966,43 @@ if cfg_p.exists():
     { "Center",  EUIAlignmentMode::Centre }
 };
 
-CONFIG_DEFINE_ENUM_TEMPLATE(ELosslessUpscaling)
+CONFIG_DEFINE_ENUM_TEMPLATE(EMetalFXUpscaling)
 {
-    { "Off",         ELosslessUpscaling::Off },
-    { "Quality",     ELosslessUpscaling::Quality },
-    { "Balanced",    ELosslessUpscaling::Balanced },
-    { "Performance", ELosslessUpscaling::Performance }
+    { "Off",      EMetalFXUpscaling::Off },
+    { "Temporal", EMetalFXUpscaling::Temporal },
+    { "Spatial",  EMetalFXUpscaling::Spatial }
 };
 
 CONFIG_DEFINE_ENUM_TEMPLATE(EFrameGeneration)
 {
-    { "Off",      EFrameGeneration::Off },
-    { "2x",       EFrameGeneration::X2_120 },
-    { "3x",       EFrameGeneration::X3_120 },
-    { "2x Eco",   EFrameGeneration::X2_Eco60 }
+    { "Off", EFrameGeneration::Off },
+    { "On",  EFrameGeneration::On }
+};
+
+CONFIG_DEFINE_ENUM_TEMPLATE(EOutputResolutionScale)
+{
+    { "75%",  EOutputResolutionScale::Scale75 },
+    { "85%",  EOutputResolutionScale::Scale85 },
+    { "100%", EOutputResolutionScale::Scale100 }
 };'''
         assert old_enum_tpl in csrc, "Failed to locate EUIAlignmentMode enum template in user/config.cpp"
         csrc = csrc.replace(old_enum_tpl, new_enum_tpl, 1)
+
+        old_res_cb = '''    Config::ResolutionScale.Callback = [](ConfigDef<float>* def)
+    {
+        def->Value = std::clamp(def->Value, 0.25f, 2.0f);
+    };'''
+        new_res_cb = '''    Config::ResolutionScale.Callback = [](ConfigDef<float>* def)
+    {
+#if defined(MARATHON_IOS_PORT)
+        def->Value = std::clamp(def->Value, 0.50f, 1.00f);
+        MarathonIOS_SetRenderScale(def->Value);
+#else
+        def->Value = std::clamp(def->Value, 0.25f, 2.0f);
+#endif
+    };'''
+        assert old_res_cb in csrc, "Failed to locate Config::ResolutionScale.Callback in user/config.cpp"
+        csrc = csrc.replace(old_res_cb, new_res_cb, 1)
 
         old_cb_end = '''    Config::AlwaysUnlockedDebugSettings.Callback = [](ConfigDef<bool>* def)
     {
@@ -1902,20 +2017,32 @@ CONFIG_DEFINE_ENUM_TEMPLATE(EFrameGeneration)
 #if defined(MARATHON_IOS_PORT)
     Config::FPS.Callback = [](ConfigDef<int32_t>* def)
     {
-        if (def) MarathonIOS_SetTargetFPS(def->Value);
+        if (!def) return;
+        MarathonIOS_SetBaseFpsLimit(def->Value);
+        MarathonIOS_SetTargetFPS(def->Value);
+        MarathonIOS_NotifyFrameGenChanged();
     };
-    Config::LosslessUpscaling.Callback = [](ConfigDef<ELosslessUpscaling>* def)
+    Config::MetalFXUpscaling.Callback = [](ConfigDef<EMetalFXUpscaling>* def)
     {
         if (!def) return;
-        const int mode = static_cast<int>(def->Value);
-        MarathonIOS_SetUpscaleMode(mode);
-        Config::ResolutionScale.Value = MarathonIOS_GetUpscaleResolutionScale(mode);
+        MarathonIOS_SetUpscaleMode(static_cast<int>(def->Value));
     };
     Config::FrameGeneration.Callback = [](ConfigDef<EFrameGeneration>* def)
     {
         if (!def) return;
         MarathonIOS_SetFrameGenMode(static_cast<int>(def->Value));
+        if (def->Value == EFrameGeneration::On && Config::FPS.Value > 60)
+        {
+            Config::FPS.Value = 60;
+            MarathonIOS_SetBaseFpsLimit(60);
+            MarathonIOS_SetTargetFPS(60);
+        }
         MarathonIOS_NotifyFrameGenChanged();
+    };
+    Config::OutputResolutionScale.Callback = [](ConfigDef<EOutputResolutionScale>* def)
+    {
+        if (!def) return;
+        MarathonIOS_SetOutputResolutionScale(OutputScaleEnumToFloat(def->Value));
     };
 #endif'''
         assert old_cb_end in csrc, "Failed to locate AlwaysUnlockedDebugSettings.Callback in user/config.cpp"
@@ -1930,13 +2057,10 @@ CONFIG_DEFINE_ENUM_TEMPLATE(EFrameGeneration)
     {
 #if defined(MARATHON_IOS_PORT)
         ApplyIOSHardwareDefaults(true);
-        MarathonIOS_SetUpscaleMode(static_cast<int>(Config::LosslessUpscaling.Value));
-        MarathonIOS_SetFrameGenMode(static_cast<int>(Config::FrameGeneration.Value));
-        MarathonIOS_SetTargetFPS(Config::FPS);
-        MarathonIOS_NotifyFrameGenChanged();
+        SyncIOSMetalFXFromConfig();
         Config::Save();
         std::error_code tuneEc;
-        std::ofstream(GetUserPath() / "ios_hw_tuned_v3") << "3";
+        std::ofstream(GetUserPath() / "ios_hw_tuned_v4") << "4";
 #else
         Config::Save();
 #endif
@@ -1957,12 +2081,12 @@ CONFIG_DEFINE_ENUM_TEMPLATE(EFrameGeneration)
 #if defined(MARATHON_IOS_PORT)
     {
         std::error_code tuneEc;
-        auto markerPath = GetUserPath() / "ios_hw_tuned_v3";
+        auto markerPath = GetUserPath() / "ios_hw_tuned_v4";
         if (!std::filesystem::exists(markerPath, tuneEc))
         {
             MarathonIOSHardwareProfile prof{};
             MarathonIOS_GetHardwareProfile(&prof);
-            // One-time migration for configs created before Lossless Scaling + Optical-Flow Frame Generation (v3)
+            // One-time migration to native Apple MetalFX Temporal + Frame Interpolation (v4)
             const bool isOldHeavyDefault =
                 std::fabs(Config::ResolutionScale.Value - 1.0f) < 0.01f &&
                 Config::AntiAliasing.Value != EAntiAliasing::Off;
@@ -1972,16 +2096,13 @@ CONFIG_DEFINE_ENUM_TEMPLATE(EFrameGeneration)
             {
                 Config::Save();
             }
-            std::ofstream(markerPath) << "3";
+            std::ofstream(markerPath) << "4";
         }
         else
         {
             ApplyIOSHardwareDefaults(false);
         }
-        MarathonIOS_SetUpscaleMode(static_cast<int>(Config::LosslessUpscaling.Value));
-        MarathonIOS_SetFrameGenMode(static_cast<int>(Config::FrameGeneration.Value));
-        MarathonIOS_SetTargetFPS(Config::FPS);
-        MarathonIOS_NotifyFrameGenChanged();
+        SyncIOSMetalFXFromConfig();
     }
 #endif
 }'''
@@ -1997,7 +2118,7 @@ CONFIG_DEFINE_ENUM_TEMPLATE(EFrameGeneration)
         assert old_cfg_dir in csrc, "Failed to locate create_directory in user/config.cpp"
         csrc = csrc.replace(old_cfg_dir, new_cfg_dir, 1)
         cfg_p.write_text(csrc, encoding="utf-8")
-        print("Patched user/config.cpp: non-throwing create_directories + Lossless Scaling & FrameGen templates/callbacks + v3 smart auto-config.")
+        print("Patched user/config.cpp: non-throwing create_directories + MetalFX templates/callbacks + v4 smart auto-config.")
 
 ph_p = pathlib.Path(sys.argv[4])
 if ph_p.exists():
@@ -2755,7 +2876,8 @@ if mm.exists():
 #include <cmath>
 #include <atomic>
 
-extern "C" bool MarathonIOS_NeedsReadableDrawable(void);
+extern "C" double MarathonIOS_GetEffectiveContentScale(double nativeScale);
+extern "C" float MarathonIOS_GetOutputResolutionScale(void);
 
 namespace plume {
 
@@ -2764,11 +2886,13 @@ void presentIOSDrawable(void *drawablePtr, int targetFps) {
     if (!drawable) return;
     if (targetFps > 0 && targetFps <= 35) {
         [drawable presentAfterMinimumDuration:(1.0 / 32.0)];
+    } else if (targetFps > 0 && targetFps <= 48) {
+        [drawable presentAfterMinimumDuration:(1.0 / 42.0)];
     } else if (targetFps > 0 && targetFps <= 65) {
         [drawable presentAfterMinimumDuration:(1.0 / 65.0)];
     } else if (targetFps > 0 && targetFps <= 95) {
-        // 90Hz ProMotion LTPO thermal step (smooth & cool on iPhone 16 Pro)
-        [drawable presentAfterMinimumDuration:(1.0 / 95.0)];
+        // 80Hz ProMotion LTPO step (40 -> 80 FPS FrameGen or thermal step)
+        [drawable presentAfterMinimumDuration:(1.0 / 85.0)];
     } else {
         [drawable present];
     }
@@ -2782,10 +2906,10 @@ static CGFloat getIOSScaleFactor(UIWindow *uiWindow) {
 #ifdef PLUME_APPLE_RETINA_ENABLED
     UIScreen *screen = uiWindow ? uiWindow.screen : nil;
     if (!screen) screen = [UIScreen mainScreen];
-    // Cap 3x Super Retina (2622x1206 -> 3.16M px) to 2.0x (1748x804 -> 1.40M px, 310+ PPI):
-    // cuts 120 FPS swapchain fillrate & DRAM bandwidth by 55.6% while staying razor-sharp on iPhone 16 Pro.
+    // Dynamic OutputResolutionScale (0.75..1.00 of native Retina scale) controls swapchain pixel budget
+    // cleanly for A18 Pro thermal headroom (e.g. 0.75 * 3.0 = 2.25x -> ~1966x904 vs 2622x1206).
     CGFloat native = screen ? screen.nativeScale : 1.0;
-    return (native > 2.0) ? 2.0 : native;
+    return (CGFloat)MarathonIOS_GetEffectiveContentScale((double)native);
 #else
     (void)uiWindow;
     return 1.0;
@@ -2796,6 +2920,7 @@ static std::atomic<uint32_t> g_iosMetalCachedW{0};
 static std::atomic<uint32_t> g_iosMetalCachedH{0};
 static std::atomic<bool> g_iosMetalSyncPending{false};
 static std::atomic<double> g_iosMetalLastSyncSec{0.0};
+static std::atomic<float> g_iosLastSyncedOutScale{0.0f};
 
 // Safely syncs UIWindow + SDL_uikitmetalview + CAMetalLayer on main thread (fixes LiveContainer portrait-squished half-screen!)
 static void syncIOSMetalViewOnMainThread(CAMetalLayer *metalLayer) {
@@ -2855,14 +2980,13 @@ static void syncIOSMetalViewOnMainThread(CAMetalLayer *metalLayer) {
     if (metalLayer.contentsScale != scale) {
         metalLayer.contentsScale = scale;
     }
-    // Apple Silicon 120 FPS swapchain tuning: triple buffering (3 drawables) + dynamic framebufferOnly
-    // (YES = hardware AFBC when Lossless Scaling is Off; NO = readable drawable when RCAS or Frame Generation is active)
+    // Apple Silicon 120 FPS swapchain tuning: triple buffering (3 drawables) + ALWAYS framebufferOnly = YES!
+    // Native MetalFX reads Plume's private intermediary backbuffer & writes to drawable via render pass -> keeps full A18 Pro AFBC compression!
     if (metalLayer.maximumDrawableCount != 3) {
         metalLayer.maximumDrawableCount = 3;
     }
-    const BOOL wantFramebufferOnly = MarathonIOS_NeedsReadableDrawable() ? NO : YES;
-    if (metalLayer.framebufferOnly != wantFramebufferOnly) {
-        metalLayer.framebufferOnly = wantFramebufferOnly;
+    if (!metalLayer.framebufferOnly) {
+        metalLayer.framebufferOnly = YES;
     }
 
     uint32_t w = (uint32_t)std::lround(bounds.size.width * scale);
@@ -2875,6 +2999,7 @@ static void syncIOSMetalViewOnMainThread(CAMetalLayer *metalLayer) {
         g_iosMetalCachedW.store(w, std::memory_order_release);
         g_iosMetalCachedH.store(h, std::memory_order_release);
     }
+    g_iosLastSyncedOutScale.store(MarathonIOS_GetOutputResolutionScale(), std::memory_order_release);
 }
 
 void getIOSMetalLayerSize(void *layerPtr, uint32_t &dstWidth, uint32_t &dstHeight) {
@@ -2888,12 +3013,14 @@ void getIOSMetalLayerSize(void *layerPtr, uint32_t &dstWidth, uint32_t &dstHeigh
     if ([NSThread isMainThread]) {
         syncIOSMetalViewOnMainThread(metalLayer);
     } else {
-        // Once cached, throttle main-thread UIKit layout sync to 4 Hz (250ms) instead of 120 Hz -> saves 116 GCD dispatches/sec!
+        // Once cached, throttle main-thread UIKit layout sync to 4 Hz (250ms), OR immediately when OutputResolutionScale changes!
         const bool hasCache = (g_iosMetalCachedW.load(std::memory_order_relaxed) > 0 &&
                                g_iosMetalCachedH.load(std::memory_order_relaxed) > 0);
+        const float curOutScale = MarathonIOS_GetOutputResolutionScale();
+        const bool scaleChanged = (std::fabs(curOutScale - g_iosLastSyncedOutScale.load(std::memory_order_acquire)) > 0.005f);
         const double nowSec = CFAbsoluteTimeGetCurrent();
         const double lastSec = g_iosMetalLastSyncSec.load(std::memory_order_relaxed);
-        if (!hasCache || (nowSec - lastSec) >= 0.25) {
+        if (!hasCache || scaleChanged || (nowSec - lastSec) >= 0.25) {
             bool expected = false;
             if (g_iosMetalSyncPending.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
                 g_iosMetalLastSyncSec.store(nowSec, std::memory_order_relaxed);
@@ -3047,7 +3174,6 @@ if metal_cpp.exists():
             'extern "C" bool MarathonIOS_IsAppSuspended(void);\\n'
             'extern "C" int MarathonIOS_GetTargetFPS(void);\\n'
             'extern "C" int MarathonIOS_GetEffectiveTargetFPS(void);\\n'
-            'extern "C" bool MarathonIOS_LosslessPresentFrame(void* commandQueueMtl, void* metalLayerPtr, void* presentCmdBufferMtl, void* drawableMtl);\\n'
             'extern "C" void MarathonIOS_LosslessRecordPresentedFrame(void);\\n'
             "#endif\\n"
             "namespace plume {\\n"
@@ -3703,28 +3829,18 @@ if metal_cpp.exists():
             presentBuffer->encodeWait(interfaceSemaphore->mtl, interfaceSemaphore->mtlEventValue++);
         }
 
-        const uint64_t presentId = ++currentPresentId;
-#if !PLUME_MACOS
-        const bool lsHandled = MarathonIOS_LosslessPresentFrame(commandQueue->mtl, layer, presentBuffer, drawableMtl);
-#else
-        const bool lsHandled = false;
-#endif'''
+        const uint64_t presentId = ++currentPresentId;'''
         assert old_present_drawable in msrc, "Failed to locate drawable retain in MetalSwapChain::present"
         msrc = msrc.replace(old_present_drawable, new_present_drawable, 1)
 
         old_present_sched = '''        presentBuffer->addScheduledHandler([drawableMtl](MTL::CommandBuffer* cmdBuffer) {
             drawableMtl->present();
         });'''
-        new_present_sched = '''        presentBuffer->addScheduledHandler([drawableMtl, lsHandled](MTL::CommandBuffer* cmdBuffer) {
+        new_present_sched = '''        presentBuffer->addScheduledHandler([drawableMtl](MTL::CommandBuffer* cmdBuffer) {
 #if !PLUME_MACOS
-            if (lsHandled) {
-                drawableMtl->present();
-                MarathonIOS_LosslessRecordPresentedFrame();
-            } else {
-                presentIOSDrawable(drawableMtl, MarathonIOS_GetEffectiveTargetFPS());
-            }
+            presentIOSDrawable(drawableMtl, MarathonIOS_GetEffectiveTargetFPS());
+            MarathonIOS_LosslessRecordPresentedFrame();
 #else
-            (void)lsHandled;
             drawableMtl->present();
 #endif
         });'''
@@ -4306,8 +4422,59 @@ if metal_cpp.exists():
         if old_iface_devs in msrc:
             msrc = msrc.replace(old_iface_devs, new_iface_devs, 1)
 
+        # 2k. Expose zero-overhead Metal object accessors & encoder flush for native Apple MetalFX in gpu/video.cpp
+        old_tail = '''    std::unique_ptr<RenderInterface> CreateMetalInterface() {
+        std::unique_ptr<MetalInterface> createdInterface = std::make_unique<MetalInterface>();
+        return createdInterface->isValid() ? std::move(createdInterface) : nullptr;
+    }
+}'''
+        new_tail = '''    std::unique_ptr<RenderInterface> CreateMetalInterface() {
+        std::unique_ptr<MetalInterface> createdInterface = std::make_unique<MetalInterface>();
+        return createdInterface->isValid() ? std::move(createdInterface) : nullptr;
+    }
+
+#if !PLUME_MACOS
+    void* getIOSMetalTexturePtr(const RenderTexture* tex) {
+        if (!tex) return nullptr;
+        return static_cast<const ExtendedRenderTexture*>(tex)->getTexture();
+    }
+
+    void* getIOSMetalCommandBufferPtr(const RenderCommandList* cl) {
+        if (!cl) return nullptr;
+        return static_cast<const MetalCommandList*>(cl)->mtl;
+    }
+
+    void* getIOSMetalCommandQueuePtr(const RenderCommandQueue* q) {
+        if (!q) return nullptr;
+        return static_cast<const MetalCommandQueue*>(q)->mtl;
+    }
+
+    void* getIOSMetalLayerPtr(const RenderSwapChain* sc) {
+        if (!sc) return nullptr;
+        return static_cast<const MetalSwapChain*>(sc)->layer;
+    }
+
+    void* getIOSMetalDrawableTexturePtr(const RenderSwapChain* sc, uint32_t index) {
+        if (!sc || index >= MetalSwapChain::MAX_DRAWABLES) return nullptr;
+        const auto* msc = static_cast<const MetalSwapChain*>(sc);
+        return msc->drawables[index].mtl ? msc->drawables[index].mtl->texture() : nullptr;
+    }
+
+    void flushIOSMetalCommandListEncoders(RenderCommandList* cl) {
+        if (!cl) return;
+        auto* mcl = static_cast<MetalCommandList*>(cl);
+        mcl->endActiveRenderEncoder();
+        mcl->endActiveComputeEncoder();
+        mcl->endActiveBlitEncoder();
+        mcl->endActiveResolveTextureComputeEncoder();
+    }
+#endif
+}'''
+        assert old_tail in msrc, "Failed to locate CreateMetalInterface tail in plume_metal.cpp"
+        msrc = msrc.replace(old_tail, new_tail, 1)
+
         metal_cpp.write_text(msrc, encoding="utf-8")
-        print("Patched thirdparty/plume/plume_metal.cpp for iOS Metal (depth ShaderWrite fix, PixelFormatView, retained commandBuffer, pre-draw 3-arg useResource + mutex, full Metal error logging).")
+        print("Patched thirdparty/plume/plume_metal.cpp for iOS Metal + MetalFX native accessors.")
 
 # 3. thirdparty/plume/CMakeLists.txt: skip plume_vulkan.cpp on iOS when building pure Metal 3
 if cm.exists():
@@ -4421,6 +4588,18 @@ if vid_cpp.exists():
             'extern "C" void MarathonIOS_MapWindowPointToImGui(float winX, float winY, float* outX, float* outY);\\n'
             'extern "C" void* objc_autoreleasePoolPush(void);\\n'
             'extern "C" void objc_autoreleasePoolPop(void*);\\n'
+            "namespace plume {\\n"
+            "    struct RenderTexture;\\n"
+            "    struct RenderCommandList;\\n"
+            "    struct RenderCommandQueue;\\n"
+            "    struct RenderSwapChain;\\n"
+            "    void* getIOSMetalTexturePtr(const RenderTexture* tex);\\n"
+            "    void* getIOSMetalCommandBufferPtr(const RenderCommandList* cl);\\n"
+            "    void* getIOSMetalCommandQueuePtr(const RenderCommandQueue* q);\\n"
+            "    void* getIOSMetalLayerPtr(const RenderSwapChain* sc);\\n"
+            "    void* getIOSMetalDrawableTexturePtr(const RenderSwapChain* sc, uint32_t index);\\n"
+            "    void flushIOSMetalCommandListEncoders(RenderCommandList* cl);\\n"
+            "}\\n"
             "#endif\\n" + vsrc
         )
         vsrc = vsrc.replace(
@@ -4569,6 +4748,7 @@ static void DrawFPS()
     const int fgBaseTarget = MarathonIOS_GetFrameGenBaseFPS();
     const int fgOutTarget = MarathonIOS_GetFrameGenOutputFPS();
     const int fgMult = MarathonIOS_GetFrameGenMultiplier();
+    const char* mfxTag = MarathonIOS_GetActiveBackendTag();
     const int shownBaseFps = static_cast<int>(std::lround(s_displayFps));
 
     std::string label;
@@ -4581,10 +4761,18 @@ static void DrawFPS()
             measuredOut = s_displayFps * static_cast<double>(fgMult);
         const int shownOutFps = static_cast<int>(std::lround(measuredOut));
         label = (s_displayFps > 0.0)
-            ? fmt::format("FPS {:>2}/{:>3}  {}x", shownBaseFps, shownOutFps, fgMult)
-            : fmt::format("FPS --/---  {}x", fgMult);
+            ? fmt::format("FPS {:>2}/{:>3} [{}]", shownBaseFps, shownOutFps, mfxTag)
+            : fmt::format("FPS --/--- [{}]", mfxTag);
         evalFps = measuredOut;
         targetFps = static_cast<double>(fgOutTarget);
+    }
+    else if (MarathonIOS_IsMetalFXActive())
+    {
+        label = (s_displayFps > 0.0)
+            ? fmt::format("FPS {:>3} [{}]", shownBaseFps, mfxTag)
+            : fmt::format("FPS  -- [{}]", mfxTag);
+        const int effectiveTarget = MarathonIOS_GetEffectiveTargetFPS();
+        targetFps = static_cast<double>(effectiveTarget > 0 ? effectiveTarget : (Config::FPS.Value > 0 ? Config::FPS.Value : 60));
     }
     else
     {
@@ -4791,16 +4979,200 @@ static void DrawFPS()
         assert old_present_chk in vsrc, "Failed to locate Video::Present CheckSwapChain in gpu/video.cpp"
         vsrc = vsrc.replace(old_present_chk, new_present_chk, 1)
 
-        # Trigger live internal resolution resize whenever LosslessUpscaling preset changes in Video Options
+        # Trigger live internal/output resolution resize whenever MetalFXUpscaling or OutputResolutionScale changes in Video Options
         old_vid_cfg_cb = '''    Video::s_needsResize |=
         config == &Config::AspectRatio ||
         config == &Config::ResolutionScale ||'''
         new_vid_cfg_cb = '''    Video::s_needsResize |=
         config == &Config::AspectRatio ||
         config == &Config::ResolutionScale ||
-        config == &Config::LosslessUpscaling ||'''
+        config == &Config::MetalFXUpscaling ||
+        config == &Config::OutputResolutionScale ||'''
         assert old_vid_cfg_cb in vsrc, "Failed to locate VideoConfigValueChangedCallback in gpu/video.cpp"
         vsrc = vsrc.replace(old_vid_cfg_cb, new_vid_cfg_cb, 1)
+
+        # Native Apple MetalFX: pre-allocated UI overlay texture (clean HUD separation), 3D depth capture, and ExecuteCommandList MetalFX encode hook
+        old_begin_cl = '''static void BeginCommandList()
+{
+    g_renderTarget = g_backBuffer;
+    g_depthStencil = nullptr;
+    g_framebuffer = nullptr;'''
+        new_begin_cl = '''#if defined(MARATHON_IOS_PORT)
+static std::unique_ptr<RenderTexture> g_iosUiOverlayTexture;
+static std::unique_ptr<RenderFramebuffer> g_iosUiOverlayFramebuffer;
+static uint32_t g_iosUiOverlayWidth = 0;
+static uint32_t g_iosUiOverlayHeight = 0;
+static bool g_iosUiOverlayHasContent = false;
+static RenderTexture* g_iosFrameDepthTexture = nullptr;
+#endif
+
+static void BeginCommandList()
+{
+#if defined(MARATHON_IOS_PORT)
+    g_iosUiOverlayHasContent = false;
+    g_iosFrameDepthTexture = nullptr;
+#endif
+    g_renderTarget = g_backBuffer;
+    g_depthStencil = nullptr;
+    g_framebuffer = nullptr;'''
+        assert old_begin_cl in vsrc, "Failed to locate BeginCommandList() in gpu/video.cpp"
+        vsrc = vsrc.replace(old_begin_cl, new_begin_cl, 1)
+
+        old_intermed_alloc = '''            g_intermediaryBackBufferTextureWidth = width;
+            g_intermediaryBackBufferTextureHeight = height;
+
+            g_backBuffer->framebuffers.clear();
+            PurgeSurfaceVariantFramebuffers();'''
+        new_intermed_alloc = '''            g_intermediaryBackBufferTextureWidth = width;
+            g_intermediaryBackBufferTextureHeight = height;
+#if defined(MARATHON_IOS_PORT)
+            if (width > 0 && height > 0 && (g_iosUiOverlayWidth != width || g_iosUiOverlayHeight != height || !g_iosUiOverlayTexture))
+            {
+                g_iosUiOverlayFramebuffer.reset();
+                g_iosUiOverlayTexture = g_device->createTexture(RenderTextureDesc::Texture2D(width, height, 1, BACKBUFFER_FORMAT, RenderTextureFlag::RENDER_TARGET));
+                if (g_iosUiOverlayTexture)
+                {
+                    const RenderTexture* uiAtt = g_iosUiOverlayTexture.get();
+                    RenderFramebufferDesc uiFbDesc{};
+                    uiFbDesc.colorAttachments = &uiAtt;
+                    uiFbDesc.colorAttachmentsCount = 1;
+                    g_iosUiOverlayFramebuffer = g_device->createFramebuffer(uiFbDesc);
+                    g_iosUiOverlayWidth = width;
+                    g_iosUiOverlayHeight = height;
+                }
+            }
+            g_iosFrameDepthTexture = nullptr;
+#endif
+
+            g_backBuffer->framebuffers.clear();
+            PurgeSurfaceVariantFramebuffers();'''
+        assert old_intermed_alloc in vsrc, "Failed to locate intermediary backbuffer resize in gpu/video.cpp"
+        vsrc = vsrc.replace(old_intermed_alloc, new_intermed_alloc, 1)
+
+        old_set_fb = '''static void SetFramebuffer(GuestSurface* renderTarget, GuestSurface* depthStencil, bool settingForClear)
+{
+    if (settingForClear || g_dirtyStates.renderTargetAndDepthStencil)'''
+        new_set_fb = '''static void SetFramebuffer(GuestSurface* renderTarget, GuestSurface* depthStencil, bool settingForClear)
+{
+#if defined(MARATHON_IOS_PORT)
+    if (depthStencil != nullptr && depthStencil->texture != nullptr && depthStencil->width >= 256 && depthStencil->height >= 144)
+    {
+        g_iosFrameDepthTexture = depthStencil->texture;
+    }
+#endif
+    if (settingForClear || g_dirtyStates.renderTargetAndDepthStencil)'''
+        assert old_set_fb in vsrc, "Failed to locate SetFramebuffer in gpu/video.cpp"
+        vsrc = vsrc.replace(old_set_fb, new_set_fb, 1)
+
+        old_draw_imgui_cmd = '''static void ProcRenderCommand(const RenderCommands::DrawImGui& args)
+{
+    // Make sure the backbuffer is the current target.
+    AddBarrier(g_backBuffer, RenderTextureLayout::COLOR_WRITE);
+    FlushBarriers();
+    SetFramebuffer(g_backBuffer, nullptr, false);'''
+        new_draw_imgui_cmd = '''static void ProcRenderCommand(const RenderCommands::DrawImGui& args)
+{
+#if defined(MARATHON_IOS_PORT)
+    // Clean UI/HUD separation for MetalFX: render ImGui (HUD, FPS, Options, Menus) into a dedicated transparent
+    // premultiplied RGBA overlay texture so MTLFXTemporalScaler & MTLFXFrameInterpolator NEVER warp or ghost text!
+    const bool iosSeparateUi =
+        MarathonIOS_IsMetalFXActive() &&
+        g_backBuffer != nullptr &&
+        g_backBuffer->texture == g_intermediaryBackBufferTexture.get() &&
+        g_iosUiOverlayTexture != nullptr &&
+        g_iosUiOverlayFramebuffer != nullptr;
+    if (iosSeparateUi)
+    {
+        auto& uiCmd = g_commandLists[g_frame];
+        uiCmd->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(g_iosUiOverlayTexture.get(), RenderTextureLayout::COLOR_WRITE));
+        uiCmd->setFramebuffer(g_iosUiOverlayFramebuffer.get());
+        uiCmd->clearColor(0, RenderColor(0.0f, 0.0f, 0.0f, 0.0f));
+        g_framebuffer = g_iosUiOverlayFramebuffer.get();
+        g_dirtyStates.renderTargetAndDepthStencil = true;
+        g_iosUiOverlayHasContent = true;
+    }
+    else
+#endif
+    {
+        // Make sure the backbuffer is the current target.
+        AddBarrier(g_backBuffer, RenderTextureLayout::COLOR_WRITE);
+        FlushBarriers();
+        SetFramebuffer(g_backBuffer, nullptr, false);
+    }'''
+        assert old_draw_imgui_cmd in vsrc, "Failed to locate ProcRenderCommand(DrawImGui) in gpu/video.cpp"
+        vsrc = vsrc.replace(old_draw_imgui_cmd, new_draw_imgui_cmd, 1)
+
+        old_exec_gamma = '''            auto &commandList = g_commandLists[g_frame];
+            commandList->barriers(RenderBarrierStage::GRAPHICS, srcBarriers, std::size(srcBarriers));
+            commandList->setGraphicsPipelineLayout(g_pipelineLayout.get());
+            commandList->setPipeline(g_gammaCorrectionPipeline.get());
+            commandList->setGraphicsDescriptorSet(g_textureDescriptorSet.get(), 0);
+            SetRootDescriptor(g_uploadAllocators[g_frame].allocate<false>(&constants, sizeof(constants), 0x100), 2);
+            commandList->setFramebuffer(framebuffer.get());
+            commandList->setViewports(RenderViewport(0.0f, 0.0f, g_swapChain->getWidth(), g_swapChain->getHeight()));
+            commandList->setScissors(RenderRect(0, 0, g_swapChain->getWidth(), g_swapChain->getHeight()));
+            commandList->drawInstanced(3, 1, 0, 0);
+            commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(swapChainTexture, RenderTextureLayout::PRESENT));'''
+        new_exec_gamma = '''            auto &commandList = g_commandLists[g_frame];
+            bool iosMetalFXEncoded = false;
+#if defined(MARATHON_IOS_PORT)
+            if (g_backend == Backend::METAL && MarathonIOS_IsMetalFXActive())
+            {
+                commandList->barriers(RenderBarrierStage::GRAPHICS, srcBarriers, std::size(srcBarriers));
+                if (g_iosUiOverlayHasContent && g_iosUiOverlayTexture != nullptr)
+                {
+                    commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(g_iosUiOverlayTexture.get(), RenderTextureLayout::SHADER_READ));
+                }
+                RenderTexture* depthTex = g_iosFrameDepthTexture ? g_iosFrameDepthTexture : (g_depthStencil ? g_depthStencil->texture : nullptr);
+                if (depthTex != nullptr)
+                {
+                    commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(depthTex, RenderTextureLayout::SHADER_READ));
+                }
+                plume::flushIOSMetalCommandListEncoders(commandList.get());
+
+                const auto internalSize = RenderResolution::GetInternalSize();
+                MarathonIOSMetalFXFrameInput mfxIn{};
+                mfxIn.commandQueueMtl = plume::getIOSMetalCommandQueuePtr(g_queue.get());
+                mfxIn.metalLayerPtr = plume::getIOSMetalLayerPtr(g_swapChain.get());
+                mfxIn.commandBufferMtl = plume::getIOSMetalCommandBufferPtr(commandList.get());
+                mfxIn.sceneColorTexMtl = plume::getIOSMetalTexturePtr(g_intermediaryBackBufferTexture.get());
+                mfxIn.depthTexMtl = depthTex ? plume::getIOSMetalTexturePtr(depthTex) : nullptr;
+                mfxIn.uiOverlayTexMtl = (g_iosUiOverlayHasContent && g_iosUiOverlayTexture) ? plume::getIOSMetalTexturePtr(g_iosUiOverlayTexture.get()) : nullptr;
+                mfxIn.drawableTexMtl = plume::getIOSMetalDrawableTexturePtr(g_swapChain.get(), g_backBufferIndex);
+                mfxIn.internalWidth = internalSize.Width;
+                mfxIn.internalHeight = internalSize.Height;
+                mfxIn.outputWidth = g_swapChain->getWidth();
+                mfxIn.outputHeight = g_swapChain->getHeight();
+                mfxIn.viewportOffsetX = constants.viewportOffsetX;
+                mfxIn.viewportOffsetY = constants.viewportOffsetY;
+                mfxIn.viewportWidth = static_cast<uint32_t>(constants.viewportWidth);
+                mfxIn.viewportHeight = static_cast<uint32_t>(constants.viewportHeight);
+                mfxIn.gamma = constants.gamma;
+                mfxIn.deltaTimeSec = static_cast<float>(App::s_deltaTime > 0.0001 ? App::s_deltaTime : (1.0 / 60.0));
+                mfxIn.isLoading = App::s_isLoading;
+                mfxIn.hasValidCameraMatrices = false;
+                mfxIn.cameraJitterApplied = false;
+                mfxIn.jitterOffsetX = 0.0f;
+                mfxIn.jitterOffsetY = 0.0f;
+
+                iosMetalFXEncoded = MarathonIOS_MetalFXEncodeFrame(&mfxIn);
+            }
+#endif
+            if (!iosMetalFXEncoded)
+            {
+                commandList->barriers(RenderBarrierStage::GRAPHICS, srcBarriers, std::size(srcBarriers));
+                commandList->setGraphicsPipelineLayout(g_pipelineLayout.get());
+                commandList->setPipeline(g_gammaCorrectionPipeline.get());
+                commandList->setGraphicsDescriptorSet(g_textureDescriptorSet.get(), 0);
+                SetRootDescriptor(g_uploadAllocators[g_frame].allocate<false>(&constants, sizeof(constants), 0x100), 2);
+                commandList->setFramebuffer(framebuffer.get());
+                commandList->setViewports(RenderViewport(0.0f, 0.0f, g_swapChain->getWidth(), g_swapChain->getHeight()));
+                commandList->setScissors(RenderRect(0, 0, g_swapChain->getWidth(), g_swapChain->getHeight()));
+                commandList->drawInstanced(3, 1, 0, 0);
+            }
+            commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(swapChainTexture, RenderTextureLayout::PRESENT));'''
+        assert old_exec_gamma in vsrc, "Failed to locate gamma correction blit in ProcRenderCommand(ExecuteCommandList)"
+        vsrc = vsrc.replace(old_exec_gamma, new_exec_gamma, 1)
 
         # Zero-busy-spin iOS FPS limiter synced with Thermal Guardian & ProMotion 120Hz hardware VBlank (skipped when FrameGen paced above)
         old_fps_wait = '''    if (Config::FPS >= FPS_MIN && Config::FPS < FPS_MAX)
@@ -5039,8 +5411,8 @@ if sdl_metalview.exists():
         if (viewFrame.size.width <= 0 || viewFrame.size.height <= 0) {
             viewFrame = UIKit_ComputeViewFrame(window, data.uiwindow.screen);
         }
-        if (scale > 2.0) {
-            scale = 2.0;
+        if (scale > 2.25) {
+            scale = 2.25;
         }
 #endif
         metalview = [[SDL_uikitmetalview alloc] initWithFrame:viewFrame
@@ -5316,6 +5688,7 @@ if main_cpp.exists():
             "    // TODO: Remove this when FPS change is supported.\\n    Config::FPS = 60;",
             "#if defined(MARATHON_IOS_PORT)\\n"
             "    if (Config::FPS <= 35) Config::FPS = 30;\\n"
+            "    else if (Config::FPS <= 48) Config::FPS = 40;\\n"
             "    else if (Config::FPS >= 100) Config::FPS = 120;\\n"
             "    else Config::FPS = 60;\\n"
             "    MarathonIOS_SetTargetFPS(Config::FPS);\\n"

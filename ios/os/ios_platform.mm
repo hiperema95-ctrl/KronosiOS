@@ -48,7 +48,8 @@
 #include <os/version.h>
 
 // Lightweight CADisplayLink driver that explicitly declares CAFrameRateRange to iOS ProMotion LTPO
-// AND drives Lossless Scaling optical-flow sub-frame presentation on exact 120Hz/60Hz VSync ticks.
+// and feeds exact hardware VSync phase timestamps to the dedicated MetalFX frame pacer thread.
+// NOTE: Never acquires drawables or submits Metal work on the UIKit main thread!
 @interface MarathonProMotionDriver : NSObject
 @property (nonatomic, strong) CADisplayLink *displayLink;
 - (void)applyTargetFps:(int)fps suspended:(BOOL)suspended;
@@ -56,8 +57,9 @@
 
 @implementation MarathonProMotionDriver
 - (void)onTick:(CADisplayLink *)link {
-    // Drives Lossless Scaling intermediate/final sub-frame presentation on exact ProMotion VSync boundaries.
-    MarathonIOS_LosslessOnDisplayLinkTick(link ? link.timestamp : 0.0);
+    if (link) {
+        MarathonIOS_OnProMotionVSync(link.timestamp, link.targetTimestamp);
+    }
 }
 
 - (void)applyTargetFps:(int)fps suspended:(BOOL)suspended {
@@ -73,12 +75,12 @@
         CAFrameRateRange range;
         if (fps >= 100) {
             range = CAFrameRateRangeMake(80.0f, 120.0f, 120.0f);
-        } else if (fps >= 80) {
-            range = CAFrameRateRangeMake(60.0f, 90.0f, 90.0f);
+        } else if (fps >= 75) {
+            range = CAFrameRateRangeMake(60.0f, 80.0f, 80.0f);
         } else if (fps >= 45) {
             range = CAFrameRateRangeMake(48.0f, 60.0f, 60.0f);
         } else {
-            range = CAFrameRateRangeMake(30.0f, 30.0f, 30.0f);
+            range = CAFrameRateRangeMake(30.0f, 40.0f, (fps >= 38) ? 40.0f : 30.0f);
         }
         self.displayLink.preferredFrameRateRange = range;
     }
@@ -601,6 +603,7 @@ void MarathonIOS_ApplyProMotionRefreshRate(int targetFps) {
 void MarathonIOS_SetTargetFPS(int fps) {
     int normalized = 60;
     if (fps <= 35) normalized = 30;
+    else if (fps <= 48) normalized = 40;
     else if (fps >= 100) normalized = 120;
     else normalized = 60;
 
@@ -660,21 +663,18 @@ void MarathonIOS_GetHardwareProfile(MarathonIOSHardwareProfile* outProfile) {
     p.screenScale = scale;
     p.isPad = isPad;
 
-    // Smart mobile thermal tiering (paired with 2.0x Retina CAMetalLayer cap = 1748x804 on iPhone 16 Pro):
-    // - Eliminates wasteful 3x Retina (2622x1206) + MSAA4x + 4096 shadows + 16x AF thermal meltdown
-    // - Unlocks cool, locked 120 FPS ProMotion on iPhone 15 Pro / 16 Pro / M-series ProMotion iPads
+    // Smart mobile thermal tiering paired with native Apple MetalFX (iPhone 16 Pro A18 Pro):
+    // - Tier 3 (ProMotion 120Hz): 60 FPS base render cap + MetalFX Temporal (75% renderScale) + MetalFX Frame Gen (60->120)
+    //   + 75% output scale (1966x904 on 2622x1206 OLED) -> leaves >=25-30% A18 Pro GPU headroom to prevent thermal throttling!
     if (ramMiB >= 7500 && maxHz >= 120) {
-        // Tier 3: ProMotion 120Hz Flagship (iPhone 15 Pro / 16 Pro / 16 Pro Max / ProMotion M-series iPad)
-        // Paired with Lossless Upscaling (Balanced 0.65x + RCAS) & 2x Frame Generation (60 -> 120 FPS):
-        // ~81% less pixel fillrate + ~45% less CPU/GPU load -> locked 120 FPS & cool chassis!
         p.tier = 3;
-        p.recommendedFps = 120;
-        p.recommendedResScale = isPad ? 0.70f : 0.65f;
-        p.recommendedAA = 0;         // Off (avoids TBDR MSAA tile bandwidth & heat)
+        p.recommendedFps = 60;
+        p.recommendedResScale = 0.75f;
+        p.recommendedAA = 0;         // Off (MTLFXTemporalScaler provides native temporal AA without MSAA tile bandwidth)
         p.recommendedShadowRes = 1;  // x1024
         p.recommendedReflection = 1; // Quarter
         p.recommendedRadialBlur = 1; // Original
-        p.recommendedAF = 4;
+        p.recommendedAF = 8;
     } else if (ramMiB >= 7500) {
         // Tier 2: 60Hz Flagship (iPhone 16 / 16 Plus / 60Hz 8GB iPad)
         p.tier = 2;

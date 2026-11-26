@@ -338,19 +338,20 @@ test('iOS lifecycle pause/resume, hardware thermal auto-config, 30/60/120 FPS Pr
   assert.match(vcHeader, /typedef struct MarathonIOSHardwareProfile/);
   assert.match(platformMm, /void MarathonIOS_GetHardwareProfile\(MarathonIOSHardwareProfile\* outProfile\)/);
   assert.match(patcher, /ApplyIOSHardwareDefaults/);
-  assert.match(patcher, /ios_hw_tuned_v3/);
+  assert.match(patcher, /ios_hw_tuned_v4/);
   assert.match(patcher, /std::this_thread::sleep_until\(s_next\)/);
 
-  // 3. 30 / 60 / 120 FPS selector in Options Menu & ProMotion LTPO pacing
+  // 3. 30 / 40 / 60 / 120 FPS selector in Options Menu & ProMotion LTPO pacing
   assert.match(plist, /<key>CADisableMinimumFrameDurationOnPhone<\/key>\s*<true\/>/);
   assert.match(patcher, /MARATHON_IOS_FPS_SELECTOR/);
   assert.match(patcher, /DrawOption\(rowCount\+\+, &Config::FPS, true, nullptr, 30, 60, 120, false\);/);
-  assert.match(patcher, /kIOSFpsPresets\[3\] = \{ 30, 60, 120 \}/);
+  assert.match(patcher, /kIOSFpsPresets\[4\] = \{ 30, 40, 60, 120 \}/);
   assert.match(patcher, /valueText = fmt::format\("\{\} FPS", config->Value\);/);
   assert.match(patcher, /presentIOSDrawable\(drawableMtl, MarathonIOS_GetEffectiveTargetFPS\(\)\)/);
   assert.match(patcher, /presentAfterMinimumDuration:\(1\.0 \/ 32\.0\)/);
+  assert.match(patcher, /presentAfterMinimumDuration:\(1\.0 \/ 42\.0\)/);
   assert.match(patcher, /presentAfterMinimumDuration:\(1\.0 \/ 65\.0\)/);
-  assert.match(patcher, /presentAfterMinimumDuration:\(1\.0 \/ 95\.0\)/);
+  assert.match(patcher, /presentAfterMinimumDuration:\(1\.0 \/ 85\.0\)/);
   assert.match(patcher, /if \(Config::FPS <= 35\) Config::FPS = 30;/);
 
   // 4. Ultra-responsive direct multi-touch virtual controller (no UIButton lag, ABXY thumb-slide, pre-warmed UIImpactFeedbackGenerator)
@@ -377,18 +378,18 @@ test('iPhone 16 Pro 120 FPS ProMotion driver, Thermal Guardian, Metal useResourc
   assert.match(platformMm, /CAFrameRateRangeMake\(80\.0f, 120\.0f, 120\.0f\)/);
   assert.match(platformMm, /NSProcessInfoThermalStateDidChangeNotification/);
   assert.match(platformMm, /p\.tier = 3;/);
-  assert.match(platformMm, /p\.recommendedFps = 120;/);
+  assert.match(platformMm, /p\.recommendedFps = 60;/);
   assert.match(platformMm, /QOS_CLASS_BACKGROUND/);
 
-  // 2. Batched Metal useResources(), 2.0x Retina cap, triple buffering, framebufferOnly AFBC, throttled UIKit layout sync
+  // 2. Batched Metal useResources(), OutputResolutionScale, triple buffering, permanent framebufferOnly=YES AFBC, throttled UIKit layout sync
   assert.match(patcher, /bindIOSAddressableResources/);
   assert.match(patcher, /->useResources\(/);
   assert.match(patcher, /metalLayer\.maximumDrawableCount = 3;/);
-  assert.match(patcher, /const BOOL wantFramebufferOnly = MarathonIOS_NeedsReadableDrawable\(\) \? NO : YES;/);
-  assert.match(patcher, /metalLayer\.framebufferOnly = wantFramebufferOnly;/);
-  assert.match(patcher, /\(native > 2\.0\) \? 2\.0 : native/);
+  assert.match(patcher, /metalLayer\.framebufferOnly = YES;/);
+  assert.doesNotMatch(patcher, /MarathonIOS_NeedsReadableDrawable/);
+  assert.match(patcher, /MarathonIOS_GetEffectiveContentScale\(\(double\)native\)/);
   assert.match(patcher, /g_iosMetalLastSyncSec/);
-  assert.match(patcher, /if \(scale > 2\.0\)/);
+  assert.match(patcher, /if \(scale > 2\.25\)/);
   assert.match(patcher, /setDef\(Config::TripleBuffering, ETripleBuffering::On\);/);
   assert.match(patcher, /bufferCount = 3;/);
 
@@ -453,53 +454,71 @@ test('in-game ShowFPS Video option, 6-language localization, top-left safe-area 
   }
 });
 
-test('native Metal Lossless Scaling (RCAS upscaling + Optical-Flow 2x/3x/2x Eco Frame Generation) is wired end-to-end', () => {
+test('native Apple MetalFX (MTLFXTemporalScaler + MTLFXSpatialScaler + MTLFXFrameInterpolator + clean UI pass + RG16Float motion vectors) is wired end-to-end', () => {
   const files = generatePortRepository(DEFAULT_BUILD_CONFIG);
   const patcher = files.find((f) => f.path === 'scripts/apply_ios_port.sh')!.content;
   const platformMm = files.find((f) => f.path === 'ios/os/ios_platform.mm')!.content;
+  const iosCmake = files.find((f) => f.path === 'cmake/MarathonRecompIOS.cmake')!.content;
   const lsHeader = files.find((f) => f.path === 'ios/include/ios_lossless_scaler.h')!.content;
   const lsMm = files.find((f) => f.path === 'ios/ios_lossless_scaler.mm')!.content;
 
-  // 1. Pure Metal.framework runtime MSL shaders (zero MetalFX external link risk, valid C++11 raw string literal)
-  assert.match(lsMm, /static const char \* const kLosslessScalerMSL = R"MSL\(/);
+  // 1. Weak-linked MetalFX framework & compile-time/runtime guards for Xcode 16 CI + iOS 26/27 hardware
+  assert.match(iosCmake, /MARATHON_IOS_METALFX=1/);
+  assert.match(iosCmake, /"-weak_framework MetalFX"/);
+  assert.match(lsMm, /#if __has_include\(<MetalFX\/MetalFX\.h>\)/);
+  assert.match(lsMm, /#if __has_include\(<MetalFX\/MTLFXFrameInterpolator\.h>\)/);
+  assert.match(lsMm, /MTLFXTemporalScalerDescriptor/);
+  assert.match(lsMm, /MTLFXSpatialScalerDescriptor/);
+  assert.match(lsMm, /NSClassFromString\(@"MTLFXFrameInterpolatorDescriptor"\)/);
+  assert.match(lsMm, /static const char \* const kMetalFXHelperMSL = R"MSL\(/);
   assert.doesNotMatch(lsMm, /@R"MSL\(/);
-  assert.match(lsMm, /kernel void ls_luma_downsample4x/);
-  assert.match(lsMm, /kernel void ls_optical_flow/);
-  assert.match(lsMm, /kernel void ls_flow_smooth/);
-  assert.match(lsMm, /fragment half4 ls_present_fs/);
-  assert.match(lsMm, /rcasSharpness/);
-  assert.match(lsMm, /if \(layer\.framebufferOnly\)/);
-  assert.match(lsMm, /MarathonIOS_LosslessOnDisplayLinkTick/);
-  assert.match(lsMm, /ComputeEffectiveFGSchedule/);
+  assert.match(lsMm, /kernel void mfx_prep_color_depth/);
+  assert.match(lsMm, /kernel void mfx_motion_vectors/);
+  assert.match(lsMm, /fragment half4 mfx_composite_fs/);
+  assert.match(lsMm, /MTLPixelFormatRG16Float/);
+  assert.match(lsMm, /MTLStorageModePrivate/);
+  assert.match(lsMm, /MarathonIOSMetalFXPacer/);
+  assert.match(lsMm, /encodeSignalEvent:sharedEvent/);
+  assert.match(lsMm, /encodeWaitForEvent:job\.sharedEvent/);
 
-  // 2. C API header & ProMotion CADisplayLink / lifecycle suspend integration
-  assert.match(lsHeader, /MARATHON_IOS_UPSCALE_BALANCED = 2/);
-  assert.match(lsHeader, /MARATHON_IOS_FG_X2_120 = 1/);
-  assert.match(lsHeader, /MARATHON_IOS_FG_X3_120 = 2/);
-  assert.match(lsHeader, /MARATHON_IOS_FG_X2_ECO60 = 3/);
+  // 2. C API header & ProMotion CADisplayLink (zero nextDrawable on main thread!) / lifecycle suspend integration
+  assert.match(lsHeader, /typedef struct MarathonIOSMetalFXConfig/);
+  assert.match(lsHeader, /typedef struct MarathonIOSMetalFXFrameInput/);
+  assert.match(lsHeader, /bool MarathonIOS_MetalFXEncodeFrame\(const MarathonIOSMetalFXFrameInput\* input\);/);
+  assert.match(lsHeader, /void MarathonIOS_GetHaltonJitter\(uint64_t frameIndex, float\* outX, float\* outY\);/);
+  assert.match(lsHeader, /double MarathonIOS_GetEffectiveContentScale\(double nativeScale\);/);
   assert.match(platformMm, /#include <ios_lossless_scaler\.h>/);
-  assert.match(platformMm, /MarathonIOS_LosslessOnDisplayLinkTick\(/);
+  assert.match(platformMm, /MarathonIOS_OnProMotionVSync\(link\.timestamp, link\.targetTimestamp\);/);
+  assert.doesNotMatch(platformMm, /MarathonIOS_LosslessOnDisplayLinkTick/);
   assert.match(platformMm, /MarathonIOS_LosslessOnSuspendChanged\(suspended\);/);
   assert.match(platformMm, /void MarathonIOS_NotifyFrameGenChanged\(void\)/);
   assert.match(platformMm, /const int fgOut = MarathonIOS_GetFrameGenOutputFPS\(\);/);
 
-  // 3. In-game Video Options (6 languages), Plume present hook, pre-CheckSwapChain base pacing, ShowFPS base/out HUD, CMake source
-  assert.match(patcher, /enum class ELosslessUpscaling : uint32_t/);
+  // 3. In-game Video Options (6 languages), clean UI overlay separation, Plume accessors, pre-CheckSwapChain pacing, ShowFPS badge
+  assert.match(patcher, /enum class EMetalFXUpscaling : uint32_t/);
   assert.match(patcher, /enum class EFrameGeneration : uint32_t/);
-  assert.match(patcher, /CONFIG_DEFINE_ENUM_LOCALISED\("Video", ELosslessUpscaling, LosslessUpscaling/);
+  assert.match(patcher, /enum class EOutputResolutionScale : uint32_t/);
+  assert.match(patcher, /CONFIG_DEFINE_ENUM_LOCALISED\("Video", EMetalFXUpscaling, MetalFXUpscaling/);
   assert.match(patcher, /CONFIG_DEFINE_ENUM_LOCALISED\("Video", EFrameGeneration, FrameGeneration/);
-  assert.match(patcher, /CONFIG_DEFINE_ENUM_TEMPLATE\(ELosslessUpscaling\)/);
+  assert.match(patcher, /CONFIG_DEFINE_ENUM_LOCALISED\("Video", EOutputResolutionScale, OutputResolutionScale/);
+  assert.match(patcher, /CONFIG_DEFINE_ENUM_TEMPLATE\(EMetalFXUpscaling\)/);
   assert.match(patcher, /CONFIG_DEFINE_ENUM_TEMPLATE\(EFrameGeneration\)/);
-  assert.match(patcher, /CONFIG_DEFINE_LOCALE\(LosslessUpscaling\)/);
-  assert.match(patcher, /CONFIG_DEFINE_LOCALE\(FrameGeneration\)/);
-  assert.match(patcher, /"Bilanciato \(65%\)"/);
-  assert.match(patcher, /"3x \(40->120\)"/);
-  assert.match(patcher, /DrawOption\(rowCount\+\+, &Config::LosslessUpscaling, true\);/);
+  assert.match(patcher, /CONFIG_DEFINE_ENUM_TEMPLATE\(EOutputResolutionScale\)/);
+  assert.match(patcher, /CONFIG_DEFINE_LOCALE\(MetalFXUpscaling\)/);
+  assert.match(patcher, /CONFIG_DEFINE_LOCALE\(OutputResolutionScale\)/);
+  assert.match(patcher, /DrawOption\(rowCount\+\+, &Config::MetalFXUpscaling, true\);/);
   assert.match(patcher, /DrawOption\(rowCount\+\+, &Config::FrameGeneration, true\);/);
-  assert.match(patcher, /MarathonIOS_LosslessPresentFrame\(commandQueue->mtl, layer, presentBuffer, drawableMtl\)/);
+  assert.match(patcher, /DrawOption\(rowCount\+\+, &Config::OutputResolutionScale, true\);/);
+  assert.match(patcher, /g_iosUiOverlayTexture/);
+  assert.match(patcher, /g_iosUiOverlayFramebuffer/);
+  assert.match(patcher, /g_iosFrameDepthTexture/);
+  assert.match(patcher, /flushIOSMetalCommandListEncoders/);
+  assert.match(patcher, /MarathonIOS_MetalFXEncodeFrame\(&mfxIn\)/);
+  assert.doesNotMatch(patcher, /MarathonIOS_LosslessPresentFrame/);
   assert.match(patcher, /const int32_t fgBaseFps = MarathonIOS_GetFrameGenBaseFPS\(\)/);
-  assert.match(patcher, /config == &Config::LosslessUpscaling \|\|/);
-  assert.match(patcher, /FPS \{:>2\}\/\{:>3\}  \{\}x/);
+  assert.match(patcher, /config == &Config::MetalFXUpscaling \|\|/);
+  assert.match(patcher, /config == &Config::OutputResolutionScale \|\|/);
+  assert.match(patcher, /MarathonIOS_GetActiveBackendTag\(\)/);
   assert.match(patcher, /"os\/ios\/ios_lossless_scaler\.mm"/);
 });
 
