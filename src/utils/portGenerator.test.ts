@@ -338,19 +338,20 @@ test('iOS lifecycle pause/resume, hardware thermal auto-config, 30/60/120 FPS Pr
   assert.match(vcHeader, /typedef struct MarathonIOSHardwareProfile/);
   assert.match(platformMm, /void MarathonIOS_GetHardwareProfile\(MarathonIOSHardwareProfile\* outProfile\)/);
   assert.match(patcher, /ApplyIOSHardwareDefaults/);
-  assert.match(patcher, /ios_hw_tuned_v5/);
+  assert.match(patcher, /ios_hw_tuned_v6/);
   assert.match(patcher, /s_iosPaceNext/);
   assert.match(patcher, /#if !defined\(MARATHON_IOS_PORT\)/);
 
-  // 3. 30 / 40 / 60 / 120 FPS selector in Options Menu & ProMotion 120Hz pacing (ZERO presentAfterMinimumDuration stalls!)
+  // 3. 60 / 120 FPS selector in Options Menu (no 30/40 slow-motion), hidden desktop WindowSize/Monitor/Fullscreen rows, & ProMotion 120Hz pacing
   assert.match(plist, /<key>CADisableMinimumFrameDurationOnPhone<\/key>\s*<true\/>/);
   assert.match(patcher, /MARATHON_IOS_FPS_SELECTOR/);
-  assert.match(patcher, /DrawOption\(rowCount\+\+, &Config::FPS, true, nullptr, 30, 60, 120, false\);/);
-  assert.match(patcher, /kIOSFpsPresets\[4\] = \{ 30, 40, 60, 120 \}/);
+  assert.match(patcher, /DrawOption\(rowCount\+\+, &Config::FPS, true, nullptr, 60, 60, 120, false\);/);
+  assert.match(patcher, /kIOSFpsPresets\[2\] = \{ 60, 120 \}/);
   assert.match(patcher, /valueText = fmt::format\("\{\} FPS", config->Value\);/);
   assert.match(patcher, /presentIOSDrawable\(drawableMtl, MarathonIOS_GetEffectiveTargetFPS\(\)\)/);
   assert.doesNotMatch(patcher, /\[drawable presentAfterMinimumDuration:/);
-  assert.match(patcher, /if \(Config::FPS <= 35\) Config::FPS = 30;/);
+  assert.match(patcher, /if \(Config::FPS >= 100\) Config::FPS = 120;/);
+  assert.match(patcher, /#if !defined\(MARATHON_IOS_PORT\)\s*DrawOption\(rowCount\+\+, &Config::WindowSize/);
 
   // 4. Ultra-responsive direct multi-touch virtual controller (no UIButton lag, ABXY thumb-slide, pre-warmed UIImpactFeedbackGenerator)
   assert.match(vcMm, /struct TrackedTouchSlot/);
@@ -488,6 +489,13 @@ test('native Apple MetalFX (MTLFXTemporalScaler + MTLFXSpatialScaler + MTLFXFram
   assert.match(lsHeader, /bool MarathonIOS_MetalFXEncodeFrame\(const MarathonIOSMetalFXFrameInput\* input\);/);
   assert.match(lsHeader, /void MarathonIOS_GetHaltonJitter\(uint64_t frameIndex, float\* outX, float\* outY\);/);
   assert.match(lsHeader, /double MarathonIOS_GetEffectiveContentScale\(double nativeScale\);/);
+  assert.match(lsHeader, /void MarathonIOS_PerfLogTick1Hz\(void\);/);
+  assert.match(lsHeader, /void MarathonIOS_PerfRecordBaseFrame\(/);
+  assert.match(lsHeader, /void MarathonIOS_PerfRecordPlumePresent\(void\);/);
+  assert.match(lsHeader, /void MarathonIOS_PerfRecordPlumeGpuMs\(double gpuMs\);/);
+  assert.match(platformMm, /ios_perf\.log/);
+  assert.match(platformMm, /ios_perf_prev\.log/);
+  assert.match(platformMm, /MarathonIOS_PerfLogTick1Hz\(\);/);
   assert.match(platformMm, /#include <ios_lossless_scaler\.h>/);
   assert.match(platformMm, /MarathonIOS_OnProMotionVSync\(link\.timestamp, link\.targetTimestamp\);/);
   assert.doesNotMatch(platformMm, /MarathonIOS_LosslessOnDisplayLinkTick/);

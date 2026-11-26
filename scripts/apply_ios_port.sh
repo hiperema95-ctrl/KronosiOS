@@ -887,21 +887,53 @@ if opt_c.exists():
             '#endif',
             1
         )
-        old_res_row = "            DrawOption(rowCount++, &Config::ResolutionScale, true, nullptr, 0.25f, 1.0f, 2.0f);"
-        new_res_row = (
-            "#if defined(MARATHON_IOS_PORT)\n"
-            "            DrawOption(rowCount++, &Config::ResolutionScale, true, nullptr, 0.50f, 0.75f, 1.00f);\n"
-            "#else\n"
-            "            DrawOption(rowCount++, &Config::ResolutionScale, true, nullptr, 0.25f, 1.0f, 2.0f);\n"
-            "#endif"
-        )
-        assert old_res_row in osrc, "Failed to locate ResolutionScale DrawOption in ui/options_menu.cpp"
-        osrc = osrc.replace(old_res_row, new_res_row, 1)
+        old_vid_top = '''        case OptionsMenuCategory::Video:
+        {
+            DrawOption(rowCount++, &Config::WindowSize, !Config::Fullscreen,
+                &Localise("Options_Desc_NotAvailableFullscreen"),
+                0, 0, (int)GameWindow::s_windowModes.size() - 1, false);
+
+            auto displayCount = GameWindow::GetDisplayCount();
+            auto canChangeMonitor = Config::Fullscreen && displayCount > 1;
+            auto monitorReason = &Localise("Options_Desc_NotAvailableWindowed");
+
+            if (Config::Fullscreen && displayCount <= 1)
+                monitorReason = &Localise("Options_Desc_NotAvailableHardware");
+
+            DrawOption(rowCount++, &Config::Monitor, canChangeMonitor, monitorReason, 0, 0, displayCount - 1, false);
+            DrawOption(rowCount++, &Config::AspectRatio, true);
+            DrawOption(rowCount++, &Config::ResolutionScale, true, nullptr, 0.25f, 1.0f, 2.0f);
+            DrawOption(rowCount++, &Config::Fullscreen, true);'''
+        new_vid_top = '''        case OptionsMenuCategory::Video:
+        {
+#if !defined(MARATHON_IOS_PORT)
+            DrawOption(rowCount++, &Config::WindowSize, !Config::Fullscreen,
+                &Localise("Options_Desc_NotAvailableFullscreen"),
+                0, 0, (int)GameWindow::s_windowModes.size() - 1, false);
+
+            auto displayCount = GameWindow::GetDisplayCount();
+            auto canChangeMonitor = Config::Fullscreen && displayCount > 1;
+            auto monitorReason = &Localise("Options_Desc_NotAvailableWindowed");
+
+            if (Config::Fullscreen && displayCount <= 1)
+                monitorReason = &Localise("Options_Desc_NotAvailableHardware");
+
+            DrawOption(rowCount++, &Config::Monitor, canChangeMonitor, monitorReason, 0, 0, displayCount - 1, false);
+#endif
+            DrawOption(rowCount++, &Config::AspectRatio, true);
+#if defined(MARATHON_IOS_PORT)
+            DrawOption(rowCount++, &Config::ResolutionScale, true, nullptr, 0.50f, 0.85f, 1.00f);
+#else
+            DrawOption(rowCount++, &Config::ResolutionScale, true, nullptr, 0.25f, 1.0f, 2.0f);
+            DrawOption(rowCount++, &Config::Fullscreen, true);
+#endif'''
+        assert old_vid_top in osrc, "Failed to locate Video top DrawOption rows in ui/options_menu.cpp"
+        osrc = osrc.replace(old_vid_top, new_vid_top, 1)
 
         old_fps_row = "            // TODO DrawOption(rowCount++, &Config::FPS, true, nullptr, FPS_MIN, 120, FPS_MAX);"
         new_fps_row = (
             "#if defined(MARATHON_IOS_PORT)\n"
-            "            DrawOption(rowCount++, &Config::FPS, true, nullptr, 30, 60, 120, false);\n"
+            "            DrawOption(rowCount++, &Config::FPS, true, nullptr, 60, 60, 120, false);\n"
             "            DrawOption(rowCount++, &Config::ShowFPS, true);\n"
             "            DrawOption(rowCount++, &Config::MetalFXUpscaling, true);\n"
             "            DrawOption(rowCount++, &Config::FrameGeneration, true);\n"
@@ -925,17 +957,19 @@ if opt_c.exists():
 #if defined(MARATHON_IOS_PORT)
                             if (static_cast<const void*>(config) == static_cast<const void*>(&Config::FPS))
                             {
-                                static constexpr int32_t kIOSFpsPresets[4] = { 30, 40, 60, 120 };
-                                const int presetCount = (Config::FrameGeneration.Value == EFrameGeneration::On) ? 3 : 4;
-                                int idx = 2;
-                                if (config->Value <= 35) idx = 0;
-                                else if (config->Value <= 48) idx = 1;
-                                else if (config->Value <= 90) idx = 2;
-                                else idx = (presetCount > 3) ? 3 : 2;
-                                if (decrement) idx = (idx + presetCount - 1) % presetCount;
-                                else if (increment) idx = (idx + 1) % presetCount;
+                                // Strictly 60 FPS or 120 FPS (30/40 FPS cause Sonic '06 physics slow-motion!)
+                                static constexpr int32_t kIOSFpsPresets[2] = { 60, 120 };
+                                int idx = (config->Value >= 100) ? 1 : 0;
+                                if (decrement || increment)
+                                    idx ^= 1;
                                 config->Value = kIOSFpsPresets[idx];
-                                MarathonIOS_SetBaseFpsLimit(config->Value);
+                                if (config->Value >= 120 && Config::FrameGeneration.Value == EFrameGeneration::On)
+                                {
+                                    // Switching to native 120 FPS turns Frame Generation Off cleanly
+                                    Config::FrameGeneration.Value = EFrameGeneration::Off;
+                                    MarathonIOS_SetFrameGenMode(0);
+                                }
+                                MarathonIOS_SetBaseFpsLimit(60);
                                 MarathonIOS_SetTargetFPS(config->Value);
                                 MarathonIOS_NotifyFrameGenChanged();
                             }
@@ -1385,6 +1419,9 @@ CONFIG_DEFINE_ENUM_TEMPLATE(EOutputResolutionScale)
 #if defined(MARATHON_IOS_PORT)
         def->Value = std::clamp(def->Value, 0.50f, 1.00f);
         MarathonIOS_SetRenderScale(def->Value);
+        char msg[64];
+        std::snprintf(msg, sizeof(msg), "ResolutionScale=%.2f", def->Value);
+        MarathonIOS_PerfLogEvent("CONFIG", msg);
 #else
         def->Value = std::clamp(def->Value, 0.25f, 2.0f);
 #endif
@@ -1406,9 +1443,13 @@ CONFIG_DEFINE_ENUM_TEMPLATE(EOutputResolutionScale)
     Config::FPS.Callback = [](ConfigDef<int32_t>* def)
     {
         if (!def) return;
-        MarathonIOS_SetBaseFpsLimit(def->Value);
+        def->Value = (def->Value >= 100) ? 120 : 60;
+        MarathonIOS_SetBaseFpsLimit(60);
         MarathonIOS_SetTargetFPS(def->Value);
         MarathonIOS_NotifyFrameGenChanged();
+        char msg[64];
+        std::snprintf(msg, sizeof(msg), "Config::FPS=%d", def->Value);
+        MarathonIOS_PerfLogEvent("CONFIG", msg);
     };
     Config::MetalFXUpscaling.Callback = [](ConfigDef<EMetalFXUpscaling>* def)
     {
@@ -1419,7 +1460,7 @@ CONFIG_DEFINE_ENUM_TEMPLATE(EOutputResolutionScale)
     {
         if (!def) return;
         MarathonIOS_SetFrameGenMode(static_cast<int>(def->Value));
-        if (def->Value == EFrameGeneration::On && Config::FPS.Value > 60)
+        if (def->Value == EFrameGeneration::On && Config::FPS.Value != 60)
         {
             Config::FPS.Value = 60;
             MarathonIOS_SetBaseFpsLimit(60);
@@ -1448,7 +1489,7 @@ CONFIG_DEFINE_ENUM_TEMPLATE(EOutputResolutionScale)
         SyncIOSMetalFXFromConfig();
         Config::Save();
         std::error_code tuneEc;
-        std::ofstream(GetUserPath() / "ios_hw_tuned_v5") << "5";
+        std::ofstream(GetUserPath() / "ios_hw_tuned_v6") << "6";
 #else
         Config::Save();
 #endif
@@ -1469,27 +1510,34 @@ CONFIG_DEFINE_ENUM_TEMPLATE(EOutputResolutionScale)
 #if defined(MARATHON_IOS_PORT)
     {
         std::error_code tuneEc;
-        auto markerPath = GetUserPath() / "ios_hw_tuned_v5";
+        auto markerPath = GetUserPath() / "ios_hw_tuned_v6";
         if (!std::filesystem::exists(markerPath, tuneEc))
         {
             MarathonIOSHardwareProfile prof{};
             MarathonIOS_GetHardwareProfile(&prof);
-            // One-time migration to crisp v5 Spatial+CAS + Two-Tier 2x FG + fixed 120Hz pacer
+            // One-time v6 upgrade: eliminates slow-motion 30/40 FPS values & keeps crisp defaults
             const bool isOldHeavyDefault =
                 std::fabs(Config::ResolutionScale.Value - 1.0f) < 0.01f &&
                 Config::AntiAliasing.Value != EAntiAliasing::Off;
+            const bool isLegacySlowFps = (Config::FPS.Value < 60);
             const bool isTier3Upgrade = (prof.tier >= 3);
             ApplyIOSHardwareDefaults(isOldHeavyDefault || isTier3Upgrade);
-            if (isOldHeavyDefault || isTier3Upgrade)
+            if (isLegacySlowFps)
+            {
+                Config::FPS.Value = 60;
+            }
+            if (isOldHeavyDefault || isTier3Upgrade || isLegacySlowFps)
             {
                 Config::Save();
             }
-            std::ofstream(markerPath) << "5";
+            std::ofstream(markerPath) << "6";
         }
         else
         {
             ApplyIOSHardwareDefaults(false);
         }
+        if (Config::FPS.Value < 90) Config::FPS.Value = 60;
+        else Config::FPS.Value = 120;
         SyncIOSMetalFXFromConfig();
     }
 #endif
@@ -2266,6 +2314,7 @@ if mm.exists():
 
 extern "C" double MarathonIOS_GetEffectiveContentScale(double nativeScale);
 extern "C" float MarathonIOS_GetOutputResolutionScale(void);
+extern "C" void MarathonIOS_PerfLogEvent(const char* tag, const char* msg);
 
 namespace plume {
 
@@ -2275,8 +2324,16 @@ void presentIOSDrawable(void *drawablePtr, int targetFps) {
     if (!drawable) return;
     // CRITICAL: Always call plain [drawable present]!
     // Using presentAfterMinimumDuration stacked on top of the CPU frame pacer stalls CoreAnimation's
-    // 3-drawable ring across VBlanks and collapses 60 FPS -> 33-40 FPS and 30 FPS -> 22 FPS!
+    // 3-drawable ring across VBlanks and collapses 60 FPS -> 33-40 FPS!
     [drawable present];
+}
+
+double getIOSCommandBufferGpuMs(void *cmdBufPtr) {
+    id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>)cmdBufPtr;
+    if (!cb) return 0.0;
+    const double gs = cb.GPUStartTime;
+    const double ge = cb.GPUEndTime;
+    return (ge > gs) ? ((ge - gs) * 1000.0) : 0.0;
 }
 
 RenderDeviceVendor getRenderDeviceVendor(uint64_t) {
@@ -2376,6 +2433,12 @@ static void syncIOSMetalViewOnMainThread(CAMetalLayer *metalLayer) {
         CGSize expected = CGSizeMake((CGFloat)w, (CGFloat)h);
         if (!CGSizeEqualToSize(metalLayer.drawableSize, expected)) {
             metalLayer.drawableSize = expected;
+            char msg[160];
+            std::snprintf(msg, sizeof(msg), "CAMetalLayer drawableSize -> %ux%u (bounds=%.0fx%.0fpt scale=%.2f outScale=%.2f maxDrw=%lu)",
+                          w, h, bounds.size.width, bounds.size.height, (double)scale,
+                          (double)MarathonIOS_GetOutputResolutionScale(),
+                          (unsigned long)metalLayer.maximumDrawableCount);
+            MarathonIOS_PerfLogEvent("SWAPCHAIN", msg);
         }
         g_iosMetalCachedW.store(w, std::memory_order_release);
         g_iosMetalCachedH.store(h, std::memory_order_release);
@@ -2549,18 +2612,22 @@ if metal_cpp.exists():
             "// MARATHON_PLUME_IOS_METAL_PATCH\n"
             "#if !PLUME_MACOS\n"
             "#include <atomic>\n"
+            "#include <chrono>\n"
             "#include <cstdio>\n"
             "#include <vector>\n"
             'extern "C" void MarathonIOS_LogLine(const char* tag, const char* msg);\n'
             'extern "C" bool MarathonIOS_IsAppSuspended(void);\n'
             'extern "C" int MarathonIOS_GetTargetFPS(void);\n'
             'extern "C" int MarathonIOS_GetEffectiveTargetFPS(void);\n'
-            'extern "C" void MarathonIOS_LosslessRecordPresentedFrame(void);\n'
+            'extern "C" void MarathonIOS_PerfRecordPlumePresent(void);\n'
+            'extern "C" void MarathonIOS_PerfRecordPlumeGpuMs(double gpuMs);\n'
+            'extern "C" void MarathonIOS_PerfRecordWaitFenceMs(double waitMs);\n'
             "#endif\n"
             "namespace plume {\n"
             "#if !PLUME_MACOS\n"
             "    void getIOSMetalLayerSize(void *layerPtr, uint32_t &dstWidth, uint32_t &dstHeight);\n"
             "    void presentIOSDrawable(void *drawablePtr, int targetFps);\n"
+            "    double getIOSCommandBufferGpuMs(void *cmdBufPtr);\n"
             "    MTL::ResourceUsage mapResourceUsage(RenderDescriptorRangeType type);\n"
             "    static std::mutex g_iosDescriptorSetMutex;\n"
             "    static std::atomic<uint64_t> g_iosAddressableGen{1};\n"
@@ -3220,7 +3287,7 @@ if metal_cpp.exists():
         new_present_sched = '''        presentBuffer->addScheduledHandler([drawableMtl](MTL::CommandBuffer* cmdBuffer) {
 #if !PLUME_MACOS
             presentIOSDrawable(drawableMtl, MarathonIOS_GetEffectiveTargetFPS());
-            MarathonIOS_LosslessRecordPresentedFrame();
+            MarathonIOS_PerfRecordPlumePresent();
 #else
             drawableMtl->present();
 #endif
@@ -3577,6 +3644,7 @@ if metal_cpp.exists():
             interfaceCommandList->mtl->addCompletedHandler([signalFence](MTL::CommandBuffer* cmdBuffer) {
 #if !PLUME_MACOS
                 logIOSMetalCmdBufferError("exec", cmdBuffer);
+                MarathonIOS_PerfRecordPlumeGpuMs(getIOSCommandBufferGpuMs(cmdBuffer));
 #endif
                 dispatch_semaphore_signal(static_cast<MetalCommandFence *>(signalFence)->semaphore);
             });
@@ -3593,11 +3661,14 @@ if metal_cpp.exists():
         MetalAutoreleasePool releasePool;
         const MetalCommandFence *metalFence = static_cast<MetalCommandFence *>(fence);
 #if !PLUME_MACOS
+        const auto tWf0 = std::chrono::steady_clock::now();
         while (dispatch_semaphore_wait(metalFence->semaphore, dispatch_time(DISPATCH_TIME_NOW, 5LL * NSEC_PER_SEC)) != 0) {
             if (!MarathonIOS_IsAppSuspended()) {
                 MarathonIOS_LogLine("METAL_WARN", "waitForCommandFence stalled >5s waiting for GPU completion");
             }
         }
+        const double wfMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tWf0).count();
+        MarathonIOS_PerfRecordWaitFenceMs(wfMs);
 #else
         dispatch_semaphore_wait(metalFence->semaphore, DISPATCH_TIME_FOREVER);
 #endif
@@ -3962,11 +4033,13 @@ if vid_cpp.exists():
         vsrc = (
             "#if defined(MARATHON_IOS_PORT)\n"
             "#include <algorithm>\n"
+            "#include <atomic>\n"
             "#include <chrono>\n"
             "#include <cmath>\n"
             "#include <pthread/qos.h>\n"
             "#include <ios_virtual_controller.h>\n"
             "#include <ios_lossless_scaler.h>\n"
+            "static std::atomic<uint64_t> g_iosPerfLastEncodeUs{0};\n"
             'extern "C" void MarathonIOS_MapWindowPointToImGui(float winX, float winY, float* outX, float* outY);\n'
             'extern "C" void* objc_autoreleasePoolPush(void);\n'
             'extern "C" void objc_autoreleasePoolPop(void*);\n'
@@ -4335,20 +4408,21 @@ static void DrawFPS()
     {
         MarathonIOS_WaitUntilActive();
     }
-    // SINGLE AUTHORITATIVE iOS BASE-FPS PACER (BEFORE CheckSwapChain!):
-    // Sleeping BEFORE CheckSwapChain() guarantees the game holds ZERO CAMetalLayer drawables while waiting,
-    // preventing both 60->33 FPS / 30->22 FPS drawable starvation AND leaving all 3 drawables free for 2x FrameGen!
+    // SINGLE AUTHORITATIVE iOS BASE-FPS PACER (BEFORE CheckSwapChain!) + ZERO-OVERHEAD PERF TELEMETRY:
+    double iosPaceSleepMs = 0.0;
+    double iosAcquireMs = 0.0;
+    int32_t iosTargetBaseFps = 0;
     {
         using namespace std::chrono_literals;
         const int32_t fgBaseFps = MarathonIOS_GetFrameGenBaseFPS();
         int32_t targetBaseFps = 0;
         if (fgBaseFps > 0)
         {
-            targetBaseFps = fgBaseFps; // 60 (for 120 out), 40 (for 80 out), or 30 (for 60 out)
+            targetBaseFps = fgBaseFps; // 60 base -> 120 out
         }
         else if (Config::FPS >= FPS_MIN && Config::FPS < FPS_MAX)
         {
-            const int32_t userTargetFps = Config::FPS.Value > 0 ? Config::FPS.Value : 60;
+            const int32_t userTargetFps = (Config::FPS.Value >= 100) ? 120 : 60;
             MarathonIOS_SetTargetFPS(userTargetFps);
             const int32_t eff = MarathonIOS_GetEffectiveTargetFPS();
             // At 120 FPS (FG Off), do NOT artificially CPU-sleep — let hardware 120Hz ProMotion VSync own cadence!
@@ -4357,6 +4431,7 @@ static void DrawFPS()
                 targetBaseFps = eff;
             }
         }
+        iosTargetBaseFps = targetBaseFps;
 
         static std::chrono::steady_clock::time_point s_iosPaceNext{};
         static int32_t s_iosLastTargetFps = 0;
@@ -4364,7 +4439,8 @@ static void DrawFPS()
         if (targetBaseFps > 0)
         {
             const auto period = std::chrono::nanoseconds(1000000000LL / targetBaseFps);
-            auto now = std::chrono::steady_clock::now();
+            const auto tPace0 = std::chrono::steady_clock::now();
+            auto now = tPace0;
             if (s_iosLastTargetFps != targetBaseFps || s_iosPaceNext.time_since_epoch().count() == 0)
             {
                 s_iosLastTargetFps = targetBaseFps;
@@ -4388,10 +4464,10 @@ static void DrawFPS()
                 s_iosPaceNext += period;
                 if (s_iosPaceNext < now)
                 {
-                    // Frame overran target period -> resync cleanly without catch-up bursts or beat-frequency halving!
                     s_iosPaceNext = now + period;
                 }
             }
+            iosPaceSleepMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - tPace0).count();
         }
         else
         {
@@ -4399,8 +4475,33 @@ static void DrawFPS()
             s_iosPaceNext = {};
         }
     }
+    const auto tAcq0 = std::chrono::steady_clock::now();
 #endif
-    CheckSwapChain();'''
+    CheckSwapChain();
+#if defined(MARATHON_IOS_PORT)
+    {
+        const auto tAfterAcq = std::chrono::steady_clock::now();
+        iosAcquireMs = std::chrono::duration<double, std::milli>(tAfterAcq - tAcq0).count();
+        static std::chrono::steady_clock::time_point s_iosPrevPresent{};
+        double frameMs = 0.0;
+        if (s_iosPrevPresent.time_since_epoch().count() != 0)
+        {
+            frameMs = std::chrono::duration<double, std::milli>(tAfterAcq - s_iosPrevPresent).count();
+        }
+        s_iosPrevPresent = tAfterAcq;
+        const auto intSz = RenderResolution::GetInternalSize();
+        const double encMs = static_cast<double>(g_iosPerfLastEncodeUs.exchange(0, std::memory_order_relaxed)) / 1000.0;
+        MarathonIOS_PerfRecordBaseFrame(
+            frameMs, iosPaceSleepMs, iosAcquireMs, encMs,
+            g_swapChain ? g_swapChain->getWidth() : 0,
+            g_swapChain ? g_swapChain->getHeight() : 0,
+            static_cast<uint32_t>(Video::s_viewportWidth),
+            static_cast<uint32_t>(Video::s_viewportHeight),
+            intSz.Width, intSz.Height,
+            Config::FPS.Value, iosTargetBaseFps,
+            Config::ResolutionScale.Value, Config::VSync.Value);
+    }
+#endif'''
         assert old_present_chk in vsrc, "Failed to locate Video::Present CheckSwapChain in gpu/video.cpp"
         vsrc = vsrc.replace(old_present_chk, new_present_chk, 1)
 
@@ -4580,7 +4681,11 @@ static void BeginCommandList()
                 mfxIn.jitterOffsetX = 0.0f;
                 mfxIn.jitterOffsetY = 0.0f;
 
+                const auto tEnc0 = std::chrono::steady_clock::now();
                 iosMetalFXEncoded = MarathonIOS_MetalFXEncodeFrame(&mfxIn);
+                const uint64_t encUs = static_cast<uint64_t>(
+                    std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - tEnc0).count());
+                g_iosPerfLastEncodeUs.store(encUs, std::memory_order_relaxed);
             }
 #endif
             if (!iosMetalFXEncoded)
@@ -5090,9 +5195,7 @@ if main_cpp.exists():
         msrc = msrc.replace(
             "    // TODO: Remove this when FPS change is supported.\n    Config::FPS = 60;",
             "#if defined(MARATHON_IOS_PORT)\n"
-            "    if (Config::FPS <= 35) Config::FPS = 30;\n"
-            "    else if (Config::FPS <= 48) Config::FPS = 40;\n"
-            "    else if (Config::FPS >= 100) Config::FPS = 120;\n"
+            "    if (Config::FPS >= 100) Config::FPS = 120;\n"
             "    else Config::FPS = 60;\n"
             "    MarathonIOS_SetTargetFPS(Config::FPS);\n"
             "#else\n"

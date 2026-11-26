@@ -48,6 +48,7 @@ void MarathonIOS_GetFPSOverlayAnchorPoints(float* outWinX, float* outWinY);
 
 // On-device diagnostics, lifecycle pause/resume, ProMotion 120Hz LTPO driver, Thermal Guardian & hardware auto-config (ios/os/ios_platform.mm)
 void MarathonIOS_LogLine(const char* tag, const char* msg);
+void MarathonIOS_PerfLogWriteRaw(const char* line);
 void MarathonIOS_Heartbeat(const char* phase);
 void MarathonIOS_RenderHeartbeat(const char* phase);
 bool MarathonIOS_IsAppSuspended(void);

@@ -579,10 +579,56 @@ static std::atomic<int> g_activeBackendCode{0};
 static std::atomic<double> g_lastVsyncPeriodSec{1.0 / 120.0};
 
 static os_unfair_lock g_fpsLock = OS_UNFAIR_LOCK_INIT;
-static double g_presentStamps[64] = {};
+static double g_presentStamps[256] = {};
 static uint32_t g_presentStampHead = 0;
 static uint32_t g_presentStampCount = 0;
 static std::atomic<double> g_measuredOutFps{0.0};
+
+// Zero-overhead relaxed atomic telemetry counters flushed every 1Hz on E-core to ios_perf.log
+struct PerfTelemetryCounters {
+    std::atomic<uint32_t> baseFrames{0};
+    std::atomic<uint32_t> plumePresents{0};
+    std::atomic<uint32_t> pacerPresents{0};
+    std::atomic<uint32_t> pacerSubmitted{0};
+    std::atomic<uint32_t> pacerOverwritten{0};
+    std::atomic<uint32_t> pacerWokeEarly{0};
+    std::atomic<uint32_t> pacerNoLayer{0};
+    std::atomic<uint32_t> pacerNoDrawable{0};
+    std::atomic<uint32_t> pacerSizeMismatch{0};
+    std::atomic<uint32_t> pacerNoCb{0};
+    std::atomic<uint32_t> pacerCbErr{0};
+    std::atomic<uint64_t> pacerNextDrwSumUs{0};
+    std::atomic<uint64_t> pacerNextDrwMaxUs{0};
+    std::atomic<uint32_t> pacerNextDrwCount{0};
+    std::atomic<uint64_t> pacerGpuSumUs{0};
+    std::atomic<uint32_t> pacerGpuCount{0};
+    std::atomic<uint64_t> plumeGpuSumUs{0};
+    std::atomic<uint32_t> plumeGpuCount{0};
+    std::atomic<uint64_t> waitFenceSumUs{0};
+    std::atomic<uint32_t> waitFenceCount{0};
+    std::atomic<uint64_t> frameSumUs{0};
+    std::atomic<uint64_t> paceSleepSumUs{0};
+    std::atomic<uint64_t> acquireSumUs{0};
+    std::atomic<uint64_t> encodeSumUs{0};
+    std::atomic<uint32_t> swapW{0};
+    std::atomic<uint32_t> swapH{0};
+    std::atomic<uint32_t> vpW{0};
+    std::atomic<uint32_t> vpH{0};
+    std::atomic<uint32_t> intW{0};
+    std::atomic<uint32_t> intH{0};
+    std::atomic<uint32_t> sceneW{0};
+    std::atomic<uint32_t> sceneH{0};
+    std::atomic<uint32_t> drwW{0};
+    std::atomic<uint32_t> drwH{0};
+    std::atomic<float> layerScale{0.0f};
+    std::atomic<float> resScale{0.85f};
+    std::atomic<int> cfgFps{60};
+    std::atomic<int> targetBaseFps{60};
+    std::atomic<int> vsync{1};
+    std::atomic<uint32_t> diagEventBudget{0};
+    std::atomic<double> lastTickSec{0.0};
+};
+static PerfTelemetryCounters g_perf;
 
 static double MonotonicNowSec() {
     struct timespec ts{};
@@ -628,21 +674,23 @@ static void Mul4x4(const float a[16], const float b[16], float out[16]) {
 }
 
 static void ComputeEffectiveFGSchedule(int fgMode, int baseLimit, int thermal, int& outBaseFps, int& outDisplayFps, int& outMult) {
+    (void)baseLimit;
     if (fgMode == MARATHON_IOS_FG_OFF || !g_fgRuntimeActive.load(std::memory_order_acquire)) {
         outBaseFps = 0;
         outDisplayFps = 0;
         outMult = 1;
         return;
     }
-    int base = (baseLimit <= 35) ? 30 : ((baseLimit <= 48) ? 40 : 60);
-    // Thermal Guardian: protects A18 Pro from sudden OS thermal cliff without ever dropping below 30 base (60 out)
-    if (thermal >= 3 && base > 30) {
-        base = 30;
-    } else if (thermal == 2 && base > 40) {
-        base = 40;
+    // NEVER drop below 60 base FPS (Sonic '06 enters slow-motion at 30/40 FPS!).
+    // On Critical heat (thermal >= 3), cleanly pause FrameGen to native 60 FPS instead of slow-motion.
+    if (thermal >= 3) {
+        outBaseFps = 0;
+        outDisplayFps = 0;
+        outMult = 1;
+        return;
     }
-    outBaseFps = base;
-    outDisplayFps = base * 2;
+    outBaseFps = 60;
+    outDisplayFps = 120;
     outMult = 2;
 }
 
@@ -750,7 +798,9 @@ static void RunMetalFXPacerThread() {
             if (!g_mfx.pendingJob.valid) {
                 continue;
             }
-            if (std::chrono::steady_clock::now() + std::chrono::microseconds(400) < g_mfx.pendingJob.dueTime) {
+            const auto nowWake = std::chrono::steady_clock::now();
+            if (nowWake + std::chrono::microseconds(400) < g_mfx.pendingJob.dueTime) {
+                g_perf.pacerWokeEarly.fetch_add(1, std::memory_order_relaxed);
                 continue;
             }
             job = g_mfx.pendingJob;
@@ -764,17 +814,42 @@ static void RunMetalFXPacerThread() {
         @autoreleasepool {
             CAMetalLayer *layer = job.layer;
             if (!layer || !job.queue || !job.compositePSO || !job.sceneTex) {
+                g_perf.pacerNoLayer.fetch_add(1, std::memory_order_relaxed);
                 continue;
             }
+            const double tDrw0 = MonotonicNowSec();
             id<CAMetalDrawable> drawable = [layer nextDrawable];
+            const uint64_t drwUs = static_cast<uint64_t>(std::max(0.0, (MonotonicNowSec() - tDrw0) * 1e6));
+            g_perf.pacerNextDrwSumUs.fetch_add(drwUs, std::memory_order_relaxed);
+            g_perf.pacerNextDrwCount.fetch_add(1, std::memory_order_relaxed);
+            uint64_t curMax = g_perf.pacerNextDrwMaxUs.load(std::memory_order_relaxed);
+            while (drwUs > curMax && !g_perf.pacerNextDrwMaxUs.compare_exchange_weak(curMax, drwUs, std::memory_order_relaxed)) {}
+
             if (!drawable || !drawable.texture) {
+                g_perf.pacerNoDrawable.fetch_add(1, std::memory_order_relaxed);
+                if (g_perf.diagEventBudget.fetch_add(1, std::memory_order_relaxed) < 16) {
+                    char msg[160];
+                    std::snprintf(msg, sizeof(msg), "pacer nextDrawable returned nil after %.2fms (layerMaxDrw=%lu)",
+                                  drwUs / 1000.0, (unsigned long)layer.maximumDrawableCount);
+                    MarathonIOS_PerfLogEvent("PACER_DROP", msg);
+                }
                 continue;
             }
             if (drawable.texture.width != job.expectedW || drawable.texture.height != job.expectedH) {
+                g_perf.pacerSizeMismatch.fetch_add(1, std::memory_order_relaxed);
+                if (g_perf.diagEventBudget.fetch_add(1, std::memory_order_relaxed) < 16) {
+                    char msg[192];
+                    std::snprintf(msg, sizeof(msg), "pacer sizeMismatch: drw=%lux%lu vs exp=%ux%u (layerSize=%.0fx%.0f scale=%.2f)",
+                                  (unsigned long)drawable.texture.width, (unsigned long)drawable.texture.height,
+                                  job.expectedW, job.expectedH,
+                                  layer.drawableSize.width, layer.drawableSize.height, (double)layer.contentsScale);
+                    MarathonIOS_PerfLogEvent("PACER_DROP", msg);
+                }
                 continue;
             }
             id<MTLCommandBuffer> cb = [job.queue commandBuffer];
             if (!cb) {
+                g_perf.pacerNoCb.fetch_add(1, std::memory_order_relaxed);
                 continue;
             }
             cb.label = @"MetalFX Paced Real Frame";
@@ -797,11 +872,25 @@ static void RunMetalFXPacerThread() {
             }
 
             // CRITICAL: Always use plain [drawable present] (NEVER presentAfterMinimumDuration!)
-            // Pacer thread already sleeps to exact +halfPeriod before acquiring drawable -> zero CoreAnimation stall!
             [cb addScheduledHandler:^(id<MTLCommandBuffer> _Nonnull cmdBuf) {
                 (void)cmdBuf;
                 [drawable present];
+                g_perf.pacerPresents.fetch_add(1, std::memory_order_relaxed);
                 MarathonIOS_LosslessRecordPresentedFrame();
+            }];
+            [cb addCompletedHandler:^(id<MTLCommandBuffer> _Nonnull cmdBuf) {
+                if (cmdBuf.status == MTLCommandBufferStatusError) {
+                    g_perf.pacerCbErr.fetch_add(1, std::memory_order_relaxed);
+                    if (g_perf.diagEventBudget.fetch_add(1, std::memory_order_relaxed) < 16) {
+                        const char* err = cmdBuf.error && cmdBuf.error.localizedDescription
+                            ? cmdBuf.error.localizedDescription.UTF8String : "unknown";
+                        MarathonIOS_PerfLogEvent("PACER_ERR", err);
+                    }
+                } else if (cmdBuf.GPUEndTime > cmdBuf.GPUStartTime) {
+                    const uint64_t gpuUs = static_cast<uint64_t>((cmdBuf.GPUEndTime - cmdBuf.GPUStartTime) * 1e6);
+                    g_perf.pacerGpuSumUs.fetch_add(gpuUs, std::memory_order_relaxed);
+                    g_perf.pacerGpuCount.fetch_add(1, std::memory_order_relaxed);
+                }
             }];
             [cb commit];
         }
@@ -1199,6 +1288,7 @@ static bool EnsureMetalFXResourcesLocked(id<MTLDevice> dev, uint32_t reqInW, uin
 #endif
                   g_mfx.frameInterpolator != nil ? 1 : 0);
     MarathonIOS_LogLine("METAL_INFO", buf);
+    MarathonIOS_PerfLogEvent("METALFX", buf);
     return true;
 }
 
@@ -1261,6 +1351,7 @@ void MarathonIOS_SetUpscaleMode(int mode) {
         char buf[128];
         std::snprintf(buf, sizeof(buf), "MetalFXUpscaling=%d (0=Off, 1=Temporal, 2=Spatial)", mode);
         MarathonIOS_LogLine("METAL_INFO", buf);
+        MarathonIOS_PerfLogEvent("CONFIG", buf);
     }
 }
 
@@ -1297,6 +1388,7 @@ void MarathonIOS_SetFrameGenMode(int mode) {
                       normalized ? "On (2x)" : "Off",
                       g_appleFiSupported.load(std::memory_order_acquire) ? 1 : 0);
         MarathonIOS_LogLine("METAL_INFO", buf);
+        MarathonIOS_PerfLogEvent("CONFIG", buf);
     }
 }
 
@@ -1305,11 +1397,9 @@ int MarathonIOS_GetFrameGenMode(void) {
 }
 
 void MarathonIOS_SetBaseFpsLimit(int fps) {
-    int clamped = 60;
-    if (fps <= 35) clamped = 30;
-    else if (fps <= 48) clamped = 40;
-    else clamped = 60;
-    g_baseFpsLimit.store(clamped, std::memory_order_release);
+    (void)fps;
+    // Strictly 60 FPS base for 2x FrameGen -> 120 FPS (30/40 FPS slow-motion removed)
+    g_baseFpsLimit.store(60, std::memory_order_release);
 }
 
 int MarathonIOS_GetBaseFpsLimit(void) {
@@ -1323,6 +1413,7 @@ void MarathonIOS_SetOutputResolutionScale(float scale) {
         char buf[96];
         std::snprintf(buf, sizeof(buf), "MetalFX OutputResolutionScale=%.2f", clamped);
         MarathonIOS_LogLine("METAL_INFO", buf);
+        MarathonIOS_PerfLogEvent("CONFIG", buf);
     }
 }
 
@@ -1405,14 +1496,14 @@ void MarathonIOS_LosslessRecordPresentedFrame(void) {
     const double now = MonotonicNowSec();
     os_unfair_lock_lock(&g_fpsLock);
     g_presentStamps[g_presentStampHead] = now;
-    g_presentStampHead = (g_presentStampHead + 1u) & 63u;
-    if (g_presentStampCount < 64u) {
+    g_presentStampHead = (g_presentStampHead + 1u) & 255u;
+    if (g_presentStampCount < 256u) {
         g_presentStampCount++;
     }
     uint32_t inWindow = 0;
     double oldest = now;
     for (uint32_t i = 0; i < g_presentStampCount; ++i) {
-        const double t = g_presentStamps[(g_presentStampHead + 64u - 1u - i) & 63u];
+        const double t = g_presentStamps[(g_presentStampHead + 256u - 1u - i) & 255u];
         if (now - t <= 0.50) {
             inWindow++;
             oldest = t;
@@ -1429,6 +1520,139 @@ void MarathonIOS_LosslessRecordPresentedFrame(void) {
 
 double MarathonIOS_GetMeasuredOutputFPS(void) {
     return g_measuredOutFps.load(std::memory_order_relaxed);
+}
+
+void MarathonIOS_PerfLogEvent(const char* tag, const char* msg) {
+    char line[384];
+    std::snprintf(line, sizeof(line), "EVENT [%s] %s", tag ? tag : "INFO", msg ? msg : "");
+    MarathonIOS_PerfLogWriteRaw(line);
+}
+
+void MarathonIOS_PerfRecordBaseFrame(double frameMs, double paceSleepMs, double acquireMs, double encodeMs,
+                                     uint32_t swapW, uint32_t swapH, uint32_t vpW, uint32_t vpH,
+                                     uint32_t intW, uint32_t intH, int cfgFps, int targetBaseFps,
+                                     float resScale, bool vsync) {
+    g_perf.baseFrames.fetch_add(1, std::memory_order_relaxed);
+    if (frameMs > 0.0 && frameMs < 5000.0) {
+        g_perf.frameSumUs.fetch_add(static_cast<uint64_t>(frameMs * 1000.0), std::memory_order_relaxed);
+    }
+    if (paceSleepMs > 0.0 && paceSleepMs < 5000.0) {
+        g_perf.paceSleepSumUs.fetch_add(static_cast<uint64_t>(paceSleepMs * 1000.0), std::memory_order_relaxed);
+    }
+    if (acquireMs > 0.0 && acquireMs < 5000.0) {
+        g_perf.acquireSumUs.fetch_add(static_cast<uint64_t>(acquireMs * 1000.0), std::memory_order_relaxed);
+    }
+    if (encodeMs > 0.0 && encodeMs < 5000.0) {
+        g_perf.encodeSumUs.fetch_add(static_cast<uint64_t>(encodeMs * 1000.0), std::memory_order_relaxed);
+    }
+    g_perf.swapW.store(swapW, std::memory_order_relaxed);
+    g_perf.swapH.store(swapH, std::memory_order_relaxed);
+    g_perf.vpW.store(vpW, std::memory_order_relaxed);
+    g_perf.vpH.store(vpH, std::memory_order_relaxed);
+    g_perf.intW.store(intW, std::memory_order_relaxed);
+    g_perf.intH.store(intH, std::memory_order_relaxed);
+    g_perf.cfgFps.store(cfgFps, std::memory_order_relaxed);
+    g_perf.targetBaseFps.store(targetBaseFps, std::memory_order_relaxed);
+    g_perf.resScale.store(resScale, std::memory_order_relaxed);
+    g_perf.vsync.store(vsync ? 1 : 0, std::memory_order_relaxed);
+}
+
+void MarathonIOS_PerfRecordPlumePresent(void) {
+    g_perf.plumePresents.fetch_add(1, std::memory_order_relaxed);
+    MarathonIOS_LosslessRecordPresentedFrame();
+}
+
+void MarathonIOS_PerfRecordPlumeGpuMs(double gpuMs) {
+    if (gpuMs > 0.0 && gpuMs < 1000.0) {
+        g_perf.plumeGpuSumUs.fetch_add(static_cast<uint64_t>(gpuMs * 1000.0), std::memory_order_relaxed);
+        g_perf.plumeGpuCount.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+void MarathonIOS_PerfRecordWaitFenceMs(double waitMs) {
+    if (waitMs > 0.0 && waitMs < 5000.0) {
+        g_perf.waitFenceSumUs.fetch_add(static_cast<uint64_t>(waitMs * 1000.0), std::memory_order_relaxed);
+        g_perf.waitFenceCount.fetch_add(1, std::memory_order_relaxed);
+    }
+}
+
+void MarathonIOS_PerfLogTick1Hz(void) {
+    const double now = MonotonicNowSec();
+    const double prev = g_perf.lastTickSec.exchange(now, std::memory_order_relaxed);
+    const double dt = (prev > 0.0 && now > prev) ? (now - prev) : 1.0;
+
+    const uint32_t baseF = g_perf.baseFrames.exchange(0, std::memory_order_relaxed);
+    const uint32_t plumeP = g_perf.plumePresents.exchange(0, std::memory_order_relaxed);
+    const uint32_t pacerP = g_perf.pacerPresents.exchange(0, std::memory_order_relaxed);
+    if (baseF == 0 && plumeP == 0 && pacerP == 0) {
+        return; // Don't spam before rendering begins
+    }
+
+    const uint32_t pSub = g_perf.pacerSubmitted.exchange(0, std::memory_order_relaxed);
+    const uint32_t pOvw = g_perf.pacerOverwritten.exchange(0, std::memory_order_relaxed);
+    const uint32_t pEarly = g_perf.pacerWokeEarly.exchange(0, std::memory_order_relaxed);
+    const uint32_t pNilL = g_perf.pacerNoLayer.exchange(0, std::memory_order_relaxed);
+    const uint32_t pNilD = g_perf.pacerNoDrawable.exchange(0, std::memory_order_relaxed);
+    const uint32_t pSzM = g_perf.pacerSizeMismatch.exchange(0, std::memory_order_relaxed);
+    const uint32_t pNilCb = g_perf.pacerNoCb.exchange(0, std::memory_order_relaxed);
+    const uint32_t pErrCb = g_perf.pacerCbErr.exchange(0, std::memory_order_relaxed);
+
+    const uint64_t drwSumUs = g_perf.pacerNextDrwSumUs.exchange(0, std::memory_order_relaxed);
+    const uint64_t drwMaxUs = g_perf.pacerNextDrwMaxUs.exchange(0, std::memory_order_relaxed);
+    const uint32_t drwCnt = g_perf.pacerNextDrwCount.exchange(0, std::memory_order_relaxed);
+
+    const uint64_t pGpuSum = g_perf.pacerGpuSumUs.exchange(0, std::memory_order_relaxed);
+    const uint32_t pGpuCnt = g_perf.pacerGpuCount.exchange(0, std::memory_order_relaxed);
+    const uint64_t gGpuSum = g_perf.plumeGpuSumUs.exchange(0, std::memory_order_relaxed);
+    const uint32_t gGpuCnt = g_perf.plumeGpuCount.exchange(0, std::memory_order_relaxed);
+    const uint64_t wfSum = g_perf.waitFenceSumUs.exchange(0, std::memory_order_relaxed);
+    const uint32_t wfCnt = g_perf.waitFenceCount.exchange(0, std::memory_order_relaxed);
+
+    const uint64_t frSum = g_perf.frameSumUs.exchange(0, std::memory_order_relaxed);
+    const uint64_t psSum = g_perf.paceSleepSumUs.exchange(0, std::memory_order_relaxed);
+    const uint64_t acqSum = g_perf.acquireSumUs.exchange(0, std::memory_order_relaxed);
+    const uint64_t encSum = g_perf.encodeSumUs.exchange(0, std::memory_order_relaxed);
+
+    const double baseFps = static_cast<double>(baseF) / dt;
+    const double outFps = static_cast<double>(plumeP + pacerP) / dt;
+    const double vsyncPeriod = g_lastVsyncPeriodSec.load(std::memory_order_relaxed);
+    const double vsyncHz = (vsyncPeriod > 0.001) ? (1.0 / vsyncPeriod) : 0.0;
+    const int lpm = [[NSProcessInfo processInfo] isLowPowerModeEnabled] ? 1 : 0;
+
+    const double avgFrameMs = (baseF > 0) ? (static_cast<double>(frSum) / (baseF * 1000.0)) : 0.0;
+    const double avgPaceMs = (baseF > 0) ? (static_cast<double>(psSum) / (baseF * 1000.0)) : 0.0;
+    const double avgAcqMs = (baseF > 0) ? (static_cast<double>(acqSum) / (baseF * 1000.0)) : 0.0;
+    const double avgEncMs = (baseF > 0) ? (static_cast<double>(encSum) / (baseF * 1000.0)) : 0.0;
+    const double avgWfMs = (wfCnt > 0) ? (static_cast<double>(wfSum) / (wfCnt * 1000.0)) : 0.0;
+    const double avgPlumeGpuMs = (gGpuCnt > 0) ? (static_cast<double>(gGpuSum) / (gGpuCnt * 1000.0)) : 0.0;
+    const double avgPacerGpuMs = (pGpuCnt > 0) ? (static_cast<double>(pGpuSum) / (pGpuCnt * 1000.0)) : 0.0;
+    const double avgNextDrwMs = (drwCnt > 0) ? (static_cast<double>(drwSumUs) / (drwCnt * 1000.0)) : 0.0;
+    const double maxNextDrwMs = static_cast<double>(drwMaxUs) / 1000.0;
+
+    char line[512];
+    std::snprintf(line, sizeof(line),
+                  "baseFPS=%5.1f outFPS=%5.1f(plume=%u/pacer=%u) | cfgFPS=%d tgtBase=%d vsync=%d mode=%s up=%d fg=%d | vsyncHz=%5.1f th=%d lpm=%d | res:swap=%ux%u vp=%ux%u int=%ux%u sc=%ux%u drw=%ux%u sc=%.2f out=%.2f res=%.2f | cpu=%.1fms(pace=%.1f acq=%.1f wf=%.1f enc=%.1f) gpu=plume:%.1f/pacer:%.1fms | pacer:sub=%u ok=%u ovw=%u early=%u nilL=%u nilD=%u szM=%u nilCb=%u errCb=%u nextDrw=%.1f/%.1fms",
+                  baseFps, outFps, plumeP, pacerP,
+                  g_perf.cfgFps.load(std::memory_order_relaxed),
+                  g_perf.targetBaseFps.load(std::memory_order_relaxed),
+                  g_perf.vsync.load(std::memory_order_relaxed),
+                  MarathonIOS_GetActiveBackendTag(),
+                  g_upscaleMode.load(std::memory_order_relaxed),
+                  g_frameGenMode.load(std::memory_order_relaxed),
+                  vsyncHz, MarathonIOS_GetThermalState(), lpm,
+                  g_perf.swapW.load(std::memory_order_relaxed), g_perf.swapH.load(std::memory_order_relaxed),
+                  g_perf.vpW.load(std::memory_order_relaxed), g_perf.vpH.load(std::memory_order_relaxed),
+                  g_perf.intW.load(std::memory_order_relaxed), g_perf.intH.load(std::memory_order_relaxed),
+                  g_perf.sceneW.load(std::memory_order_relaxed), g_perf.sceneH.load(std::memory_order_relaxed),
+                  g_perf.drwW.load(std::memory_order_relaxed), g_perf.drwH.load(std::memory_order_relaxed),
+                  g_perf.layerScale.load(std::memory_order_relaxed),
+                  g_outputResScale.load(std::memory_order_relaxed),
+                  g_perf.resScale.load(std::memory_order_relaxed),
+                  avgFrameMs, avgPaceMs, avgAcqMs, avgWfMs, avgEncMs,
+                  avgPlumeGpuMs, avgPacerGpuMs,
+                  pSub, pacerP, pOvw, pEarly, pNilL, pNilD, pSzM, pNilCb, pErrCb,
+                  avgNextDrwMs, maxNextDrwMs);
+    MarathonIOS_PerfLogWriteRaw(line);
 }
 
 void MarathonIOS_LosslessOnSuspendChanged(bool suspended) {
@@ -1466,6 +1690,14 @@ bool MarathonIOS_MetalFXEncodeFrame(const MarathonIOSMetalFXFrameInput* in) {
     id<MTLTexture> depthTex = in->depthTexMtl ? (__bridge id<MTLTexture>)in->depthTexMtl : nil;
     id<MTLTexture> uiTex = in->uiOverlayTexMtl ? (__bridge id<MTLTexture>)in->uiOverlayTexMtl : nil;
     id<MTLTexture> drawableTex = (__bridge id<MTLTexture>)in->drawableTexMtl;
+
+    g_perf.sceneW.store(static_cast<uint32_t>(sceneTex.width), std::memory_order_relaxed);
+    g_perf.sceneH.store(static_cast<uint32_t>(sceneTex.height), std::memory_order_relaxed);
+    g_perf.drwW.store(static_cast<uint32_t>(drawableTex.width), std::memory_order_relaxed);
+    g_perf.drwH.store(static_cast<uint32_t>(drawableTex.height), std::memory_order_relaxed);
+    if (layer) {
+        g_perf.layerScale.store(static_cast<float>(layer.contentsScale), std::memory_order_relaxed);
+    }
 
     const uint32_t outW = (in->viewportWidth > 0) ? in->viewportWidth : static_cast<uint32_t>(drawableTex.width);
     const uint32_t outH = (in->viewportHeight > 0) ? in->viewportHeight : static_cast<uint32_t>(drawableTex.height);
@@ -1893,7 +2125,11 @@ bool MarathonIOS_MetalFXEncodeFrame(const MarathonIOSMetalFXFrameInput* in) {
 
         {
             std::lock_guard<std::mutex> lk(g_mfx.pacerMutex);
+            if (g_mfx.pendingJob.valid) {
+                g_perf.pacerOverwritten.fetch_add(1, std::memory_order_relaxed);
+            }
             g_mfx.pendingJob = job;
+            g_perf.pacerSubmitted.fetch_add(1, std::memory_order_relaxed);
         }
         g_mfx.pacerCv.notify_one();
     }

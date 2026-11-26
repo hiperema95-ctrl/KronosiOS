@@ -29,7 +29,7 @@ typedef struct MarathonIOSMetalFXConfig {
     int upscaleMode;                // MarathonIOSMetalFXUpscaleMode
     float renderScale;              // Internal 3D scene scale: 0.50 .. 1.00 (default 0.75)
     bool frameGenEnabled;           // Native Apple MTLFXFrameInterpolator 2x toggle
-    int baseFpsLimit;               // Base engine render cap: 30 / 40 / 60 (output 60 / 80 / 120)
+    int baseFpsLimit;               // Base engine render cap: 60 FPS (output 120 FPS with 2x FrameGen)
     float outputResolutionScale;    // Output swapchain scale relative to native display: 0.75 .. 1.00
 } MarathonIOSMetalFXConfig;
 
@@ -88,7 +88,7 @@ bool MarathonIOS_IsFrameGenSupported(void);
 bool MarathonIOS_IsFrameGenRuntimeActive(void);
 const char* MarathonIOS_GetActiveBackendTag(void);
 
-// Thermal-aware base engine FPS (30/40/60) and output display FPS (60/80/120); returns 0 when FrameGen is inactive.
+// Thermal-aware base engine FPS (60) and output display FPS (120); returns 0 when FrameGen is inactive.
 int MarathonIOS_GetFrameGenBaseFPS(void);
 int MarathonIOS_GetFrameGenOutputFPS(void);
 int MarathonIOS_GetFrameGenMultiplier(void);
@@ -106,6 +106,17 @@ void MarathonIOS_OnProMotionVSync(double timestampSec, double targetTimestampSec
 // Display presentation FPS telemetry for top-left ShowFPS overlay
 void MarathonIOS_LosslessRecordPresentedFrame(void);
 double MarathonIOS_GetMeasuredOutputFPS(void);
+
+// Dedicated ios_perf.log 1Hz performance & FrameGen diagnostic telemetry (zero render-thread file I/O)
+void MarathonIOS_PerfLogEvent(const char* tag, const char* msg);
+void MarathonIOS_PerfRecordBaseFrame(double frameMs, double paceSleepMs, double acquireMs, double encodeMs,
+                                     uint32_t swapW, uint32_t swapH, uint32_t vpW, uint32_t vpH,
+                                     uint32_t intW, uint32_t intH, int cfgFps, int targetBaseFps,
+                                     float resScale, bool vsync);
+void MarathonIOS_PerfRecordPlumePresent(void);
+void MarathonIOS_PerfRecordPlumeGpuMs(double gpuMs);
+void MarathonIOS_PerfRecordWaitFenceMs(double waitMs);
+void MarathonIOS_PerfLogTick1Hz(void);
 
 // Lifecycle & config notifications
 void MarathonIOS_LosslessOnSuspendChanged(bool suspended);

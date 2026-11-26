@@ -93,6 +93,8 @@ static std::mutex g_logFileMutex;
 static FILE* g_logFile = nullptr;
 static int g_logFd = -1;
 static std::atomic<bool> g_logDirty{false};
+static std::mutex g_perfLogMutex;
+static FILE* g_perfLogFile = nullptr;
 static std::atomic<uint64_t> g_bootMonotonicMs{0};
 static std::atomic<bool> g_diagInitialized{false};
 
@@ -164,19 +166,16 @@ static void WriteRawLogLocked(const char* tag, const char* msg) {
 }
 
 static int ComputeEffectiveTargetFps(int userFps, int thermal) {
-    // When Lossless Frame Generation is active, ProMotion refresh rate follows the generated output cadence
-    // (120Hz for 2x/3x even under Serious heat where base shifts 60->40 FPS, 60Hz for 2x Eco or Critical heat).
+    // When Frame Generation is active, ProMotion refresh rate follows the generated output cadence (120Hz).
     const int fgOut = MarathonIOS_GetFrameGenOutputFPS();
     if (fgOut > 0) {
         return fgOut;
     }
-    int eff = userFps;
-    // Gentle Thermal Guardian: prevents Apple's sudden OS thermal cliff (~30fps throttle)
-    // by easing 120 -> 90 FPS (ProMotion LTPO) under Serious heat and 60 FPS under Critical heat.
+    int eff = (userFps >= 100) ? 120 : 60;
+    // Thermal Guardian: NEVER drops below 60 FPS (Sonic '06 enters slow-motion below 60 FPS!).
+    // Under Critical heat only, eases 120 -> 60 FPS to prevent sudden OS throttling.
     if (thermal >= 3 && eff > 60) {
         eff = 60;
-    } else if (thermal == 2 && eff > 90) {
-        eff = 90;
     }
     return eff;
 }
@@ -204,6 +203,7 @@ static void RefreshThermalAndProMotion(bool logChange) {
                       "Thermal=%s -> effectiveFPS=%d (userTarget=%d)",
                       kThermalNames[thermal & 3], eff, userFps);
         MarathonIOS_LogLine("THERMAL", buf);
+        MarathonIOS_PerfLogEvent("THERMAL", buf);
     }
 }
 
@@ -390,6 +390,9 @@ static void StartFreezeWatchdogThread() {
                 std::lock_guard<std::mutex> lock(g_logFileMutex);
                 if (g_logFile) std::fflush(g_logFile);
             }
+            if (!g_appSuspended.load(std::memory_order_acquire)) {
+                MarathonIOS_PerfLogTick1Hz();
+            }
             if (!g_watchdogArmed.load(std::memory_order_acquire)) continue;
             if (g_appSuspended.load(std::memory_order_acquire)) {
                 uint64_t nowPaused = MonotonicNowMs();
@@ -429,16 +432,27 @@ static void EnsureDiagnosticsInitialized() {
         std::filesystem::rename(logPath, prevPath, ec);
     }
 
+    std::filesystem::path perfPath = root / "ios_perf.log";
+    std::filesystem::path perfPrevPath = root / "ios_perf_prev.log";
+    if (std::filesystem::exists(perfPath, ec)) {
+        std::filesystem::rename(perfPath, perfPrevPath, ec);
+    }
+
+    char hwModel[64] = "unknown";
+    size_t hwLen = sizeof(hwModel) - 1;
+    sysctlbyname("hw.machine", hwModel, &hwLen, nullptr, 0);
+    NSOperatingSystemVersion osVer = [[NSProcessInfo processInfo] operatingSystemVersion];
+    unsigned long long ramMiB = [[NSProcessInfo processInfo] physicalMemory] / (1024ULL * 1024ULL);
+    const BOOL lowPower = [[NSProcessInfo processInfo] isLowPowerModeEnabled];
+    id cadObj = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CADisableMinimumFrameDurationOnPhone"];
+    const BOOL cadPlist = [cadObj respondsToSelector:@selector(boolValue)] ? [cadObj boolValue] : NO;
+    NSString *bundleIdStr = [[NSBundle mainBundle] bundleIdentifier] ?: @"unknown";
+
     {
         std::lock_guard<std::mutex> lock(g_logFileMutex);
         g_logFile = std::fopen(logPath.c_str(), "wb");
         if (g_logFile) {
             g_logFd = fileno(g_logFile);
-            char hwModel[64] = "unknown";
-            size_t hwLen = sizeof(hwModel) - 1;
-            sysctlbyname("hw.machine", hwModel, &hwLen, nullptr, 0);
-            NSOperatingSystemVersion osVer = [[NSProcessInfo processInfo] operatingSystemVersion];
-            unsigned long long ramMiB = [[NSProcessInfo processInfo] physicalMemory] / (1024ULL * 1024ULL);
             std::fprintf(g_logFile,
                          "=== MarathonRecomp iOS Debug Log ===\n"
                          "Device: %s | iOS %ld.%ld.%ld | RAM: %llu MiB\n"
@@ -451,6 +465,35 @@ static void EnsureDiagnosticsInitialized() {
                          ramMiB,
                          logPath.c_str());
             std::fflush(g_logFile);
+        }
+    }
+
+    {
+        std::lock_guard<std::mutex> plock(g_perfLogMutex);
+        g_perfLogFile = std::fopen(perfPath.c_str(), "wb");
+        if (g_perfLogFile) {
+            UIScreen *scr = [UIScreen mainScreen];
+            const int scrMaxHz = scr ? static_cast<int>([scr maximumFramesPerSecond]) : 60;
+            const double scrScale = scr ? static_cast<double>(scr.nativeScale) : 2.0;
+            const CGRect scrBounds = scr ? scr.bounds : CGRectZero;
+            std::fprintf(g_perfLogFile,
+                         "=== MarathonRecomp iOS Performance & FrameGen Telemetry Log ===\n"
+                         "Device=%s | iOS=%ld.%ld.%ld | RAM=%lluMiB | BundleID=%s\n"
+                         "Screen=%.0fx%.0fpt nativeScale=%.2fx (%.0fx%.0fpx) maxFPS=%dHz | Plist120Hz=%d | LowPowerMode=%d\n"
+                         "PerfLogPath=%s\n"
+                         "Columns: [t] baseFPS outFPS(plume/pacer) | cfgFPS tgtBase mode up fg | vsyncHz thermal lpm | res(swap/vp/int/scene/drw scale outScale resScale) | cpuMs(pace/acq/waitF/enc) gpuMs(plume/pacer) | pacer(sub/ok/ovw/early/nilL/nilD/szM/nilCb/errCb nextDrwMs=avg/max)\n"
+                         "===============================================================\n",
+                         hwModel,
+                         static_cast<long>(osVer.majorVersion),
+                         static_cast<long>(osVer.minorVersion),
+                         static_cast<long>(osVer.patchVersion),
+                         ramMiB,
+                         bundleIdStr.UTF8String,
+                         scrBounds.size.width, scrBounds.size.height, scrScale,
+                         scrBounds.size.width * scrScale, scrBounds.size.height * scrScale,
+                         scrMaxHz, cadPlist ? 1 : 0, lowPower ? 1 : 0,
+                         perfPath.c_str());
+            std::fflush(g_perfLogFile);
         }
     }
 
@@ -496,6 +539,18 @@ void MarathonIOS_LogLine(const char* tag, const char* msg) {
     EnsureDiagnosticsInitialized();
     std::lock_guard<std::mutex> lock(g_logFileMutex);
     WriteRawLogLocked(tag, msg);
+}
+
+void MarathonIOS_PerfLogWriteRaw(const char* line) {
+    EnsureDiagnosticsInitialized();
+    if (!line) return;
+    uint64_t now = MonotonicNowMs();
+    uint64_t boot = g_bootMonotonicMs.load(std::memory_order_relaxed);
+    double elapsedSec = (now >= boot) ? (static_cast<double>(now - boot) / 1000.0) : 0.0;
+    std::lock_guard<std::mutex> plock(g_perfLogMutex);
+    if (!g_perfLogFile) return;
+    std::fprintf(g_perfLogFile, "[+%7.2fs] %s\n", elapsedSec, line);
+    std::fflush(g_perfLogFile);
 }
 
 void MarathonIOS_Heartbeat(const char* phase) {
@@ -600,11 +655,8 @@ void MarathonIOS_ApplyProMotionRefreshRate(int targetFps) {
 }
 
 void MarathonIOS_SetTargetFPS(int fps) {
-    int normalized = 60;
-    if (fps <= 35) normalized = 30;
-    else if (fps <= 48) normalized = 40;
-    else if (fps >= 100) normalized = 120;
-    else normalized = 60;
+    // Strictly 60 FPS or 120 FPS (Sonic '06 runs in slow-motion below 60 FPS!)
+    const int normalized = (fps >= 100) ? 120 : 60;
 
     const int prev = g_targetFps.exchange(normalized, std::memory_order_acq_rel);
     const int eff = ComputeEffectiveTargetFps(normalized, g_thermalState.load(std::memory_order_acquire));
@@ -695,9 +747,9 @@ void MarathonIOS_GetHardwareProfile(MarathonIOSHardwareProfile* outProfile) {
         p.recommendedRadialBlur = 1; // Original
         p.recommendedAF = 4;
     } else {
-        // Tier 0: Compact / 4GB devices
+        // Tier 0: Compact / 4GB devices (60 FPS target, scaled resolution to avoid slow-motion!)
         p.tier = 0;
-        p.recommendedFps = 30;
+        p.recommendedFps = 60;
         p.recommendedResScale = 0.60f;
         p.recommendedAA = 0;
         p.recommendedShadowRes = 0;  // x512
