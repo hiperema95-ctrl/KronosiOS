@@ -4227,6 +4227,8 @@ static std::atomic<float> g_renderScale{0.65f};
 static std::atomic<int> g_frameGenMode{MARATHON_IOS_FG_OFF};
 static std::atomic<int> g_baseFpsLimit{60};
 static std::atomic<float> g_outputResScale{0.75f};
+static std::atomic<float> g_thermalScaleCap{1.00f};
+static std::atomic<double> g_thermalCoolSinceSec{0.0};
 static std::atomic<bool> g_mfxSuspended{false};
 
 // Capabilities & active status
@@ -4428,9 +4430,9 @@ struct MetalFXPipelineState {
     id<MTLTexture> luma8Ring[2] = { nil, nil };  // R8Unorm [outW/8 x outH/8]
     id<MTLTexture> flow8Tex = nil;            // RG16Float [outW/8 x outH/8]
     id<MTLTexture> flow4Tex = nil;            // RG16Float [outW/4 x outH/4]
-    id<MTLTexture> upscaledRing[3] = { nil, nil, nil }; // BGRA8Unorm [outW x outH] (triple-buffered!)
-    id<MTLTexture> interpRing[3] = { nil, nil, nil };   // BGRA8Unorm [outW x outH] (triple-buffered!)
-    id<MTLTexture> uiRing[3] = { nil, nil, nil };       // BGRA8Unorm [outW x outH] (clean UI snapshot)
+    id<MTLTexture> upscaledRing[4] = { nil, nil, nil, nil }; // BGRA8Unorm [outW x outH] (quad-buffered: zero pacer/plume hazard!)
+    id<MTLTexture> interpRing[4] = { nil, nil, nil, nil };   // BGRA8Unorm [outW x outH] (quad-buffered!)
+    id<MTLTexture> uiRing[4] = { nil, nil, nil, nil };       // BGRA8Unorm [outW x outH] (clean UI snapshot)
     id<MTLTexture> dummyBlackTex = nil;       // 1x1 transparent fallback
 
     uint32_t ringWrite = 0;
@@ -4556,25 +4558,12 @@ static void RunMetalFXPacerThread() {
         PacerFramePair pair{};
         {
             std::unique_lock<std::mutex> lk(g_mfx.pacerMutex);
-            // Step 1: Wait for a pending frame pair from Plume's render thread
+            // Step 1: Wait ONLY for a submitted frame pair from Plume's render thread
             g_mfx.pacerCv.wait(lk, []() { return g_mfx.pendingPair.valid; });
-
-            // Step 2: Wait until Plume's 3D + MetalFX GPU work finishes BEFORE calling [layer nextDrawable]!
-            // That guarantees ZERO drawables are held during 3D rendering -> nextDrawable returns in ~0.1ms!
-            auto readyPred = []() {
-                if (!g_mfx.pendingPair.valid || g_mfxSuspended.load(std::memory_order_acquire)) return true;
-                const uint64_t need = g_mfx.pendingPair.waitEventValue;
-                if (need == 0) return true;
-                if (g_mfx.gpuCompletedEventValue.load(std::memory_order_acquire) >= need) return true;
-                id<MTLSharedEvent> ev = g_mfx.pendingPair.sharedEvent;
-                return (ev != nil && ev.signaledValue >= need);
-            };
-            if (!readyPred()) {
-                g_mfx.pacerCv.wait_for(lk, std::chrono::milliseconds(100), readyPred);
-            }
-            if (!g_mfx.pendingPair.valid) {
-                continue;
-            }
+            // Step 2: Pop IMMEDIATELY into local immutable pair BEFORE waiting on GPU!
+            // Prevents goalpost-moving livelock where Plume submitting frame N+1 overwrote
+            // pendingPair.waitEventValue before frame N finished on GPU (starving wait_for
+            // for 100ms/cycle -> 16-18 FPS collapse whenever gpu >= 16.5ms!).
             pair = g_mfx.pendingPair;
             g_mfx.pendingPair.valid = false;
         }
@@ -4583,12 +4572,31 @@ static void RunMetalFXPacerThread() {
             continue;
         }
 
-        // Step 3: Immediately present Frame A (interpolated t-0.5 when 2x FG active, else real frame)
+        // Step 3: Wait until THIS popped pair's 3D + MetalFX GPU work finishes BEFORE
+        // calling [layer nextDrawable]! Guarantees ZERO drawables held during 3D rendering.
+        {
+            auto gpuReadyPred = [&]() {
+                if (g_mfxSuspended.load(std::memory_order_acquire)) return true;
+                if (pair.waitEventValue == 0) return true;
+                if (g_mfx.gpuCompletedEventValue.load(std::memory_order_acquire) >= pair.waitEventValue) return true;
+                return (pair.sharedEvent != nil && pair.sharedEvent.signaledValue >= pair.waitEventValue);
+            };
+            if (!gpuReadyPred()) {
+                std::unique_lock<std::mutex> lk(g_mfx.pacerMutex);
+                g_mfx.pacerCv.wait_for(lk, std::chrono::milliseconds(100), gpuReadyPred);
+            }
+        }
+
+        if (g_mfxSuspended.load(std::memory_order_acquire)) {
+            continue;
+        }
+
+        // Step 4: Immediately present Frame A (interpolated t-0.5 when 2x FG active, else real frame)
         const auto tA = std::chrono::steady_clock::now();
         if (lastFrameATime.time_since_epoch().count() != 0) {
             const double dtUs = static_cast<double>(
                 std::chrono::duration_cast<std::chrono::microseconds>(tA - lastFrameATime).count());
-            if (dtUs >= 11000.0 && dtUs <= 28000.0) {
+            if (dtUs >= 11000.0 && dtUs <= 45000.0) {
                 emaBasePeriodUs = emaBasePeriodUs * 0.80 + dtUs * 0.20;
             }
         }
@@ -4596,11 +4604,12 @@ static void RunMetalFXPacerThread() {
 
         PresentSingleFrameToLayer(pair, pair.frameATex, /*isFrameB=*/false);
 
-        // Step 4: If 2x FrameGen active, pace Frame B (real frame t) at exact half-interval (~8.33ms @ 120Hz)!
+        // Step 5: If 2x FrameGen active, pace Frame B (real frame t) at exact half-interval!
+        // Smoothly adapts from ~8.33ms (60->120 FPS) up to ~16.7ms (30->60 FPS during heavy spikes).
         if (pair.hasFrameB && pair.frameBTex != nil) {
             const double targetHalfUs = (pair.targetOutFps >= 100) ? 8333.0 : (1e6 / std::max(60, pair.targetOutFps));
-            const double halfUs = std::clamp(emaBasePeriodUs * 0.5, targetHalfUs * 0.85, targetHalfUs * 1.25);
-            // Wake ~500us early to cover the ~0.35ms composite pass so scanout lands right on the 120Hz VBlank!
+            const double halfUs = std::clamp(emaBasePeriodUs * 0.5, targetHalfUs * 0.85, 19500.0);
+            // Wake ~500us early to cover the ~0.35ms composite pass so scanout lands right on VBlank!
             const int64_t delayUs = std::max<int64_t>(4500, static_cast<int64_t>(std::llround(halfUs)) - 500);
             const auto tBDue = tA + std::chrono::microseconds(delayUs);
 
@@ -4998,15 +5007,15 @@ static bool EnsureMetalFXResourcesLocked(id<MTLDevice> dev, uint32_t reqInW, uin
     g_mfx.flow8Tex      = makePrivateTex(MTLPixelFormatRG16Float, g_mfx.luma8W, g_mfx.luma8H, rwUsage);
     g_mfx.flow4Tex      = makePrivateTex(MTLPixelFormatRG16Float, g_mfx.luma4W, g_mfx.luma4H, rwUsage);
 
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 4; ++i) {
         g_mfx.upscaledRing[i] = makePrivateTex(MTLPixelFormatBGRA8Unorm, outW, outH, outputUsage);
         g_mfx.interpRing[i]   = makePrivateTex(MTLPixelFormatBGRA8Unorm, outW, outH, interpUsage);
         g_mfx.uiRing[i]       = makePrivateTex(MTLPixelFormatBGRA8Unorm, outW, outH, MTLTextureUsageShaderRead);
     }
 
     if (!g_mfx.colorInputTex || !g_mfx.depthFullTex || !g_mfx.motionTex ||
-        !g_mfx.upscaledRing[0] || !g_mfx.upscaledRing[1] || !g_mfx.upscaledRing[2] ||
-        !g_mfx.interpRing[0] || !g_mfx.interpRing[1] || !g_mfx.interpRing[2] ||
+        !g_mfx.upscaledRing[0] || !g_mfx.upscaledRing[1] || !g_mfx.upscaledRing[2] || !g_mfx.upscaledRing[3] ||
+        !g_mfx.interpRing[0] || !g_mfx.interpRing[1] || !g_mfx.interpRing[2] || !g_mfx.interpRing[3] ||
         !g_mfx.flow4Tex || !g_mfx.flow8Tex) {
         MarathonIOS_LogLine("METAL_ERR", "MetalFX: private texture pool allocation failed");
         return false;
@@ -5142,6 +5151,53 @@ int MarathonIOS_GetBaseFpsLimit(void) {
     return g_baseFpsLimit.load(std::memory_order_acquire);
 }
 
+// Automatic Thermal Resolution Guardian: prevents A18 Pro clock-halving cliff under Serious/Critical heat
+// so baseFPS stays locked at 60 FPS (avoiding Sonic '06 fixed-step slow-motion!) and restores after 20s cool.
+static void UpdateThermalResolutionGuardian(int thermal, double nowSec) {
+    const float curCap = g_thermalScaleCap.load(std::memory_order_acquire);
+    float desiredCap = 1.00f;
+    if (thermal >= 3) {
+        desiredCap = 0.65f;
+    } else if (thermal == 2) {
+        desiredCap = 0.75f;
+    }
+
+    if (desiredCap < curCap - 0.005f) {
+        // Immediate step-down when heat escalates (no delay — beat the iOS clock-halving cliff!)
+        g_thermalCoolSinceSec.store(0.0, std::memory_order_relaxed);
+        g_thermalScaleCap.store(desiredCap, std::memory_order_release);
+        const float userScale = g_outputResScale.load(std::memory_order_acquire);
+        if (userScale > desiredCap + 0.005f) {
+            char msg[160];
+            std::snprintf(msg, sizeof(msg),
+                          "ThermalGuardian: th=%d -> capping effective outputScale %.2f -> %.2f to protect 60/120 FPS",
+                          thermal, userScale, desiredCap);
+            MarathonIOS_LogLine("THERMAL", msg);
+            MarathonIOS_PerfLogEvent("THERMAL", msg);
+        }
+    } else if (desiredCap > curCap + 0.005f) {
+        // 20-second cool hysteresis before stepping back up so swapchain never oscillates
+        double coolSince = g_thermalCoolSinceSec.load(std::memory_order_relaxed);
+        if (coolSince <= 0.0) {
+            g_thermalCoolSinceSec.store(nowSec, std::memory_order_relaxed);
+        } else if ((nowSec - coolSince) >= 20.0) {
+            g_thermalCoolSinceSec.store(0.0, std::memory_order_relaxed);
+            g_thermalScaleCap.store(desiredCap, std::memory_order_release);
+            const float userScale = g_outputResScale.load(std::memory_order_acquire);
+            if (userScale > curCap + 0.005f) {
+                char msg[160];
+                std::snprintf(msg, sizeof(msg),
+                              "ThermalGuardian: cooled (th=%d) -> restoring outputScale cap %.2f -> %.2f",
+                              thermal, curCap, desiredCap);
+                MarathonIOS_LogLine("THERMAL", msg);
+                MarathonIOS_PerfLogEvent("THERMAL", msg);
+            }
+        }
+    } else {
+        g_thermalCoolSinceSec.store(0.0, std::memory_order_relaxed);
+    }
+}
+
 void MarathonIOS_SetOutputResolutionScale(float scale) {
     const float clamped = std::clamp(scale, 0.75f, 1.00f);
     const float prev = g_outputResScale.exchange(clamped, std::memory_order_acq_rel);
@@ -5154,13 +5210,15 @@ void MarathonIOS_SetOutputResolutionScale(float scale) {
 }
 
 float MarathonIOS_GetOutputResolutionScale(void) {
-    return g_outputResScale.load(std::memory_order_acquire);
+    const float userScale = g_outputResScale.load(std::memory_order_acquire);
+    const float cap = g_thermalScaleCap.load(std::memory_order_acquire);
+    return std::clamp(std::min(userScale, cap), 0.65f, 1.00f);
 }
 
 double MarathonIOS_GetEffectiveContentScale(double nativeScale) {
     if (nativeScale <= 0.0) nativeScale = 2.0;
-    const double outScale = static_cast<double>(g_outputResScale.load(std::memory_order_acquire));
-    const double eff = nativeScale * std::clamp(outScale, 0.75, 1.00);
+    const double outScale = static_cast<double>(MarathonIOS_GetOutputResolutionScale());
+    const double eff = nativeScale * std::clamp(outScale, 0.65, 1.00);
     return std::clamp(eff, 1.0, nativeScale);
 }
 
@@ -5370,6 +5428,9 @@ void MarathonIOS_PerfLogTick1Hz(void) {
     const double avgNextDrwMs = (drwCnt > 0) ? (static_cast<double>(drwSumUs) / (drwCnt * 1000.0)) : 0.0;
     const double maxNextDrwMs = static_cast<double>(drwMaxUs) / 1000.0;
 
+    const int curThermal = MarathonIOS_GetThermalState();
+    UpdateThermalResolutionGuardian(curThermal, now);
+
     char line[512];
     std::snprintf(line, sizeof(line),
                   "baseFPS=%5.1f outFPS=%5.1f(plume=%u/pacer=%u) | cfgFPS=%d tgtBase=%d vsync=%d mode=%s up=%d fg=%d | vsyncHz=%5.1f th=%d lpm=%d | res:swap=%ux%u vp=%ux%u int=%ux%u sc=%ux%u drw=%ux%u sc=%.2f out=%.2f res=%.2f | cpu=%.1fms(pace=%.1f acq=%.1f wf=%.1f enc=%.1f) gpu=plume:%.1f/pacer:%.1fms | pacer:sub=%u ok=%u ovw=%u early=%u nilL=%u nilD=%u szM=%u nilCb=%u errCb=%u nextDrw=%.1f/%.1fms",
@@ -5380,14 +5441,14 @@ void MarathonIOS_PerfLogTick1Hz(void) {
                   MarathonIOS_GetActiveBackendTag(),
                   g_upscaleMode.load(std::memory_order_relaxed),
                   g_frameGenMode.load(std::memory_order_relaxed),
-                  vsyncHz, MarathonIOS_GetThermalState(), lpm,
+                  vsyncHz, curThermal, lpm,
                   g_perf.swapW.load(std::memory_order_relaxed), g_perf.swapH.load(std::memory_order_relaxed),
                   g_perf.vpW.load(std::memory_order_relaxed), g_perf.vpH.load(std::memory_order_relaxed),
                   g_perf.intW.load(std::memory_order_relaxed), g_perf.intH.load(std::memory_order_relaxed),
                   g_perf.sceneW.load(std::memory_order_relaxed), g_perf.sceneH.load(std::memory_order_relaxed),
                   g_perf.drwW.load(std::memory_order_relaxed), g_perf.drwH.load(std::memory_order_relaxed),
                   g_perf.layerScale.load(std::memory_order_relaxed),
-                  g_outputResScale.load(std::memory_order_relaxed),
+                  MarathonIOS_GetOutputResolutionScale(),
                   g_perf.resScale.load(std::memory_order_relaxed),
                   avgFrameMs, avgPaceMs, avgAcqMs, avgWfMs, avgEncMs,
                   avgPlumeGpuMs, avgPacerGpuMs,
@@ -5503,7 +5564,10 @@ bool MarathonIOS_MetalFXEncodeFrame(const MarathonIOSMetalFXFrameInput* in) {
     const bool useSpatial = (upscaleMode == MARATHON_IOS_MFX_SPATIAL) ||
                             (upscaleMode == MARATHON_IOS_MFX_TEMPORAL && !useTemporal);
     const bool fgEnabled = (fgWanted != MARATHON_IOS_FG_OFF) && (layer != nil);
-    const bool tryAppleFI = fgEnabled && (appleFI != nil) && useTemporal;
+    // Prefer ultra-fast Metal 3 Bidir FG2x (~0.5ms, reuses flow4Tex!) over stacking Apple's heavy
+    // MTLFXFrameInterpolator (+9-11ms) on top of MTLFXTemporalScaler when warm or above 75% output scale.
+    const bool tryAppleFI = fgEnabled && (appleFI != nil) && useTemporal &&
+                            (MarathonIOS_GetThermalState() == 0) && (outW * outH <= 1850000u);
 
     const bool prevFgRuntime = g_fgRuntimeActive.exchange(fgEnabled, std::memory_order_acq_rel);
     if (prevFgRuntime != fgEnabled) {
@@ -5558,9 +5622,9 @@ bool MarathonIOS_MetalFXEncodeFrame(const MarathonIOSMetalFXFrameInput* in) {
     }
 
     g_mfx.ringPrev = currSlot;
-    g_mfx.ringWrite = (currSlot + 1u) % 3u;
+    g_mfx.ringWrite = (currSlot + 1u) % 4u;
     g_mfx.pyrWrite = pCurr ^ 1u;
-    g_mfx.interpWrite = (interpSlot + 1u) % 3u;
+    g_mfx.interpWrite = (interpSlot + 1u) % 4u;
     g_mfx.hasHistory = !in->isLoading;
     g_mfx.forceResetNext = false;
     os_unfair_lock_unlock(&g_mfx.lock);

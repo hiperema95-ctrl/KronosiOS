@@ -541,6 +541,17 @@ test('native Apple MetalFX (MTLFXTemporalScaler + MTLFXSpatialScaler + MTLFXFram
   assert.match(patcher, /config == &Config::OutputResolutionScale \|\|/);
   assert.match(patcher, /MarathonIOS_GetActiveBackendTag\(\)/);
   assert.match(patcher, /"os\/ios\/ios_lossless_scaler\.mm"/);
+
+  // 4. Pacer zero-livelock fix (pop before GPU wait), quad-buffered rings, Thermal Resolution Guardian, Temporal AppleFI guard
+  assert.match(lsMm, /id<MTLTexture> upscaledRing\[4\]/);
+  assert.match(lsMm, /id<MTLTexture> interpRing\[4\]/);
+  assert.match(lsMm, /id<MTLTexture> uiRing\[4\]/);
+  assert.match(lsMm, /g_mfx\.ringWrite = \(currSlot \+ 1u\) % 4u;/);
+  assert.match(lsMm, /pair = g_mfx\.pendingPair;\s+g_mfx\.pendingPair\.valid = false;/);
+  assert.match(lsMm, /auto gpuReadyPred = \[&\]\(\)/);
+  assert.match(lsMm, /static void UpdateThermalResolutionGuardian\(int thermal, double nowSec\)/);
+  assert.match(lsMm, /g_thermalScaleCap\.load\(std::memory_order_acquire\)/);
+  assert.match(lsMm, /\(MarathonIOS_GetThermalState\(\) == 0\) && \(outW \* outH <= 1850000u\)/);
 });
 
 test('inspectXisoCandidate validates extensions and detects real MICROSOFT*XBOX*MEDIA magic', () => {
