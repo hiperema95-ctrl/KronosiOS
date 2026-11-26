@@ -49,6 +49,8 @@ test('generatePortRepository creates all required clean-room overlay files for M
     'ios/include/ios_virtual_controller.h',
     'ios/ios_mod_manager.mm',
     'ios/include/ios_mod_manager.h',
+    'ios/ios_lossless_scaler.mm',
+    'ios/include/ios_lossless_scaler.h',
     'ios/Info.plist',
     'ios/Entitlements.plist',
     'cmake/MarathonRecompIOS.cmake',
@@ -336,7 +338,7 @@ test('iOS lifecycle pause/resume, hardware thermal auto-config, 30/60/120 FPS Pr
   assert.match(vcHeader, /typedef struct MarathonIOSHardwareProfile/);
   assert.match(platformMm, /void MarathonIOS_GetHardwareProfile\(MarathonIOSHardwareProfile\* outProfile\)/);
   assert.match(patcher, /ApplyIOSHardwareDefaults/);
-  assert.match(patcher, /ios_hw_tuned_v2/);
+  assert.match(patcher, /ios_hw_tuned_v3/);
   assert.match(patcher, /std::this_thread::sleep_until\(s_next\)/);
 
   // 3. 30 / 60 / 120 FPS selector in Options Menu & ProMotion LTPO pacing
@@ -382,7 +384,8 @@ test('iPhone 16 Pro 120 FPS ProMotion driver, Thermal Guardian, Metal useResourc
   assert.match(patcher, /bindIOSAddressableResources/);
   assert.match(patcher, /->useResources\(/);
   assert.match(patcher, /metalLayer\.maximumDrawableCount = 3;/);
-  assert.match(patcher, /metalLayer\.framebufferOnly = YES;/);
+  assert.match(patcher, /const BOOL wantFramebufferOnly = MarathonIOS_NeedsReadableDrawable\(\) \? NO : YES;/);
+  assert.match(patcher, /metalLayer\.framebufferOnly = wantFramebufferOnly;/);
   assert.match(patcher, /\(native > 2\.0\) \? 2\.0 : native/);
   assert.match(patcher, /g_iosMetalLastSyncSec/);
   assert.match(patcher, /if \(scale > 2\.0\)/);
@@ -437,6 +440,8 @@ test('in-game ShowFPS Video option, 6-language localization, top-left safe-area 
   // Generated files stay 100% byte-for-byte in sync with on-disk overlay files
   for (const relPath of [
     'scripts/apply_ios_port.sh',
+    'ios/include/ios_lossless_scaler.h',
+    'ios/ios_lossless_scaler.mm',
     'ios/include/ios_virtual_controller.h',
     'ios/ios_virtual_controller.mm',
     'ios/os/ios_platform.mm',
@@ -446,6 +451,56 @@ test('in-game ShowFPS Video option, 6-language localization, top-left safe-area 
     const onDisk = fs.readFileSync(relPath, 'utf8');
     assert.equal(generated, onDisk, `Template mismatch with on-disk ${relPath}`);
   }
+});
+
+test('native Metal Lossless Scaling (RCAS upscaling + Optical-Flow 2x/3x/2x Eco Frame Generation) is wired end-to-end', () => {
+  const files = generatePortRepository(DEFAULT_BUILD_CONFIG);
+  const patcher = files.find((f) => f.path === 'scripts/apply_ios_port.sh')!.content;
+  const platformMm = files.find((f) => f.path === 'ios/os/ios_platform.mm')!.content;
+  const lsHeader = files.find((f) => f.path === 'ios/include/ios_lossless_scaler.h')!.content;
+  const lsMm = files.find((f) => f.path === 'ios/ios_lossless_scaler.mm')!.content;
+
+  // 1. Pure Metal.framework runtime MSL shaders (zero MetalFX external link risk, valid C++11 raw string literal)
+  assert.match(lsMm, /static const char \* const kLosslessScalerMSL = R"MSL\(/);
+  assert.doesNotMatch(lsMm, /@R"MSL\(/);
+  assert.match(lsMm, /kernel void ls_luma_downsample4x/);
+  assert.match(lsMm, /kernel void ls_optical_flow/);
+  assert.match(lsMm, /kernel void ls_flow_smooth/);
+  assert.match(lsMm, /fragment half4 ls_present_fs/);
+  assert.match(lsMm, /rcasSharpness/);
+  assert.match(lsMm, /if \(layer\.framebufferOnly\)/);
+  assert.match(lsMm, /MarathonIOS_LosslessOnDisplayLinkTick/);
+  assert.match(lsMm, /ComputeEffectiveFGSchedule/);
+
+  // 2. C API header & ProMotion CADisplayLink / lifecycle suspend integration
+  assert.match(lsHeader, /MARATHON_IOS_UPSCALE_BALANCED = 2/);
+  assert.match(lsHeader, /MARATHON_IOS_FG_X2_120 = 1/);
+  assert.match(lsHeader, /MARATHON_IOS_FG_X3_120 = 2/);
+  assert.match(lsHeader, /MARATHON_IOS_FG_X2_ECO60 = 3/);
+  assert.match(platformMm, /#include <ios_lossless_scaler\.h>/);
+  assert.match(platformMm, /MarathonIOS_LosslessOnDisplayLinkTick\(/);
+  assert.match(platformMm, /MarathonIOS_LosslessOnSuspendChanged\(suspended\);/);
+  assert.match(platformMm, /void MarathonIOS_NotifyFrameGenChanged\(void\)/);
+  assert.match(platformMm, /const int fgOut = MarathonIOS_GetFrameGenOutputFPS\(\);/);
+
+  // 3. In-game Video Options (6 languages), Plume present hook, pre-CheckSwapChain base pacing, ShowFPS base/out HUD, CMake source
+  assert.match(patcher, /enum class ELosslessUpscaling : uint32_t/);
+  assert.match(patcher, /enum class EFrameGeneration : uint32_t/);
+  assert.match(patcher, /CONFIG_DEFINE_ENUM_LOCALISED\("Video", ELosslessUpscaling, LosslessUpscaling/);
+  assert.match(patcher, /CONFIG_DEFINE_ENUM_LOCALISED\("Video", EFrameGeneration, FrameGeneration/);
+  assert.match(patcher, /CONFIG_DEFINE_ENUM_TEMPLATE\(ELosslessUpscaling\)/);
+  assert.match(patcher, /CONFIG_DEFINE_ENUM_TEMPLATE\(EFrameGeneration\)/);
+  assert.match(patcher, /CONFIG_DEFINE_LOCALE\(LosslessUpscaling\)/);
+  assert.match(patcher, /CONFIG_DEFINE_LOCALE\(FrameGeneration\)/);
+  assert.match(patcher, /"Bilanciato \(65%\)"/);
+  assert.match(patcher, /"3x \(40->120\)"/);
+  assert.match(patcher, /DrawOption\(rowCount\+\+, &Config::LosslessUpscaling, true\);/);
+  assert.match(patcher, /DrawOption\(rowCount\+\+, &Config::FrameGeneration, true\);/);
+  assert.match(patcher, /MarathonIOS_LosslessPresentFrame\(commandQueue->mtl, layer, presentBuffer, drawableMtl\)/);
+  assert.match(patcher, /const int32_t fgBaseFps = MarathonIOS_GetFrameGenBaseFPS\(\)/);
+  assert.match(patcher, /config == &Config::LosslessUpscaling \|\|/);
+  assert.match(patcher, /FPS \{:>2\}\/\{:>3\}  \{\}x/);
+  assert.match(patcher, /"os\/ios\/ios_lossless_scaler\.mm"/);
 });
 
 test('inspectXisoCandidate validates extensions and detects real MICROSOFT*XBOX*MEDIA magic', () => {

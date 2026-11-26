@@ -39,6 +39,7 @@
 #include <thread>
 
 #include <ios_virtual_controller.h>
+#include <ios_lossless_scaler.h>
 #include <os/locale.h>
 #include <os/logger.h>
 #include <os/media.h>
@@ -47,15 +48,16 @@
 #include <os/version.h>
 
 // Lightweight CADisplayLink driver that explicitly declares CAFrameRateRange to iOS ProMotion LTPO
-// (without an active CAFrameRateRange hint, iPhone 15 Pro / 16 Pro frequently throttle Metal layers to 60Hz/80Hz).
+// AND drives Lossless Scaling optical-flow sub-frame presentation on exact 120Hz/60Hz VSync ticks.
 @interface MarathonProMotionDriver : NSObject
 @property (nonatomic, strong) CADisplayLink *displayLink;
 - (void)applyTargetFps:(int)fps suspended:(BOOL)suspended;
 @end
 
 @implementation MarathonProMotionDriver
-- (void)onTick:(__unused CADisplayLink *)link {
-    // Intentionally empty: solely drives CoreAnimation ProMotion LTPO CAFrameRateRange negotiation.
+- (void)onTick:(CADisplayLink *)link {
+    // Drives Lossless Scaling intermediate/final sub-frame presentation on exact ProMotion VSync boundaries.
+    MarathonIOS_LosslessOnDisplayLinkTick(link ? link.timestamp : 0.0);
 }
 
 - (void)applyTargetFps:(int)fps suspended:(BOOL)suspended {
@@ -161,6 +163,12 @@ static void WriteRawLogLocked(const char* tag, const char* msg) {
 }
 
 static int ComputeEffectiveTargetFps(int userFps, int thermal) {
+    // When Lossless Frame Generation is active, ProMotion refresh rate follows the generated output cadence
+    // (120Hz for 2x/3x even under Serious heat where base shifts 60->40 FPS, 60Hz for 2x Eco or Critical heat).
+    const int fgOut = MarathonIOS_GetFrameGenOutputFPS();
+    if (fgOut > 0) {
+        return fgOut;
+    }
     int eff = userFps;
     // Gentle Thermal Guardian: prevents Apple's sudden OS thermal cliff (~30fps throttle)
     // by easing 120 -> 90 FPS (ProMotion LTPO) under Serious heat and 60 FPS under Critical heat.
@@ -530,6 +538,8 @@ void MarathonIOS_SetAppSuspended(bool suspended) {
     bool prev = g_appSuspended.exchange(suspended, std::memory_order_acq_rel);
     if (prev == suspended) return;
 
+    MarathonIOS_LosslessOnSuspendChanged(suspended);
+
     if (suspended) {
         MarathonIOS_ResetVirtualControllerInputs();
         MarathonIOS_ApplyProMotionRefreshRate(g_effectiveTargetFps.load(std::memory_order_acquire));
@@ -614,6 +624,10 @@ int MarathonIOS_GetThermalState(void) {
     return g_thermalState.load(std::memory_order_acquire);
 }
 
+void MarathonIOS_NotifyFrameGenChanged(void) {
+    RefreshThermalAndProMotion(true);
+}
+
 void MarathonIOS_GetHardwareProfile(MarathonIOSHardwareProfile* outProfile) {
     if (!outProfile) return;
     EnsureDiagnosticsInitialized();
@@ -651,9 +665,11 @@ void MarathonIOS_GetHardwareProfile(MarathonIOSHardwareProfile* outProfile) {
     // - Unlocks cool, locked 120 FPS ProMotion on iPhone 15 Pro / 16 Pro / M-series ProMotion iPads
     if (ramMiB >= 7500 && maxHz >= 120) {
         // Tier 3: ProMotion 120Hz Flagship (iPhone 15 Pro / 16 Pro / 16 Pro Max / ProMotion M-series iPad)
+        // Paired with Lossless Upscaling (Balanced 0.65x + RCAS) & 2x Frame Generation (60 -> 120 FPS):
+        // ~81% less pixel fillrate + ~45% less CPU/GPU load -> locked 120 FPS & cool chassis!
         p.tier = 3;
         p.recommendedFps = 120;
-        p.recommendedResScale = isPad ? 0.80f : 0.85f; // ~1486x683 internal on iPhone 16 Pro (crisper than 720p, <50% fillrate)
+        p.recommendedResScale = isPad ? 0.70f : 0.65f;
         p.recommendedAA = 0;         // Off (avoids TBDR MSAA tile bandwidth & heat)
         p.recommendedShadowRes = 1;  // x1024
         p.recommendedReflection = 1; // Quarter

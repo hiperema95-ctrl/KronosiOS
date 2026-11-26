@@ -4,6 +4,8 @@ import {
   generateEntitlementsPlist,
   generateInfoPlist,
   generateIosPlatformMm,
+  generateLosslessScalerHeader,
+  generateLosslessScalerMm,
   generateModManagerFiles,
   generateNfdHeader,
   generateNfdIosMm,
@@ -490,6 +492,24 @@ export function generatePortRepository(config: PortBuildConfig): GeneratedReposi
       language: 'cpp',
       description: 'Entry point C per aprire il Mod Manager iOS dal Quick-HUD.',
       content: modMgrH,
+    },
+    {
+      path: 'ios/ios_lossless_scaler.mm',
+      title: 'Motore Lossless Scaling Metal (RCAS + Optical-Flow FG)',
+      category: 'ios-native',
+      language: 'objc',
+      description:
+        'Shader Metal 3 nativi: upscaling spaziale + RCAS anti-ringing e Frame Generation optical-flow 2x (60->120) / 3x (40->120) / 2x Eco (30->60) su CADisplayLink ProMotion.',
+      content: generateLosslessScalerMm(),
+    },
+    {
+      path: 'ios/include/ios_lossless_scaler.h',
+      title: 'Header Lossless Scaling Metal',
+      category: 'ios-native',
+      language: 'cpp',
+      description:
+        'API C per Lossless Upscaling (Quality/Balanced/Performance), Optical-Flow Frame Generation (2x/3x/2x Eco) e telemetria FPS effettivi.',
+      content: generateLosslessScalerHeader(),
     },
     {
       path: 'ios/Info.plist',
