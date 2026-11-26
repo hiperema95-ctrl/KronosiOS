@@ -72,16 +72,15 @@
         return;
     }
     if (@available(iOS 15.0, *)) {
-        CAFrameRateRange range;
-        if (fps >= 100) {
-            range = CAFrameRateRangeMake(80.0f, 120.0f, 120.0f);
-        } else if (fps >= 75) {
-            range = CAFrameRateRangeMake(60.0f, 80.0f, 80.0f);
-        } else if (fps >= 45) {
-            range = CAFrameRateRangeMake(48.0f, 60.0f, 60.0f);
-        } else {
-            range = CAFrameRateRangeMake(30.0f, 40.0f, (fps >= 38) ? 40.0f : 30.0f);
-        }
+        // CRITICAL: Always keep ProMotion on the 120Hz VBlank grid (8.33ms) while active in foreground!
+        // 120Hz divides evenly into 120 (1x), 60 (2x), 40 (3x), and 30 (4x) FPS.
+        // Clamping CADisplayLink to 30-40Hz or 48-60Hz causes any 0.5ms overrun to snap to the next
+        // 33ms/16ms VBlank, collapsing 60 FPS -> 33 FPS and 30 FPS -> 22 FPS!
+        (void)fps;
+        const NSInteger maxHz = [UIScreen mainScreen] ? [UIScreen mainScreen].maximumFramesPerSecond : 60;
+        CAFrameRateRange range = (maxHz >= 120)
+            ? CAFrameRateRangeMake(60.0f, 120.0f, 120.0f)
+            : CAFrameRateRangeMake(60.0f, 60.0f, 60.0f);
         self.displayLink.preferredFrameRateRange = range;
     }
     self.displayLink.paused = NO;
@@ -664,16 +663,16 @@ void MarathonIOS_GetHardwareProfile(MarathonIOSHardwareProfile* outProfile) {
     p.isPad = isPad;
 
     // Smart mobile thermal tiering paired with native Apple MetalFX (iPhone 16 Pro A18 Pro):
-    // - Tier 3 (ProMotion 120Hz): 60 FPS base render cap + MetalFX Temporal (75% renderScale) + MetalFX Frame Gen (60->120)
-    //   + 75% output scale (1966x904 on 2622x1206 OLED) -> leaves >=25-30% A18 Pro GPU headroom to prevent thermal throttling!
+    // - Tier 3 (ProMotion 120Hz): 60 FPS base render cap + MetalFX Spatial/CAS (85% crisp renderScale, zero HUD downscale!)
+    //   + 2x Frame Gen (60->120) + 85% output scale (2229x1025 on 2622x1206 OLED) -> razor-sharp 120 FPS & cool A18 Pro!
     if (ramMiB >= 7500 && maxHz >= 120) {
         p.tier = 3;
         p.recommendedFps = 60;
-        p.recommendedResScale = 0.75f;
-        p.recommendedAA = 0;         // Off (MTLFXTemporalScaler provides native temporal AA without MSAA tile bandwidth)
+        p.recommendedResScale = 0.85f;
+        p.recommendedAA = 0;         // Off (saves tile bandwidth; CAS/MetalFX keeps edges crisp)
         p.recommendedShadowRes = 1;  // x1024
         p.recommendedReflection = 1; // Quarter
-        p.recommendedRadialBlur = 1; // Original
+        p.recommendedRadialBlur = 0; // Off (saves full-screen post-process passes & heat)
         p.recommendedAF = 8;
     } else if (ramMiB >= 7500) {
         // Tier 2: 60Hz Flagship (iPhone 16 / 16 Plus / 60Hz 8GB iPad)

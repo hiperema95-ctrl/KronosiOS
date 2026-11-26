@@ -338,20 +338,18 @@ test('iOS lifecycle pause/resume, hardware thermal auto-config, 30/60/120 FPS Pr
   assert.match(vcHeader, /typedef struct MarathonIOSHardwareProfile/);
   assert.match(platformMm, /void MarathonIOS_GetHardwareProfile\(MarathonIOSHardwareProfile\* outProfile\)/);
   assert.match(patcher, /ApplyIOSHardwareDefaults/);
-  assert.match(patcher, /ios_hw_tuned_v4/);
-  assert.match(patcher, /std::this_thread::sleep_until\(s_next\)/);
+  assert.match(patcher, /ios_hw_tuned_v5/);
+  assert.match(patcher, /s_iosPaceNext/);
+  assert.match(patcher, /#if !defined\(MARATHON_IOS_PORT\)/);
 
-  // 3. 30 / 40 / 60 / 120 FPS selector in Options Menu & ProMotion LTPO pacing
+  // 3. 30 / 40 / 60 / 120 FPS selector in Options Menu & ProMotion 120Hz pacing (ZERO presentAfterMinimumDuration stalls!)
   assert.match(plist, /<key>CADisableMinimumFrameDurationOnPhone<\/key>\s*<true\/>/);
   assert.match(patcher, /MARATHON_IOS_FPS_SELECTOR/);
   assert.match(patcher, /DrawOption\(rowCount\+\+, &Config::FPS, true, nullptr, 30, 60, 120, false\);/);
   assert.match(patcher, /kIOSFpsPresets\[4\] = \{ 30, 40, 60, 120 \}/);
   assert.match(patcher, /valueText = fmt::format\("\{\} FPS", config->Value\);/);
   assert.match(patcher, /presentIOSDrawable\(drawableMtl, MarathonIOS_GetEffectiveTargetFPS\(\)\)/);
-  assert.match(patcher, /presentAfterMinimumDuration:\(1\.0 \/ 32\.0\)/);
-  assert.match(patcher, /presentAfterMinimumDuration:\(1\.0 \/ 42\.0\)/);
-  assert.match(patcher, /presentAfterMinimumDuration:\(1\.0 \/ 65\.0\)/);
-  assert.match(patcher, /presentAfterMinimumDuration:\(1\.0 \/ 85\.0\)/);
+  assert.doesNotMatch(patcher, /\[drawable presentAfterMinimumDuration:/);
   assert.match(patcher, /if \(Config::FPS <= 35\) Config::FPS = 30;/);
 
   // 4. Ultra-responsive direct multi-touch virtual controller (no UIButton lag, ABXY thumb-slide, pre-warmed UIImpactFeedbackGenerator)
@@ -375,7 +373,7 @@ test('iPhone 16 Pro 120 FPS ProMotion driver, Thermal Guardian, Metal useResourc
   assert.match(vcHeader, /int MarathonIOS_GetThermalState\(void\);/);
   assert.match(vcHeader, /void MarathonIOS_ApplyProMotionRefreshRate\(int targetFps\);/);
   assert.match(platformMm, /@interface MarathonProMotionDriver : NSObject/);
-  assert.match(platformMm, /CAFrameRateRangeMake\(80\.0f, 120\.0f, 120\.0f\)/);
+  assert.match(platformMm, /CAFrameRateRangeMake\(60\.0f, 120\.0f, 120\.0f\)/);
   assert.match(platformMm, /NSProcessInfoThermalStateDidChangeNotification/);
   assert.match(platformMm, /p\.tier = 3;/);
   assert.match(platformMm, /p\.recommendedFps = 60;/);
@@ -474,7 +472,10 @@ test('native Apple MetalFX (MTLFXTemporalScaler + MTLFXSpatialScaler + MTLFXFram
   assert.doesNotMatch(lsMm, /@R"MSL\(/);
   assert.match(lsMm, /kernel void mfx_prep_color_depth/);
   assert.match(lsMm, /kernel void mfx_motion_vectors/);
+  assert.match(lsMm, /kernel void mfx_interp_bidir/);
   assert.match(lsMm, /fragment half4 mfx_composite_fs/);
+  assert.match(lsMm, /MFX-S\+FG2x/);
+  assert.doesNotMatch(lsMm, /\[drawable presentAfterMinimumDuration:/);
   assert.match(lsMm, /MTLPixelFormatRG16Float/);
   assert.match(lsMm, /MTLStorageModePrivate/);
   assert.match(lsMm, /MarathonIOSMetalFXPacer/);

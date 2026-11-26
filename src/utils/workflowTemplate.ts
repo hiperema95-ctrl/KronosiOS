@@ -1932,16 +1932,16 @@ if cfg_p.exists():
             '    setDef(Config::RadialBlur, prof.recommendedRadialBlur == 0 ? ERadialBlur::Off : ERadialBlur::Original);\\n'
             '    setDef(Config::AnisotropicFiltering, static_cast<uint32_t>(prof.recommendedAF));\\n'
             '    if (prof.tier >= 3) {\\n'
-            '        // iPhone 15 Pro / 16 Pro (A18 Pro, 120Hz ProMotion): native Apple MetalFX Temporal (0.75x) + 2x FrameGen (60 -> 120 FPS) + 75% output scale = locked 120 FPS with >=25-30% thermal headroom!\\n'
-            '        setDef(Config::MetalFXUpscaling, EMetalFXUpscaling::Temporal);\\n'
+            '        // iPhone 15 Pro / 16 Pro (A18 Pro, 120Hz ProMotion): crisp Spatial+CAS (zero HUD downscale, 0.85x 3D) + 2x FrameGen (60 -> 120 FPS) + 85% output scale (2229x1025)!\\n'
+            '        setDef(Config::MetalFXUpscaling, EMetalFXUpscaling::Spatial);\\n'
             '        setDef(Config::FrameGeneration, EFrameGeneration::On);\\n'
-            '        setDef(Config::OutputResolutionScale, EOutputResolutionScale::Scale75);\\n'
+            '        setDef(Config::OutputResolutionScale, EOutputResolutionScale::Scale85);\\n'
             '    } else if (prof.tier == 2) {\\n'
-            '        setDef(Config::MetalFXUpscaling, EMetalFXUpscaling::Temporal);\\n'
+            '        setDef(Config::MetalFXUpscaling, EMetalFXUpscaling::Spatial);\\n'
             '        setDef(Config::FrameGeneration, EFrameGeneration::Off);\\n'
             '        setDef(Config::OutputResolutionScale, EOutputResolutionScale::Scale85);\\n'
             '    } else if (prof.tier == 1) {\\n'
-            '        setDef(Config::MetalFXUpscaling, EMetalFXUpscaling::Temporal);\\n'
+            '        setDef(Config::MetalFXUpscaling, EMetalFXUpscaling::Spatial);\\n'
             '        setDef(Config::FrameGeneration, EFrameGeneration::Off);\\n'
             '        setDef(Config::OutputResolutionScale, EOutputResolutionScale::Scale75);\\n'
             '    } else {\\n'
@@ -2060,7 +2060,7 @@ CONFIG_DEFINE_ENUM_TEMPLATE(EOutputResolutionScale)
         SyncIOSMetalFXFromConfig();
         Config::Save();
         std::error_code tuneEc;
-        std::ofstream(GetUserPath() / "ios_hw_tuned_v4") << "4";
+        std::ofstream(GetUserPath() / "ios_hw_tuned_v5") << "5";
 #else
         Config::Save();
 #endif
@@ -2081,12 +2081,12 @@ CONFIG_DEFINE_ENUM_TEMPLATE(EOutputResolutionScale)
 #if defined(MARATHON_IOS_PORT)
     {
         std::error_code tuneEc;
-        auto markerPath = GetUserPath() / "ios_hw_tuned_v4";
+        auto markerPath = GetUserPath() / "ios_hw_tuned_v5";
         if (!std::filesystem::exists(markerPath, tuneEc))
         {
             MarathonIOSHardwareProfile prof{};
             MarathonIOS_GetHardwareProfile(&prof);
-            // One-time migration to native Apple MetalFX Temporal + Frame Interpolation (v4)
+            // One-time migration to crisp v5 Spatial+CAS + Two-Tier 2x FG + fixed 120Hz pacer
             const bool isOldHeavyDefault =
                 std::fabs(Config::ResolutionScale.Value - 1.0f) < 0.01f &&
                 Config::AntiAliasing.Value != EAntiAliasing::Off;
@@ -2096,7 +2096,7 @@ CONFIG_DEFINE_ENUM_TEMPLATE(EOutputResolutionScale)
             {
                 Config::Save();
             }
-            std::ofstream(markerPath) << "4";
+            std::ofstream(markerPath) << "5";
         }
         else
         {
@@ -2118,7 +2118,7 @@ CONFIG_DEFINE_ENUM_TEMPLATE(EOutputResolutionScale)
         assert old_cfg_dir in csrc, "Failed to locate create_directory in user/config.cpp"
         csrc = csrc.replace(old_cfg_dir, new_cfg_dir, 1)
         cfg_p.write_text(csrc, encoding="utf-8")
-        print("Patched user/config.cpp: non-throwing create_directories + MetalFX templates/callbacks + v4 smart auto-config.")
+        print("Patched user/config.cpp: non-throwing create_directories + MetalFX templates/callbacks + v5 smart auto-config.")
 
 ph_p = pathlib.Path(sys.argv[4])
 if ph_p.exists():
@@ -2882,20 +2882,13 @@ extern "C" float MarathonIOS_GetOutputResolutionScale(void);
 namespace plume {
 
 void presentIOSDrawable(void *drawablePtr, int targetFps) {
+    (void)targetFps;
     id<MTLDrawable> drawable = (__bridge id<MTLDrawable>)drawablePtr;
     if (!drawable) return;
-    if (targetFps > 0 && targetFps <= 35) {
-        [drawable presentAfterMinimumDuration:(1.0 / 32.0)];
-    } else if (targetFps > 0 && targetFps <= 48) {
-        [drawable presentAfterMinimumDuration:(1.0 / 42.0)];
-    } else if (targetFps > 0 && targetFps <= 65) {
-        [drawable presentAfterMinimumDuration:(1.0 / 65.0)];
-    } else if (targetFps > 0 && targetFps <= 95) {
-        // 80Hz ProMotion LTPO step (40 -> 80 FPS FrameGen or thermal step)
-        [drawable presentAfterMinimumDuration:(1.0 / 85.0)];
-    } else {
-        [drawable present];
-    }
+    // CRITICAL: Always call plain [drawable present]!
+    // Using presentAfterMinimumDuration stacked on top of the CPU frame pacer stalls CoreAnimation's
+    // 3-drawable ring across VBlanks and collapses 60 FPS -> 33-40 FPS and 30 FPS -> 22 FPS!
+    [drawable present];
 }
 
 RenderDeviceVendor getRenderDeviceVendor(uint64_t) {
@@ -4954,26 +4947,69 @@ static void DrawFPS()
     {
         MarathonIOS_WaitUntilActive();
     }
-    // CRITICAL FOR LOSSLESS FRAME GENERATION:
-    // Pace base engine FPS (60/40/30 FPS) BEFORE CheckSwapChain() so the game holds ZERO CAMetalLayer drawables
-    // while sleeping — leaving all 3 drawables 100% free for CADisplayLink optical-flow sub-frame presentation!
-    if (const int32_t fgBaseFps = MarathonIOS_GetFrameGenBaseFPS(); fgBaseFps > 0)
+    // SINGLE AUTHORITATIVE iOS BASE-FPS PACER (BEFORE CheckSwapChain!):
+    // Sleeping BEFORE CheckSwapChain() guarantees the game holds ZERO CAMetalLayer drawables while waiting,
+    // preventing both 60->33 FPS / 30->22 FPS drawable starvation AND leaving all 3 drawables free for 2x FrameGen!
     {
         using namespace std::chrono_literals;
-        static std::chrono::steady_clock::time_point s_fgNext;
-        auto now = std::chrono::steady_clock::now();
-        if (now < s_fgNext)
+        const int32_t fgBaseFps = MarathonIOS_GetFrameGenBaseFPS();
+        int32_t targetBaseFps = 0;
+        if (fgBaseFps > 0)
         {
-            if ((s_fgNext - now) > 800us)
+            targetBaseFps = fgBaseFps; // 60 (for 120 out), 40 (for 80 out), or 30 (for 60 out)
+        }
+        else if (Config::FPS >= FPS_MIN && Config::FPS < FPS_MAX)
+        {
+            const int32_t userTargetFps = Config::FPS.Value > 0 ? Config::FPS.Value : 60;
+            MarathonIOS_SetTargetFPS(userTargetFps);
+            const int32_t eff = MarathonIOS_GetEffectiveTargetFPS();
+            // At 120 FPS (FG Off), do NOT artificially CPU-sleep — let hardware 120Hz ProMotion VSync own cadence!
+            if (eff > 0 && eff < 115)
             {
-                std::this_thread::sleep_until(s_fgNext);
+                targetBaseFps = eff;
+            }
+        }
+
+        static std::chrono::steady_clock::time_point s_iosPaceNext{};
+        static int32_t s_iosLastTargetFps = 0;
+
+        if (targetBaseFps > 0)
+        {
+            const auto period = std::chrono::nanoseconds(1000000000LL / targetBaseFps);
+            auto now = std::chrono::steady_clock::now();
+            if (s_iosLastTargetFps != targetBaseFps || s_iosPaceNext.time_since_epoch().count() == 0)
+            {
+                s_iosLastTargetFps = targetBaseFps;
+                s_iosPaceNext = now + period;
+            }
+            else
+            {
+                if (now < s_iosPaceNext)
+                {
+                    // Wake 1.2ms early so OS sleep jitter never overshoots the 120Hz VBlank boundary
+                    const auto wake = s_iosPaceNext - 1200us;
+                    if (now < wake)
+                    {
+                        std::this_thread::sleep_until(wake);
+                    }
+                    while ((now = std::chrono::steady_clock::now()) < s_iosPaceNext)
+                    {
+                        std::this_thread::yield();
+                    }
+                }
+                s_iosPaceNext += period;
+                if (s_iosPaceNext < now)
+                {
+                    // Frame overran target period -> resync cleanly without catch-up bursts or beat-frequency halving!
+                    s_iosPaceNext = now + period;
+                }
             }
         }
         else
         {
-            s_fgNext = now;
+            s_iosLastTargetFps = 0;
+            s_iosPaceNext = {};
         }
-        s_fgNext += 1000000000ns / fgBaseFps;
     }
 #endif
     CheckSwapChain();'''
@@ -5198,35 +5234,13 @@ static void BeginCommandList()
 
         s_next += 1000000000ns / Config::FPS;
     }'''
-        new_fps_wait = '''    if (Config::FPS >= FPS_MIN && Config::FPS < FPS_MAX)
+        new_fps_wait = '''#if !defined(MARATHON_IOS_PORT)
+    if (Config::FPS >= FPS_MIN && Config::FPS < FPS_MAX)
     {
         using namespace std::chrono_literals;
 
         static std::chrono::steady_clock::time_point s_next;
-#if defined(MARATHON_IOS_PORT)
-        if (MarathonIOS_GetFrameGenBaseFPS() == 0)
-        {
-            const int32_t userTargetFps = Config::FPS.Value > 0 ? Config::FPS.Value : 60;
-            MarathonIOS_SetTargetFPS(userTargetFps);
-            const int32_t effectiveFps = MarathonIOS_GetEffectiveTargetFPS();
-            // When VSync is active at 120Hz ProMotion, pace slightly above 120Hz (121Hz) so hardware VBlank owns exact phase without 120->60 beat drops
-            const int32_t pacingFps = (Config::VSync && effectiveFps >= 120) ? 121 : effectiveFps;
-            auto now = std::chrono::steady_clock::now();
-            if (now < s_next)
-            {
-                const auto remaining = s_next - now;
-                if (remaining > 800us)
-                {
-                    std::this_thread::sleep_until(s_next);
-                }
-            }
-            else
-            {
-                s_next = now;
-            }
-            s_next += 1000000000ns / pacingFps;
-        }
-#else
+
         auto now = std::chrono::steady_clock::now();
 
         if (now < s_next)
@@ -5242,8 +5256,8 @@ static void BeginCommandList()
         }
 
         s_next += 1000000000ns / Config::FPS;
-#endif
-    }'''
+    }
+#endif'''
         assert old_fps_wait in vsrc, "Failed to locate FPS limiter block in gpu/video.cpp"
         vsrc = vsrc.replace(old_fps_wait, new_fps_wait, 1)
 
