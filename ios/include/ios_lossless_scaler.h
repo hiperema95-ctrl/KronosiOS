@@ -84,6 +84,7 @@ double MarathonIOS_GetEffectiveContentScale(double nativeScale);
 
 // Active pipeline state & capability queries
 bool MarathonIOS_IsMetalFXActive(void);
+bool MarathonIOS_MetalFXOwnsPresentation(void);
 bool MarathonIOS_IsFrameGenSupported(void);
 bool MarathonIOS_IsFrameGenRuntimeActive(void);
 const char* MarathonIOS_GetActiveBackendTag(void);

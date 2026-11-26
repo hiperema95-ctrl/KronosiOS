@@ -338,7 +338,9 @@ test('iOS lifecycle pause/resume, hardware thermal auto-config, 30/60/120 FPS Pr
   assert.match(vcHeader, /typedef struct MarathonIOSHardwareProfile/);
   assert.match(platformMm, /void MarathonIOS_GetHardwareProfile\(MarathonIOSHardwareProfile\* outProfile\)/);
   assert.match(patcher, /ApplyIOSHardwareDefaults/);
-  assert.match(patcher, /ios_hw_tuned_v6/);
+  assert.match(patcher, /ios_hw_tuned_v7/);
+  assert.match(patcher, /EOutputResolutionScale::Scale75/);
+  assert.match(platformMm, /p\.recommendedResScale = 0\.65f;/);
   assert.match(patcher, /s_iosPaceNext/);
   assert.match(patcher, /#if !defined\(MARATHON_IOS_PORT\)/);
 
@@ -472,21 +474,31 @@ test('native Apple MetalFX (MTLFXTemporalScaler + MTLFXSpatialScaler + MTLFXFram
   assert.match(lsMm, /static const char \* const kMetalFXHelperMSL = R"MSL\(/);
   assert.doesNotMatch(lsMm, /@R"MSL\(/);
   assert.match(lsMm, /kernel void mfx_prep_color_depth/);
+  assert.match(lsMm, /kernel void mfx_build_luma4/);
   assert.match(lsMm, /kernel void mfx_motion_vectors/);
   assert.match(lsMm, /kernel void mfx_interp_bidir/);
   assert.match(lsMm, /fragment half4 mfx_composite_fs/);
   assert.match(lsMm, /MFX-S\+FG2x/);
   assert.doesNotMatch(lsMm, /\[drawable presentAfterMinimumDuration:/);
   assert.match(lsMm, /MTLPixelFormatRG16Float/);
+  assert.match(lsMm, /MTLPixelFormatBGRA8Unorm/);
   assert.match(lsMm, /MTLStorageModePrivate/);
+  assert.match(lsMm, /interpRing\[3\]/);
+  assert.match(lsMm, /MTLSharedEventListener/);
+  assert.match(lsMm, /PacerFramePair/);
   assert.match(lsMm, /MarathonIOSMetalFXPacer/);
   assert.match(lsMm, /encodeSignalEvent:sharedEvent/);
-  assert.match(lsMm, /encodeWaitForEvent:job\.sharedEvent/);
+  assert.match(lsMm, /PresentSingleFrameToLayer/);
+  assert.match(lsMm, /bool MarathonIOS_MetalFXOwnsPresentation\(void\)/);
+  assert.match(patcher, /MarathonIOS_MetalFXOwnsPresentation\(\)/);
+  assert.match(patcher, /Acquire Deferred MetalFX Command Buffer/);
+  assert.match(patcher, /Deferred MetalFX Present Sync/);
 
   // 2. C API header & ProMotion CADisplayLink (zero nextDrawable on main thread!) / lifecycle suspend integration
   assert.match(lsHeader, /typedef struct MarathonIOSMetalFXConfig/);
   assert.match(lsHeader, /typedef struct MarathonIOSMetalFXFrameInput/);
   assert.match(lsHeader, /bool MarathonIOS_MetalFXEncodeFrame\(const MarathonIOSMetalFXFrameInput\* input\);/);
+  assert.match(lsHeader, /bool MarathonIOS_MetalFXOwnsPresentation\(void\);/);
   assert.match(lsHeader, /void MarathonIOS_GetHaltonJitter\(uint64_t frameIndex, float\* outX, float\* outY\);/);
   assert.match(lsHeader, /double MarathonIOS_GetEffectiveContentScale\(double nativeScale\);/);
   assert.match(lsHeader, /void MarathonIOS_PerfLogTick1Hz\(void\);/);

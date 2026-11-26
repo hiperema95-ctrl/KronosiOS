@@ -715,17 +715,19 @@ void MarathonIOS_GetHardwareProfile(MarathonIOSHardwareProfile* outProfile) {
     p.isPad = isPad;
 
     // Smart mobile thermal tiering paired with native Apple MetalFX (iPhone 16 Pro A18 Pro):
-    // - Tier 3 (ProMotion 120Hz): 60 FPS base render cap + MetalFX Spatial/CAS (85% crisp renderScale, zero HUD downscale!)
-    //   + 2x Frame Gen (60->120) + 85% output scale (2229x1025 on 2622x1206 OLED) -> razor-sharp 120 FPS & cool A18 Pro!
+    // - Tier 3 (ProMotion 120Hz): 60 FPS base render cap + 75% Retina output (1967x905 = 345 PPI on 6.3" OLED)
+    //   + 0.65x internal 3D (1278x588, Xbox 360 720p-class ultrawide -> ~55% fewer shaded pixels than 1894x871!)
+    //   + x512 shadows & Eighth reflections -> cuts base GPU from 13-16ms down to ~6-8ms (50% thermal headroom!)
+    //   + Single-Owner Deferred 2x FrameGen -> locked 120 FPS in gameplay while keeping A18 Pro cool!
     if (ramMiB >= 7500 && maxHz >= 120) {
         p.tier = 3;
         p.recommendedFps = 60;
-        p.recommendedResScale = 0.85f;
+        p.recommendedResScale = 0.65f;
         p.recommendedAA = 0;         // Off (saves tile bandwidth; CAS/MetalFX keeps edges crisp)
-        p.recommendedShadowRes = 1;  // x1024
-        p.recommendedReflection = 1; // Quarter
+        p.recommendedShadowRes = 0;  // x512 (major GPU savings in Sonic '06 cascaded shadow maps)
+        p.recommendedReflection = 0; // Eighth (major GPU savings on Soleanna water planes)
         p.recommendedRadialBlur = 0; // Off (saves full-screen post-process passes & heat)
-        p.recommendedAF = 8;
+        p.recommendedAF = 4;
     } else if (ramMiB >= 7500) {
         // Tier 2: 60Hz Flagship (iPhone 16 / 16 Plus / 60Hz 8GB iPad)
         p.tier = 2;

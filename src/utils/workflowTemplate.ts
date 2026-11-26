@@ -1966,10 +1966,10 @@ if cfg_p.exists():
             '    setDef(Config::RadialBlur, prof.recommendedRadialBlur == 0 ? ERadialBlur::Off : ERadialBlur::Original);\\n'
             '    setDef(Config::AnisotropicFiltering, static_cast<uint32_t>(prof.recommendedAF));\\n'
             '    if (prof.tier >= 3) {\\n'
-            '        // iPhone 15 Pro / 16 Pro (A18 Pro, 120Hz ProMotion): crisp Spatial+CAS (zero HUD downscale, 0.85x 3D) + 2x FrameGen (60 -> 120 FPS) + 85% output scale (2229x1025)!\\n'
+            '        // iPhone 15 Pro / 16 Pro (A18 Pro, 120Hz ProMotion): thermal-safe 75% Retina output (1967x905 @ 345 PPI) + 0.65x 3D (1278x588) + Spatial+CAS + single-owner FG 2x (60 -> 120 FPS)!\\n'
             '        setDef(Config::MetalFXUpscaling, EMetalFXUpscaling::Spatial);\\n'
             '        setDef(Config::FrameGeneration, EFrameGeneration::On);\\n'
-            '        setDef(Config::OutputResolutionScale, EOutputResolutionScale::Scale85);\\n'
+            '        setDef(Config::OutputResolutionScale, EOutputResolutionScale::Scale75);\\n'
             '    } else if (prof.tier == 2) {\\n'
             '        setDef(Config::MetalFXUpscaling, EMetalFXUpscaling::Spatial);\\n'
             '        setDef(Config::FrameGeneration, EFrameGeneration::Off);\\n'
@@ -2101,7 +2101,7 @@ CONFIG_DEFINE_ENUM_TEMPLATE(EOutputResolutionScale)
         SyncIOSMetalFXFromConfig();
         Config::Save();
         std::error_code tuneEc;
-        std::ofstream(GetUserPath() / "ios_hw_tuned_v6") << "6";
+        std::ofstream(GetUserPath() / "ios_hw_tuned_v7") << "7";
 #else
         Config::Save();
 #endif
@@ -2122,12 +2122,12 @@ CONFIG_DEFINE_ENUM_TEMPLATE(EOutputResolutionScale)
 #if defined(MARATHON_IOS_PORT)
     {
         std::error_code tuneEc;
-        auto markerPath = GetUserPath() / "ios_hw_tuned_v6";
+        auto markerPath = GetUserPath() / "ios_hw_tuned_v7";
         if (!std::filesystem::exists(markerPath, tuneEc))
         {
             MarathonIOSHardwareProfile prof{};
             MarathonIOS_GetHardwareProfile(&prof);
-            // One-time v6 upgrade: eliminates slow-motion 30/40 FPS values & keeps crisp defaults
+            // One-time v7 upgrade: thermal-safe Tier 3 (75% output / 0.65x 3D / x512 shadows) + zero slow-motion 30/40 FPS
             const bool isOldHeavyDefault =
                 std::fabs(Config::ResolutionScale.Value - 1.0f) < 0.01f &&
                 Config::AntiAliasing.Value != EAntiAliasing::Off;
@@ -2142,7 +2142,7 @@ CONFIG_DEFINE_ENUM_TEMPLATE(EOutputResolutionScale)
             {
                 Config::Save();
             }
-            std::ofstream(markerPath) << "6";
+            std::ofstream(markerPath) << "7";
         }
         else
         {
@@ -3234,6 +3234,7 @@ if metal_cpp.exists():
             'extern "C" void MarathonIOS_PerfRecordPlumePresent(void);\\n'
             'extern "C" void MarathonIOS_PerfRecordPlumeGpuMs(double gpuMs);\\n'
             'extern "C" void MarathonIOS_PerfRecordWaitFenceMs(double waitMs);\\n'
+            'extern "C" bool MarathonIOS_MetalFXOwnsPresentation(void);\\n'
             "#endif\\n"
             "namespace plume {\\n"
             "#if !PLUME_MACOS\\n"
@@ -3872,7 +3873,31 @@ if metal_cpp.exists():
         CA::MetalDrawable *drawableMtl = drawable.mtl;
         drawable.mtl = nullptr;
         if (drawableMtl == nullptr) {
+#if !PLUME_MACOS
+            // Single-owner deferred MetalFX FrameGen presentation: Plume held ZERO CAMetalDrawables
+            // during 3D rendering so RunMetalFXPacerThread exclusively owns the 3-drawable pool!
+            // Still consume waitSemaphores and advance presentId/lastPresentedId so wait() stays synced.
+            MTL::CommandBuffer *syncBuffer = commandQueue->mtl->commandBuffer();
+            syncBuffer->setLabel(MTLSTR("Deferred MetalFX Present Sync"));
+            syncBuffer->enqueue();
+            for (uint32_t i = 0; i < waitSemaphoreCount; i++) {
+                MetalCommandSemaphore *interfaceSemaphore = static_cast<MetalCommandSemaphore *>(waitSemaphores[i]);
+                syncBuffer->encodeWait(interfaceSemaphore->mtl, interfaceSemaphore->mtlEventValue++);
+            }
+            const uint64_t presentId = ++currentPresentId;
+            syncBuffer->addCompletedHandler([presentId, this](MTL::CommandBuffer* cmdBuffer) {
+                logIOSMetalCmdBufferError("present-deferred", cmdBuffer);
+                {
+                    std::lock_guard lock(lastPresentedIdMutex);
+                    lastPresentedId = std::max(lastPresentedId, presentId);
+                }
+                lastPresentedIdCondVar.notify_all();
+            });
+            syncBuffer->commit();
+            return true;
+#else
             return false;
+#endif
         }
 
         // Create a new command buffer just for presenting (RETAINED references on iOS to prevent InvalidResource faults!)
@@ -3918,7 +3943,7 @@ if metal_cpp.exists():
         assert old_present_done in msrc, "Failed to locate presentBuffer completed handler in plume_metal.cpp"
         msrc = msrc.replace(old_present_done, new_present_done, 1)
 
-        # 2e. MetalSwapChain::acquireTexture: skip while suspended + release stale slot before nextDrawable() + RETAINED commandBuffer() on iOS
+        # 2e. MetalSwapChain::acquireTexture: skip while suspended + single-owner deferred MetalFX + release stale slot before nextDrawable()
         old_acq_full = '''        // Create a command buffer just to encode the signal
         MetalAutoreleasePool releasePool;
         MTL::CommandBuffer *acquireBuffer = commandQueue->mtl->commandBufferWithUnretainedReferences();
@@ -3963,6 +3988,28 @@ if metal_cpp.exists():
             drawable.mtl->release();
             drawable.mtl = nullptr;
         }
+#if !PLUME_MACOS
+        if (MarathonIOS_MetalFXOwnsPresentation()) {
+            // Single-owner MetalFX FrameGen mode: hold ZERO CAMetalDrawables during 3D rendering!
+            // RunMetalFXPacerThread acquires & presents Frame A (interp) and Frame B (real) ONLY after
+            // MTLSharedEventListener signals GPU completion, keeping all 3 layer drawables free!
+            MTL::CommandBuffer *acquireBuffer = commandQueue->mtl->commandBuffer();
+            acquireBuffer->setLabel(MTLSTR("Acquire Deferred MetalFX Command Buffer"));
+            const MetalCommandSemaphore *interfaceSemaphore = static_cast<MetalCommandSemaphore *>(signalSemaphore);
+            acquireBuffer->enqueue();
+            acquireBuffer->encodeSignalEvent(interfaceSemaphore->mtl, interfaceSemaphore->mtlEventValue);
+            acquireBuffer->commit();
+
+            *textureIndex = slotIndex;
+            currentAvailableDrawableIndex = (slotIndex + 1) % MAX_DRAWABLES;
+            drawable.desc.width = width;
+            drawable.desc.height = height;
+            drawable.desc.flags = RenderTextureFlag::RENDER_TARGET;
+            drawable.desc.format = desc.format;
+            drawable.mtl = nullptr;
+            return true;
+        }
+#endif
 
         CA::MetalDrawable *nextDrawable = layer->nextDrawable();
         if (nextDrawable == nullptr) {
@@ -5253,8 +5300,13 @@ static void BeginCommandList()
             commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(swapChainTexture, RenderTextureLayout::PRESENT));'''
         new_exec_gamma = '''            auto &commandList = g_commandLists[g_frame];
             bool iosMetalFXEncoded = false;
+            bool iosHasDrawable = true;
 #if defined(MARATHON_IOS_PORT)
-            if (g_backend == Backend::METAL && MarathonIOS_IsMetalFXActive())
+            void* iosDrawableTex = (g_backend == Backend::METAL)
+                ? plume::getIOSMetalDrawableTexturePtr(g_swapChain.get(), g_backBufferIndex)
+                : nullptr;
+            iosHasDrawable = (g_backend != Backend::METAL) || (iosDrawableTex != nullptr);
+            if (g_backend == Backend::METAL && (MarathonIOS_IsMetalFXActive() || !iosHasDrawable))
             {
                 commandList->barriers(RenderBarrierStage::GRAPHICS, srcBarriers, std::size(srcBarriers));
                 if (g_iosUiOverlayHasContent && g_iosUiOverlayTexture != nullptr)
@@ -5276,7 +5328,7 @@ static void BeginCommandList()
                 mfxIn.sceneColorTexMtl = plume::getIOSMetalTexturePtr(g_intermediaryBackBufferTexture.get());
                 mfxIn.depthTexMtl = depthTex ? plume::getIOSMetalTexturePtr(depthTex) : nullptr;
                 mfxIn.uiOverlayTexMtl = (g_iosUiOverlayHasContent && g_iosUiOverlayTexture) ? plume::getIOSMetalTexturePtr(g_iosUiOverlayTexture.get()) : nullptr;
-                mfxIn.drawableTexMtl = plume::getIOSMetalDrawableTexturePtr(g_swapChain.get(), g_backBufferIndex);
+                mfxIn.drawableTexMtl = iosDrawableTex;
                 mfxIn.internalWidth = internalSize.Width;
                 mfxIn.internalHeight = internalSize.Height;
                 mfxIn.outputWidth = g_swapChain->getWidth();
@@ -5300,7 +5352,7 @@ static void BeginCommandList()
                 g_iosPerfLastEncodeUs.store(encUs, std::memory_order_relaxed);
             }
 #endif
-            if (!iosMetalFXEncoded)
+            if (!iosMetalFXEncoded && iosHasDrawable)
             {
                 commandList->barriers(RenderBarrierStage::GRAPHICS, srcBarriers, std::size(srcBarriers));
                 commandList->setGraphicsPipelineLayout(g_pipelineLayout.get());
