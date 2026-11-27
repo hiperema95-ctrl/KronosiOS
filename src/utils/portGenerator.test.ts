@@ -475,15 +475,16 @@ test('native Apple MetalFX (MTLFXTemporalScaler + MTLFXSpatialScaler + MTLFXFram
   assert.doesNotMatch(lsMm, /@R"MSL\(/);
   assert.match(lsMm, /kernel void mfx_prep_color_depth/);
   assert.match(lsMm, /kernel void mfx_build_luma4/);
+  assert.match(lsMm, /inline float evalPatchSAD3/);
+  assert.match(lsMm, /constant float2 kMfxStep4\[8\]/);
   assert.match(lsMm, /kernel void mfx_motion_vectors/);
-  assert.match(lsMm, /kernel void mfx_interp_bidir/);
+  assert.match(lsMm, /fragment half4 mfx_interp_composite_fs/);
   assert.match(lsMm, /fragment half4 mfx_composite_fs/);
   assert.match(lsMm, /MFX-S\+FG2x/);
   assert.doesNotMatch(lsMm, /\[drawable presentAfterMinimumDuration:/);
   assert.match(lsMm, /MTLPixelFormatRG16Float/);
   assert.match(lsMm, /MTLPixelFormatBGRA8Unorm/);
   assert.match(lsMm, /MTLStorageModePrivate/);
-  assert.match(lsMm, /interpRing\[3\]/);
   assert.match(lsMm, /MTLSharedEventListener/);
   assert.match(lsMm, /PacerFramePair/);
   assert.match(lsMm, /MarathonIOSMetalFXPacer/);
@@ -542,15 +543,23 @@ test('native Apple MetalFX (MTLFXTemporalScaler + MTLFXSpatialScaler + MTLFXFram
   assert.match(patcher, /MarathonIOS_GetActiveBackendTag\(\)/);
   assert.match(patcher, /"os\/ios\/ios_lossless_scaler\.mm"/);
 
-  // 4. Pacer zero-livelock fix (pop before GPU wait), quad-buffered rings, Thermal Resolution Guardian, Temporal AppleFI guard
-  assert.match(lsMm, /id<MTLTexture> upscaledRing\[4\]/);
-  assert.match(lsMm, /id<MTLTexture> interpRing\[4\]/);
-  assert.match(lsMm, /id<MTLTexture> uiRing\[4\]/);
-  assert.match(lsMm, /g_mfx\.ringWrite = \(currSlot \+ 1u\) % 4u;/);
-  assert.match(lsMm, /pair = g_mfx\.pendingPair;\s+g_mfx\.pendingPair\.valid = false;/);
+  // 4. Zero-write fused Pacer Frame A, 5-slot ring buffers, 2-slot FIFO pairQueue (eliminates ovw=20..30), clean FG On->Off cancel, AutoFG & Thermal Guardian
+  assert.match(lsMm, /static constexpr uint32_t kRingSlots = 5;/);
+  assert.match(lsMm, /static constexpr uint32_t kPacerQueueCapacity = 2;/);
+  assert.match(lsMm, /id<MTLTexture> flow4Ring\[kRingSlots\]/);
+  assert.match(lsMm, /id<MTLTexture> depth4Ring\[kRingSlots\]/);
+  assert.match(lsMm, /id<MTLTexture> upscaledRing\[kRingSlots\]/);
+  assert.match(lsMm, /id<MTLTexture> uiRing\[kRingSlots\]/);
+  assert.match(lsMm, /PacerFramePair pairQueue\[kPacerQueueCapacity\];/);
+  assert.match(lsMm, /static void FlushPacerQueueLocked\(\)/);
+  assert.match(lsMm, /g_mfx\.ringWrite = \(currSlot \+ 1u\) % MetalFXPipelineState::kRingSlots;/);
+  assert.match(lsMm, /pair = g_mfx\.pairQueue\[g_mfx\.queueHead\];/);
+  assert.match(lsMm, /if \(pair\.hasFrameB && !g_fgRuntimeActive\.load\(std::memory_order_acquire\)\)/);
   assert.match(lsMm, /auto gpuReadyPred = \[&\]\(\)/);
   assert.match(lsMm, /static void UpdateThermalResolutionGuardian\(int thermal, double nowSec\)/);
   assert.match(lsMm, /g_thermalScaleCap\.load\(std::memory_order_acquire\)/);
+  assert.match(lsMm, /g_fgAutoPaused\.store\(true, std::memory_order_release\)/);
+  assert.match(lsMm, /MarathonIOS_PerfLogEvent\("AUTOFG", msg\)/);
   assert.match(lsMm, /\(MarathonIOS_GetThermalState\(\) == 0\) && \(outW \* outH <= 1850000u\)/);
 });
 
