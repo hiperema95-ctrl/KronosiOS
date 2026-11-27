@@ -78,8 +78,10 @@
         // 33ms/16ms VBlank, collapsing 60 FPS -> 33 FPS and 30 FPS -> 22 FPS!
         (void)fps;
         const NSInteger maxHz = [UIScreen mainScreen] ? [UIScreen mainScreen].maximumFramesPerSecond : 60;
+        // Anchor minimum at 80Hz on 120Hz ProMotion displays so notification banners or 1ms jitter
+        // don't knock CoreAnimation down to 60Hz (16.7ms nextDrawable stalls during 120 FPS FG2x).
         CAFrameRateRange range = (maxHz >= 120)
-            ? CAFrameRateRangeMake(60.0f, 120.0f, 120.0f)
+            ? CAFrameRateRangeMake(80.0f, 120.0f, 120.0f)
             : CAFrameRateRangeMake(60.0f, 60.0f, 60.0f);
         self.displayLink.preferredFrameRateRange = range;
     }

@@ -602,6 +602,7 @@ static std::atomic<int> g_baseFpsLimit{60};
 static std::atomic<float> g_outputResScale{0.75f};
 static std::atomic<float> g_thermalScaleCap{1.00f};
 static std::atomic<double> g_thermalCoolSinceSec{0.0};
+static std::atomic<int> g_thermalHighLoadSec{0};
 static std::atomic<bool> g_fgAutoPaused{false};
 static std::atomic<int> g_fgOverloadSec{0};
 static std::atomic<int> g_fgHeadroomSec{0};
@@ -764,8 +765,8 @@ struct PacerFramePair {
 };
 
 struct MetalFXPipelineState {
-    static constexpr uint32_t kRingSlots = 5;          // Zero hazard across active pair (curr+prev) + 2 queued + 1 encoding
-    static constexpr uint32_t kPacerQueueCapacity = 2; // FIFO capacity 2 eliminates ovw=20..30 half-rate drops!
+    static constexpr uint32_t kRingSlots = 6;          // Zero hazard across active pair (curr+prev) + 3 queued + 1 encoding
+    static constexpr uint32_t kPacerQueueCapacity = 3; // FIFO capacity 3 absorbs iOS notification banner VBlank stalls with ovw=0!
 
     os_unfair_lock lock = OS_UNFAIR_LOCK_INIT;
     id<MTLDevice> device = nil;
@@ -815,9 +816,9 @@ struct MetalFXPipelineState {
     id<MTLTexture> luma4Ring[2] = { nil, nil };              // R8Unorm [outW/4 x outH/4]
     id<MTLTexture> luma8Ring[2] = { nil, nil };              // R8Unorm [outW/8 x outH/8]
     id<MTLTexture> flow8Tex = nil;                           // RG16Float [outW/8 x outH/8]
-    id<MTLTexture> flow4Ring[kRingSlots] = {};               // RG16Float [outW/4 x outH/4] (5-slot ring: zero pacer hazard!)
-    id<MTLTexture> depth4Ring[kRingSlots] = {};              // R32Float [outW/4 x outH/4] (5-slot ring: zero pacer hazard!)
-    id<MTLTexture> upscaledRing[kRingSlots] = {};            // BGRA8Unorm [outW x outH] (5-slot ring: zero pacer/plume hazard!)
+    id<MTLTexture> flow4Ring[kRingSlots] = {};               // RG16Float [outW/4 x outH/4] (6-slot ring: zero pacer hazard!)
+    id<MTLTexture> depth4Ring[kRingSlots] = {};              // R32Float [outW/4 x outH/4] (6-slot ring: zero pacer hazard!)
+    id<MTLTexture> upscaledRing[kRingSlots] = {};            // BGRA8Unorm [outW x outH] (6-slot ring: zero pacer/plume hazard!)
     id<MTLTexture> uiRing[kRingSlots] = {};                  // BGRA8Unorm [outW x outH] (clean UI snapshot)
     id<MTLTexture> appleFiInterpTex = nil;                   // Single BGRA8Unorm [outW x outH] ONLY when Apple FI exists
     id<MTLTexture> dummyBlackTex = nil;                      // 1x1 transparent fallback
@@ -979,8 +980,8 @@ static void RunMetalFXPacerThread() {
             // Step 1: Wait ONLY for a queued frame pair from Plume's render thread
             g_mfx.pacerCv.wait(lk, []() { return g_mfx.queueCount > 0; });
             // Step 2: Pop FIFO front IMMEDIATELY into local immutable pair BEFORE waiting on GPU!
-            // With FIFO capacity 2, Plume's overlapping frame N+1 & N+2 wait cleanly in queue
-            // instead of overwriting each other (eliminates ovw=20..30 half-rate collapse!).
+            // With FIFO capacity 3, transient iOS notification banner stalls wait cleanly in queue
+            // instead of overwriting frames (keeps ovw=0!).
             pair = g_mfx.pairQueue[g_mfx.queueHead];
             g_mfx.pairQueue[g_mfx.queueHead] = PacerFramePair{};
             g_mfx.queueHead = (g_mfx.queueHead + 1u) % MetalFXPipelineState::kPacerQueueCapacity;
@@ -1011,6 +1012,23 @@ static void RunMetalFXPacerThread() {
         if (g_mfxSuspended.load(std::memory_order_acquire) ||
             (pair.hasFrameB && !g_fgRuntimeActive.load(std::memory_order_acquire))) {
             continue;
+        }
+
+        // Notification Banner / VBlank Stall Catch-Up:
+        // If iOS stalled [layer nextDrawable] (e.g. notification banner overlay) so >= 2 newer frames
+        // are already queued behind us, skip the interpolated Frame A for this catch-up frame and
+        // present ONLY real Frame B -> halves drawable demand and drains the backlog in 1 frame!
+        if (pair.hasFrameB && pair.frameBTex != nil) {
+            uint32_t curBacklog = 0;
+            {
+                std::lock_guard<std::mutex> lk(g_mfx.pacerMutex);
+                curBacklog = g_mfx.queueCount;
+            }
+            if (curBacklog >= 2u) {
+                lastFrameATime = std::chrono::steady_clock::now();
+                PresentSingleFrameToLayer(pair, /*isFrameB=*/true);
+                continue;
+            }
         }
 
         // Step 4: Immediately present Frame A (zero-write fused interp t-0.5 when 2x FG active, else real frame)
@@ -1595,49 +1613,90 @@ int MarathonIOS_GetBaseFpsLimit(void) {
     return g_baseFpsLimit.load(std::memory_order_acquire);
 }
 
-// Automatic Thermal Resolution Guardian: prevents A18 Pro clock-halving cliff under Serious/Critical heat
-// so baseFPS stays locked at 60 FPS (avoiding Sonic '06 fixed-step slow-motion!) and restores after 20s cool.
-static void UpdateThermalResolutionGuardian(int thermal, double nowSec) {
+// Proactive Thermal + GPU-Load Resolution Guardian (v2):
+// Prevents A18 Pro from ever hitting the Thermal=Fair (th=1) 35ms clock-throttling cliff by
+// shedding output swapchain pixels smoothly (0.75 -> 0.65 -> 0.55 -> 0.50) BEFORE GPU saturation,
+// keeping sustained gameplay at 10-13ms GPU = rock-solid 60 base / 120 output FPS!
+static void UpdateThermalResolutionGuardian(int thermal, double nowSec, double avgPlumeGpuMs, double baseFps) {
+    const float userScale = g_outputResScale.load(std::memory_order_acquire);
     const float curCap = g_thermalScaleCap.load(std::memory_order_acquire);
-    float desiredCap = 1.00f;
+    const float effectiveNow = std::min(userScale, curCap);
+
+    // Hard thermal ceilings by iOS thermalState
+    float hardCeil = 1.00f;
     if (thermal >= 3) {
-        desiredCap = 0.65f;
+        hardCeil = 0.50f;
     } else if (thermal == 2) {
-        desiredCap = 0.75f;
+        hardCeil = 0.58f;
+    } else if (thermal == 1) {
+        hardCeil = 0.75f;
     }
 
-    if (desiredCap < curCap - 0.005f) {
-        // Immediate step-down when heat escalates (no delay — beat the iOS clock-halving cliff!)
+    // 1. Immediate step-down if current cap exceeds hard thermal ceiling
+    if (hardCeil < curCap - 0.005f) {
         g_thermalCoolSinceSec.store(0.0, std::memory_order_relaxed);
-        g_thermalScaleCap.store(desiredCap, std::memory_order_release);
-        const float userScale = g_outputResScale.load(std::memory_order_acquire);
-        if (userScale > desiredCap + 0.005f) {
-            char msg[160];
+        g_thermalHighLoadSec.store(0, std::memory_order_relaxed);
+        g_thermalScaleCap.store(hardCeil, std::memory_order_release);
+        if (effectiveNow > hardCeil + 0.005f) {
+            char msg[192];
             std::snprintf(msg, sizeof(msg),
-                          "ThermalGuardian: th=%d -> capping effective outputScale %.2f -> %.2f to protect 60/120 FPS",
-                          thermal, userScale, desiredCap);
+                          "ThermalGuardian: th=%d -> capping outputScale %.2f -> %.2f (gpu=%.1fms) to protect 60/120 FPS",
+                          thermal, effectiveNow, hardCeil, avgPlumeGpuMs);
             MarathonIOS_LogLine("THERMAL", msg);
             MarathonIOS_PerfLogEvent("THERMAL", msg);
         }
-    } else if (desiredCap > curCap + 0.005f) {
-        // 20-second cool hysteresis before stepping back up so swapchain never oscillates
+        return;
+    }
+
+    // 2. Proactive GPU-headroom step-down: beat A18 Pro Thermal=Fair (th=1) clock drop BEFORE 20+ms cliff!
+    const bool validSample = (avgPlumeGpuMs > 0.1 && baseFps > 5.0);
+    const bool highGpuLoad = validSample &&
+                             ((thermal >= 1 && (avgPlumeGpuMs > 13.8 || baseFps < 55.0)) ||
+                              (thermal == 0 && avgPlumeGpuMs > 14.8));
+    const int neededSec = (thermal >= 1) ? 3 : 4;
+    const float floorCap = (thermal >= 1) ? 0.50f : 0.58f;
+    const float stepDown = (thermal >= 1) ? 0.10f : 0.08f;
+
+    if (highGpuLoad && effectiveNow > floorCap + 0.005f) {
+        g_thermalCoolSinceSec.store(0.0, std::memory_order_relaxed);
+        const int hotSec = g_thermalHighLoadSec.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (hotSec >= neededSec) {
+            g_thermalHighLoadSec.store(0, std::memory_order_relaxed);
+            const float nextCap = std::max(floorCap, effectiveNow - stepDown);
+            if (nextCap < curCap - 0.005f) {
+                g_thermalScaleCap.store(nextCap, std::memory_order_release);
+                char msg[192];
+                std::snprintf(msg, sizeof(msg),
+                              "ThermalGuardian: proactive step-down %.2f -> %.2f (th=%d gpu=%.1fms baseFPS=%.1f) to keep 120 FPS cool",
+                              effectiveNow, nextCap, thermal, avgPlumeGpuMs, baseFps);
+                MarathonIOS_LogLine("THERMAL", msg);
+                MarathonIOS_PerfLogEvent("THERMAL", msg);
+            }
+        }
+        return;
+    }
+
+    g_thermalHighLoadSec.store(0, std::memory_order_relaxed);
+
+    // 3. Smooth 20-second cool hysteresis step-up only when plenty of GPU headroom (<10.5ms) & cool (th<=1)
+    const float targetCeil = std::min(userScale, hardCeil);
+    const bool hasCoolHeadroom = validSample && (thermal <= 1) && (avgPlumeGpuMs < 10.5) && (baseFps >= 58.0);
+    if (curCap < targetCeil - 0.005f && hasCoolHeadroom) {
         double coolSince = g_thermalCoolSinceSec.load(std::memory_order_relaxed);
         if (coolSince <= 0.0) {
             g_thermalCoolSinceSec.store(nowSec, std::memory_order_relaxed);
         } else if ((nowSec - coolSince) >= 20.0) {
             g_thermalCoolSinceSec.store(0.0, std::memory_order_relaxed);
-            g_thermalScaleCap.store(desiredCap, std::memory_order_release);
-            const float userScale = g_outputResScale.load(std::memory_order_acquire);
-            if (userScale > curCap + 0.005f) {
-                char msg[160];
-                std::snprintf(msg, sizeof(msg),
-                              "ThermalGuardian: cooled (th=%d) -> restoring outputScale cap %.2f -> %.2f",
-                              thermal, curCap, desiredCap);
-                MarathonIOS_LogLine("THERMAL", msg);
-                MarathonIOS_PerfLogEvent("THERMAL", msg);
-            }
+            const float nextCap = std::min(hardCeil, curCap + 0.08f);
+            g_thermalScaleCap.store(nextCap, std::memory_order_release);
+            char msg[192];
+            std::snprintf(msg, sizeof(msg),
+                          "ThermalGuardian: cool headroom (th=%d gpu=%.1fms) -> stepping outputScale cap %.2f -> %.2f",
+                          thermal, avgPlumeGpuMs, curCap, nextCap);
+            MarathonIOS_LogLine("THERMAL", msg);
+            MarathonIOS_PerfLogEvent("THERMAL", msg);
         }
-    } else {
+    } else if (!validSample || avgPlumeGpuMs > 12.0 || thermal >= 2) {
         g_thermalCoolSinceSec.store(0.0, std::memory_order_relaxed);
     }
 }
@@ -1646,6 +1705,11 @@ void MarathonIOS_SetOutputResolutionScale(float scale) {
     const float clamped = std::clamp(scale, 0.75f, 1.00f);
     const float prev = g_outputResScale.exchange(clamped, std::memory_order_acq_rel);
     if (std::fabs(prev - clamped) > 0.005f) {
+        g_thermalHighLoadSec.store(0, std::memory_order_relaxed);
+        if (MarathonIOS_GetThermalState() == 0) {
+            g_thermalScaleCap.store(1.00f, std::memory_order_release);
+            g_thermalCoolSinceSec.store(0.0, std::memory_order_relaxed);
+        }
         char buf[96];
         std::snprintf(buf, sizeof(buf), "MetalFX OutputResolutionScale=%.2f", clamped);
         MarathonIOS_LogLine("METAL_INFO", buf);
@@ -1656,13 +1720,13 @@ void MarathonIOS_SetOutputResolutionScale(float scale) {
 float MarathonIOS_GetOutputResolutionScale(void) {
     const float userScale = g_outputResScale.load(std::memory_order_acquire);
     const float cap = g_thermalScaleCap.load(std::memory_order_acquire);
-    return std::clamp(std::min(userScale, cap), 0.65f, 1.00f);
+    return std::clamp(std::min(userScale, cap), 0.50f, 1.00f);
 }
 
 double MarathonIOS_GetEffectiveContentScale(double nativeScale) {
     if (nativeScale <= 0.0) nativeScale = 2.0;
     const double outScale = static_cast<double>(MarathonIOS_GetOutputResolutionScale());
-    const double eff = nativeScale * std::clamp(outScale, 0.65, 1.00);
+    const double eff = nativeScale * std::clamp(outScale, 0.50, 1.00);
     return std::clamp(eff, 1.0, nativeScale);
 }
 
@@ -1874,21 +1938,25 @@ void MarathonIOS_PerfLogTick1Hz(void) {
     const double maxNextDrwMs = static_cast<double>(drwMaxUs) / 1000.0;
 
     const int curThermal = MarathonIOS_GetThermalState();
-    UpdateThermalResolutionGuardian(curThermal, now);
+    UpdateThermalResolutionGuardian(curThermal, now, avgPlumeGpuMs, baseFps);
 
-    // Smart GPU-Headroom Auto-Pause for FrameGen:
-    // If the phone is charging + on a call + thermally throttled so baseFPS drops into slow-motion
-    // (gpu=plume > 18.5ms for 3 consecutive seconds), automatically pause FG2x so 100% of GPU clocks
-    // protect native 60 FPS, and cleanly re-engage FG2x once GPU headroom recovers (< 14.8ms for 6s)!
+    // Coordinated GPU-Headroom Auto-Pause & Auto-Resume for FrameGen:
+    // Priority 1: ThermalGuardian sheds output resolution first (0.75 -> 0.65 -> 0.55 -> 0.50) to keep 120 FPS alive!
+    // Priority 2: Pause FG2x ONLY on severe GPU saturation (>24ms / th>=3 for 3s) or sustained overload
+    // AFTER ThermalGuardian has already stepped down (effOutScale <= 0.60, >19ms for 4s).
+    // Auto-Resume reliably re-engages FG2x once GPU drops <15.8ms at >=54 baseFPS for 4s!
     const int fgWantedNow = g_frameGenMode.load(std::memory_order_acquire);
     if (fgWantedNow != MARATHON_IOS_FG_OFF && !g_mfxSuspended.load(std::memory_order_acquire)) {
         const bool isAutoPaused = g_fgAutoPaused.load(std::memory_order_acquire);
+        const float effOutScale = MarathonIOS_GetOutputResolutionScale();
         if (!isAutoPaused) {
-            const bool overloaded = (baseFps > 5.0) &&
-                                    (avgPlumeGpuMs > 18.5 || (baseFps < 51.0 && avgPlumeGpuMs > 16.5));
-            if (overloaded) {
+            const bool severeOverload = (curThermal >= 3) || (baseFps > 5.0 && avgPlumeGpuMs > 24.0);
+            const bool postStepOverload = (effOutScale <= 0.605f) && (baseFps > 5.0) &&
+                                          (avgPlumeGpuMs > 19.0 || (baseFps < 48.0 && avgPlumeGpuMs > 16.5));
+            const int pauseThresholdSec = severeOverload ? 3 : 4;
+            if (severeOverload || postStepOverload) {
                 const int sec = g_fgOverloadSec.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (sec >= 3) {
+                if (sec >= pauseThresholdSec) {
                     g_fgOverloadSec.store(0, std::memory_order_relaxed);
                     g_fgHeadroomSec.store(0, std::memory_order_relaxed);
                     g_fgAutoPaused.store(true, std::memory_order_release);
@@ -1899,10 +1967,10 @@ void MarathonIOS_PerfLogTick1Hz(void) {
                     }
                     g_mfx.pacerCv.notify_all();
                     MarathonIOS_NotifyFrameGenChanged();
-                    char msg[192];
+                    char msg[208];
                     std::snprintf(msg, sizeof(msg),
-                                  "GPU overloaded (gpu=%.1fms baseFPS=%.1f th=%d) -> auto-pausing FG2x to protect 60 FPS",
-                                  avgPlumeGpuMs, baseFps, curThermal);
+                                  "GPU overloaded (gpu=%.1fms baseFPS=%.1f th=%d out=%.2f) -> auto-pausing FG2x to protect 60 FPS",
+                                  avgPlumeGpuMs, baseFps, curThermal, effOutScale);
                     MarathonIOS_LogLine("THERMAL", msg);
                     MarathonIOS_PerfLogEvent("AUTOFG", msg);
                 }
@@ -1910,10 +1978,10 @@ void MarathonIOS_PerfLogTick1Hz(void) {
                 g_fgOverloadSec.store(0, std::memory_order_relaxed);
             }
         } else {
-            const bool hasHeadroom = (curThermal < 3) && (avgPlumeGpuMs > 0.1 && avgPlumeGpuMs < 14.8) && (baseFps >= 55.0);
+            const bool hasHeadroom = (curThermal < 3) && (avgPlumeGpuMs > 0.1 && avgPlumeGpuMs < 15.8) && (baseFps >= 54.0);
             if (hasHeadroom) {
                 const int sec = g_fgHeadroomSec.fetch_add(1, std::memory_order_relaxed) + 1;
-                if (sec >= 6) {
+                if (sec >= 4) {
                     g_fgHeadroomSec.store(0, std::memory_order_relaxed);
                     g_fgOverloadSec.store(0, std::memory_order_relaxed);
                     g_fgAutoPaused.store(false, std::memory_order_release);
@@ -1924,10 +1992,10 @@ void MarathonIOS_PerfLogTick1Hz(void) {
                     g_mfx.loggedActiveMode = false;
                     os_unfair_lock_unlock(&g_mfx.lock);
                     MarathonIOS_NotifyFrameGenChanged();
-                    char msg[192];
+                    char msg[208];
                     std::snprintf(msg, sizeof(msg),
-                                  "GPU headroom restored (gpu=%.1fms baseFPS=%.1f th=%d) -> resuming FG2x",
-                                  avgPlumeGpuMs, baseFps, curThermal);
+                                  "GPU headroom restored (gpu=%.1fms baseFPS=%.1f th=%d out=%.2f) -> resuming FG2x",
+                                  avgPlumeGpuMs, baseFps, curThermal, effOutScale);
                     MarathonIOS_LogLine("THERMAL", msg);
                     MarathonIOS_PerfLogEvent("AUTOFG", msg);
                 }

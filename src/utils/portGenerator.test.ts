@@ -376,7 +376,7 @@ test('iPhone 16 Pro 120 FPS ProMotion driver, Thermal Guardian, Metal useResourc
   assert.match(vcHeader, /int MarathonIOS_GetThermalState\(void\);/);
   assert.match(vcHeader, /void MarathonIOS_ApplyProMotionRefreshRate\(int targetFps\);/);
   assert.match(platformMm, /@interface MarathonProMotionDriver : NSObject/);
-  assert.match(platformMm, /CAFrameRateRangeMake\(60\.0f, 120\.0f, 120\.0f\)/);
+  assert.match(platformMm, /CAFrameRateRangeMake\(80\.0f, 120\.0f, 120\.0f\)/);
   assert.match(platformMm, /NSProcessInfoThermalStateDidChangeNotification/);
   assert.match(platformMm, /p\.tier = 3;/);
   assert.match(platformMm, /p\.recommendedFps = 60;/);
@@ -543,9 +543,9 @@ test('native Apple MetalFX (MTLFXTemporalScaler + MTLFXSpatialScaler + MTLFXFram
   assert.match(patcher, /MarathonIOS_GetActiveBackendTag\(\)/);
   assert.match(patcher, /"os\/ios\/ios_lossless_scaler\.mm"/);
 
-  // 4. Zero-write fused Pacer Frame A, 5-slot ring buffers, 2-slot FIFO pairQueue (eliminates ovw=20..30), clean FG On->Off cancel, AutoFG & Thermal Guardian
-  assert.match(lsMm, /static constexpr uint32_t kRingSlots = 5;/);
-  assert.match(lsMm, /static constexpr uint32_t kPacerQueueCapacity = 2;/);
+  // 4. Zero-write fused Pacer Frame A, 6-slot ring buffers, 3-slot FIFO pairQueue + notification stall catch-up, clean FG On->Off cancel, proactive ThermalGuardian v2 & coordinated AutoFG recovery
+  assert.match(lsMm, /static constexpr uint32_t kRingSlots = 6;/);
+  assert.match(lsMm, /static constexpr uint32_t kPacerQueueCapacity = 3;/);
   assert.match(lsMm, /id<MTLTexture> flow4Ring\[kRingSlots\]/);
   assert.match(lsMm, /id<MTLTexture> depth4Ring\[kRingSlots\]/);
   assert.match(lsMm, /id<MTLTexture> upscaledRing\[kRingSlots\]/);
@@ -554,10 +554,15 @@ test('native Apple MetalFX (MTLFXTemporalScaler + MTLFXSpatialScaler + MTLFXFram
   assert.match(lsMm, /static void FlushPacerQueueLocked\(\)/);
   assert.match(lsMm, /g_mfx\.ringWrite = \(currSlot \+ 1u\) % MetalFXPipelineState::kRingSlots;/);
   assert.match(lsMm, /pair = g_mfx\.pairQueue\[g_mfx\.queueHead\];/);
+  assert.match(lsMm, /if \(curBacklog >= 2u\)/);
   assert.match(lsMm, /if \(pair\.hasFrameB && !g_fgRuntimeActive\.load\(std::memory_order_acquire\)\)/);
   assert.match(lsMm, /auto gpuReadyPred = \[&\]\(\)/);
-  assert.match(lsMm, /static void UpdateThermalResolutionGuardian\(int thermal, double nowSec\)/);
+  assert.match(lsMm, /static void UpdateThermalResolutionGuardian\(int thermal, double nowSec, double avgPlumeGpuMs, double baseFps\)/);
+  assert.match(lsMm, /ThermalGuardian: proactive step-down/);
+  assert.match(lsMm, /return std::clamp\(std::min\(userScale, cap\), 0\.50f, 1\.00f\);/);
   assert.match(lsMm, /g_thermalScaleCap\.load\(std::memory_order_acquire\)/);
+  assert.match(lsMm, /const bool postStepOverload = \(effOutScale <= 0\.605f\)/);
+  assert.match(lsMm, /avgPlumeGpuMs < 15\.8/);
   assert.match(lsMm, /g_fgAutoPaused\.store\(true, std::memory_order_release\)/);
   assert.match(lsMm, /MarathonIOS_PerfLogEvent\("AUTOFG", msg\)/);
   assert.match(lsMm, /\(MarathonIOS_GetThermalState\(\) == 0\) && \(outW \* outH <= 1850000u\)/);
