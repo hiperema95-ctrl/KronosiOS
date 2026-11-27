@@ -1881,7 +1881,7 @@ CONFIG_DEFINE_LOCALE(Brightness)'''
         print("Patched locale/config_locale.cpp: added 6-language ShowFPS, MetalFXUpscaling, FrameGeneration & OutputResolutionScale localization.")
 PY_WIZ
 
-echo "==> [6/8] Patch paths.cpp, paths.h, config.cpp, file_system.cpp, imports.cpp (FIX FREEZE ARM64!), app.cpp, sdl3_driver.cpp, heap.cpp, guest_thread.cpp e stdafx.h..."
+echo "==> [6/8] Patch paths.cpp, paths.h, config.cpp, file_system.cpp, imports.cpp (FIX FREEZE ARM64!), app.cpp, sdl3_driver.cpp, audio.cpp, heap.cpp, guest_thread.cpp e stdafx.h..."
 python3 - \\
   "\${UPSTREAM_DIR}/MarathonRecomp/user/paths.cpp" \\
   "\${UPSTREAM_DIR}/MarathonRecomp/stdafx.h" \\
@@ -1892,7 +1892,8 @@ python3 - \\
   "\${UPSTREAM_DIR}/MarathonRecomp/app.cpp" \\
   "\${UPSTREAM_DIR}/MarathonRecomp/apu/driver/sdl3_driver.cpp" \\
   "\${UPSTREAM_DIR}/MarathonRecomp/kernel/heap.cpp" \\
-  "\${UPSTREAM_DIR}/MarathonRecomp/cpu/guest_thread.cpp" << 'PY_PATHS'
+  "\${UPSTREAM_DIR}/MarathonRecomp/cpu/guest_thread.cpp" \\
+  "\${UPSTREAM_DIR}/MarathonRecomp/apu/audio.cpp" << 'PY_PATHS'
 import sys, pathlib
 
 p = pathlib.Path(sys.argv[1])
@@ -2710,21 +2711,11 @@ public:
         sa.write_text(sa_src + polyfill, encoding="utf-8")
         print("Patched stdafx.h with deadlock-free C++20 Apple libc++ std::atomic_ref polyfill (256 buckets, notify_all).")
 
-# 8. apu/driver/sdl3_driver.cpp: eliminate 187.5 Hz audio busy-spin (huge thermal/battery win!), 1024-frame CoreAudio buffer, QoS & suspend pause
+# 8. apu/driver/sdl3_driver.cpp + apu/audio.cpp: 1024-frame CoreAudio buffer, eliminate 187.5 Hz audio busy-spin, QoS, suspend pause & guard macOS AVFoundationDriver on iOS
 aud_p = pathlib.Path(sys.argv[8])
 if aud_p.exists():
     asrc = aud_p.read_text(encoding="utf-8")
     if "MARATHON_IOS_AUDIO_OPT" not in asrc:
-        assert '#include <user/config.h>' in asrc, "Failed to locate #include <user/config.h> in apu/driver/sdl3_driver.cpp"
-        asrc = asrc.replace(
-            '#include <user/config.h>',
-            '#include <user/config.h>\\n'
-            '#if defined(MARATHON_IOS_PORT)\\n'
-            '#include <pthread/qos.h>\\n'
-            '#include <ios_virtual_controller.h>\\n'
-            '#endif',
-            1
-        )
         old_audio_init = '    SDL_SetHint(SDL_HINT_AUDIO_CATEGORY, "playback");'
         new_audio_init = (
             '    SDL_SetHint(SDL_HINT_AUDIO_CATEGORY, "playback");\\n'
@@ -2736,13 +2727,25 @@ if aud_p.exists():
         assert old_audio_init in asrc, "Failed to locate SDL_HINT_AUDIO_CATEGORY in apu/driver/sdl3_driver.cpp"
         asrc = asrc.replace(old_audio_init, new_audio_init, 1)
 
-        old_audio_loop = '''    GuestThreadContext ctx(0);
+        # Legacy pre-PR#504 layout where AudioThread lived inside sdl3_driver.cpp
+        if "AudioThread(" in asrc:
+            assert '#include <user/config.h>' in asrc, "Failed to locate #include <user/config.h> in legacy apu/driver/sdl3_driver.cpp"
+            asrc = asrc.replace(
+                '#include <user/config.h>',
+                '#include <user/config.h>\\n'
+                '#if defined(MARATHON_IOS_PORT)\\n'
+                '#include <pthread/qos.h>\\n'
+                '#include <ios_virtual_controller.h>\\n'
+                '#endif',
+                1
+            )
+            old_audio_loop = '''    GuestThreadContext ctx(0);
 
     size_t channels = g_downMixToStereo ? 2 : XAUDIO_NUM_CHANNELS;
 
     while (!g_audioThreadShouldExit)
     {'''
-        new_audio_loop = '''    GuestThreadContext ctx(0);
+            new_audio_loop = '''    GuestThreadContext ctx(0);
 #if defined(MARATHON_IOS_PORT)
     pthread_set_qos_class_self_np(QOS_CLASS_USER_INITIATED, 0);
 #endif
@@ -2758,14 +2761,14 @@ if aud_p.exists():
             continue;
         }
 #endif'''
-        assert old_audio_loop in asrc, "Failed to locate AudioThread loop in apu/driver/sdl3_driver.cpp"
-        asrc = asrc.replace(old_audio_loop, new_audio_loop, 1)
+            assert old_audio_loop in asrc, "Failed to locate AudioThread loop in legacy apu/driver/sdl3_driver.cpp"
+            asrc = asrc.replace(old_audio_loop, new_audio_loop, 1)
 
-        old_audio_spin = '''        std::this_thread::sleep_for(std::chrono::floor<std::chrono::milliseconds>(next - now));
+            old_audio_spin = '''        std::this_thread::sleep_for(std::chrono::floor<std::chrono::milliseconds>(next - now));
 
         while (std::chrono::steady_clock::now() < next)
             std::this_thread::yield();'''
-        new_audio_spin = '''#if defined(MARATHON_IOS_PORT)
+            new_audio_spin = '''#if defined(MARATHON_IOS_PORT)
         // Zero busy-spin on iOS: sleep_until avoids burning an A18 Pro core 187.5 times/sec
         std::this_thread::sleep_until(next);
 #else
@@ -2774,10 +2777,78 @@ if aud_p.exists():
         while (std::chrono::steady_clock::now() < next)
             std::this_thread::yield();
 #endif'''
-        assert old_audio_spin in asrc, "Failed to locate AudioThread busy-spin in apu/driver/sdl3_driver.cpp"
-        asrc = asrc.replace(old_audio_spin, new_audio_spin, 1)
+            assert old_audio_spin in asrc, "Failed to locate AudioThread busy-spin in legacy apu/driver/sdl3_driver.cpp"
+            asrc = asrc.replace(old_audio_spin, new_audio_spin, 1)
+
         aud_p.write_text(asrc, encoding="utf-8")
-        print("Patched apu/driver/sdl3_driver.cpp: eliminated 187.5Hz busy-spin + 1024-frame CoreAudio buffer + QoS.")
+        print("Patched apu/driver/sdl3_driver.cpp: 1024-frame CoreAudio buffer.")
+
+# 8b. apu/audio.cpp (upstream PR #504+): eliminate 187.5 Hz audio busy-spin, QoS, suspend pause & keep iOS on SDL3 CoreAudio (skip macOS AVFoundationDriver)
+aud_main_p = pathlib.Path(sys.argv[11]) if len(sys.argv) > 11 else pathlib.Path()
+if aud_main_p.exists():
+    amsrc = aud_main_p.read_text(encoding="utf-8")
+    if "MARATHON_IOS_AUDIO_OPT" not in amsrc and "AudioThread(" in amsrc:
+        assert '#include <user/config.h>' in amsrc, "Failed to locate #include <user/config.h> in apu/audio.cpp"
+        amsrc = amsrc.replace(
+            '#include <user/config.h>',
+            '#include <user/config.h>\\n'
+            '#if defined(MARATHON_IOS_PORT)\\n'
+            '// MARATHON_IOS_AUDIO_OPT\\n'
+            '#include <pthread/qos.h>\\n'
+            '#include <ios_virtual_controller.h>\\n'
+            '#endif',
+            1
+        )
+        # Guard macOS-only AVFoundationDriver off on iOS (iOS builds use SDL3 CoreAudio + AVAudioSession)
+        amsrc = amsrc.replace(
+            '#ifdef __APPLE__\\n#include "driver/avfoundation_driver.h"',
+            '#if defined(__APPLE__) && !defined(MARATHON_IOS_PORT)\\n#include "driver/avfoundation_driver.h"',
+            1
+        )
+        amsrc = amsrc.replace(
+            '#ifdef __APPLE__\\n    if (surround)',
+            '#if defined(__APPLE__) && !defined(MARATHON_IOS_PORT)\\n    if (surround)',
+            1
+        )
+        old_main_loop = '''    GuestThreadContext ctx(0);
+
+    while (!g_audioThreadShouldExit)
+    {'''
+        new_main_loop = '''    GuestThreadContext ctx(0);
+#if defined(MARATHON_IOS_PORT)
+    pthread_set_qos_class_self_np(QOS_CLASS_USER_INITIATED, 0);
+#endif
+
+    while (!g_audioThreadShouldExit)
+    {
+#if defined(MARATHON_IOS_PORT)
+        if (MarathonIOS_IsAppSuspended())
+        {
+            std::this_thread::sleep_for(20ms);
+            continue;
+        }
+#endif'''
+        assert old_main_loop in amsrc, "Failed to locate AudioThread loop in apu/audio.cpp"
+        amsrc = amsrc.replace(old_main_loop, new_main_loop, 1)
+
+        old_main_spin = '''        std::this_thread::sleep_for(std::chrono::floor<std::chrono::milliseconds>(next - now));
+
+        while (std::chrono::steady_clock::now() < next)
+            std::this_thread::yield();'''
+        new_main_spin = '''#if defined(MARATHON_IOS_PORT)
+        // Zero busy-spin on iOS: sleep_until avoids burning an A18 Pro core 187.5 times/sec
+        std::this_thread::sleep_until(next);
+#else
+        std::this_thread::sleep_for(std::chrono::floor<std::chrono::milliseconds>(next - now));
+
+        while (std::chrono::steady_clock::now() < next)
+            std::this_thread::yield();
+#endif'''
+        assert old_main_spin in amsrc, "Failed to locate AudioThread busy-spin in apu/audio.cpp"
+        amsrc = amsrc.replace(old_main_spin, new_main_spin, 1)
+
+        aud_main_p.write_text(amsrc, encoding="utf-8")
+        print("Patched apu/audio.cpp: eliminated 187.5Hz busy-spin + QoS + suspend pause + iOS SDL3 audio guard.")
 
 # 9. kernel/heap.cpp: return freed >=64KB interior pages back to iOS Jetsam via madvise(MADV_FREE) without touching o1heap headers
 heap_p = pathlib.Path(sys.argv[9])
